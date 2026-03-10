@@ -20,7 +20,7 @@ export COMPLETE, ITERATION, ITERATIONFAILED, FAILEDPOINT
 export @complete, @iteration, @iterationfailed, @failedpoint
 
 # Solver
-export main_execute!
+export main_execute!, forecast_next, forecast_at_point, make_point
 
 # Simulation
 export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds
