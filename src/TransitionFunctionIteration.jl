@@ -1,8 +1,7 @@
 module TransitionFunctionIteration
 
 using Interpolations, NonlinearSolve, ForwardDiff, StaticArrays, StructArrays
-using Plots
-import Plots: plot
+using RecipesBase
 using Logging, LinearAlgebra, Random, Statistics
 
 # Types

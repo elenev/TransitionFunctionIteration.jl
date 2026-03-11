@@ -1,39 +1,39 @@
 function _make_point(statevars, variablestates, fixedstates)
-    return (; (k => (k in keys(fixedstates) ? fixedstates[k] : variablestates[k]) for k in statevars)... )
+    return (; (k => (k in keys(fixedstates) ? fixedstates[k] : variablestates[k]) for k in statevars)...)
 end
 
-function _plotfct2D(fct, varname::Symbol, grid, fh_make_point, transform)
-    pts = _points(grid)
-    xvec = values(grid)[1]
-    fvec = [fct(fh_make_point(p))[varname] for p in pts]
-    fvec .= transform.(fvec)
-    plot(xvec, fvec, xlabel=string(keys(grid)[1]), title=string(varname), marker=:dot, legend=false)
-end
+@recipe function f(fct::Interpolant, varname::Symbol, fixedstates::NamedTuple)
+    # pop! retrieves transform and removes it before Plots sees an unrecognized attribute
+    # (note: `transform` is also a real Plots attribute, so this is mandatory)
+    transform = pop!(plotattributes, :transform, identity)
 
-function _plotfct3D(fct, varname::Symbol, grid, fh_make_point, transform)
-    x1vec = grid[1]
-    x2vec = grid[2]
-    pts =  _points(grid)
-    fvec = [fct(fh_make_point(p)...)[varname] for p in pts]
-    fvec .= transform.(fvec)
-    contourf(x1vec, x2vec, fvec; levels=20,  colorbar=true, 
-        xlabel=string(keys(grid)[1]), 
-        ylabel=string(keys(grid)[2]), 
-        title=string(varname))
-    end
-
-function Plots.plot(fct::Interpolant, varname::Symbol, fixedstates::NamedTuple; transform = x -> x)
     ssg = statespacegrid(fct)
     statevars = names(ssg)
-    grid = (; (k => unigrids(ssg)[k] for k in statevars if k ∉ keys(fixedstates))... )
+    grid = (; (k => unigrids(ssg)[k] for k in statevars if k ∉ keys(fixedstates))...)
     Ndims = length(grid)
-
     fh_make_point = p -> _make_point(statevars, p, fixedstates)
 
+    title  --> string(varname)
+    legend --> false
+
     if Ndims == 1
-        _plotfct2D(fct, varname, grid, fh_make_point, transform)
+        xvec = values(grid)[1]
+        fvec = transform.([fct(fh_make_point(p))[varname] for p in _points(grid)])
+        xlabel --> string(keys(grid)[1])
+        marker --> :dot
+        xvec, fvec
+
     elseif Ndims == 2
-        _plotfct3D(fct, varname, grid, fh_make_point, transform)
+        x1vec = values(grid)[1]
+        x2vec = values(grid)[2]
+        fmat  = transform.([fct(fh_make_point(p))[varname] for p in _points(grid)])
+        seriestype := :contourf
+        levels     --> 20
+        colorbar   --> true
+        xlabel     --> string(keys(grid)[1])
+        ylabel     --> string(keys(grid)[2])
+        x1vec, x2vec, fmat
+
     else
         error("Plotting only implemented in 1 and 2 dimensions.")
     end
