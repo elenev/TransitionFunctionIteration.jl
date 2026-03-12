@@ -1,11 +1,16 @@
 using Logging
 
-# --- 1. Define the custom log levels ---
-# We'll use LogLevel constants to make them easy to use.
-# LogLevel(-100) is a value between Debug and Info.
+# Custom log levels for solver progress
+"""Log level: solver converged or iteration limit reached."""
 const COMPLETE = LogLevel(200)
+
+"""Log level: per-iteration convergence summary."""
 const ITERATION = LogLevel(100)
+
+"""Log level: some grid points did not converge this iteration."""
 const ITERATIONFAILED = LogLevel(50)
+
+"""Log level: a single grid point failed to converge."""
 const FAILEDPOINT = LogLevel(-100)
 
 # Mappings
@@ -23,8 +28,12 @@ const DEFAULT_COLOR_MAP = Dict(
     COMPLETE => :green,
 )
 
-# --- 2. Define the custom logger struct ---
-# This logger will hold the minimum level it should print.
+"""
+    ExecutionLogger(min_level::LogLevel)
+
+Colored, prefixed logger for solver progress. Messages below `min_level` are suppressed.
+Use with `Logging.with_logger(ExecutionLogger(ITERATION)) do ... end`.
+"""
 struct ExecutionLogger <: AbstractLogger
     min_level::LogLevel
     prefix_map::Dict{LogLevel, String}
@@ -65,8 +74,8 @@ function Logging.handle_message(
     nothing
 end
 
-# --- 4. Define the custom macros ---
-# These macros provide a clean way to use our new log levels.
+# Custom macros for each log level
+"Log a message at the `COMPLETE` level."
 macro complete(ex)
     @nospecialize
     level = COMPLETE
@@ -76,6 +85,7 @@ macro complete(ex)
     end)
 end
 
+"Log a message at the `ITERATION` level."
 macro iteration(ex)
     @nospecialize
     level = ITERATION
@@ -85,6 +95,7 @@ macro iteration(ex)
     end)
 end
 
+"Log a message at the `ITERATIONFAILED` level."
 macro iterationfailed(ex)
     @nospecialize
     level = ITERATIONFAILED
@@ -94,6 +105,7 @@ macro iterationfailed(ex)
     end)
 end
 
+"Log a message at the `FAILEDPOINT` level."
 macro failedpoint(ex)
     @nospecialize
     level = FAILEDPOINT

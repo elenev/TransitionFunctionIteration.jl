@@ -1,23 +1,41 @@
 
+"""
+    make_point(exst, trans) -> NamedTuple
+
+Merge exogenous state index `exst` with transient state NamedTuple `trans`
+into a full state point `(; exst, trans...)`.
+"""
+@inline make_point(exst, trans) = merge( (; exst,), trans)
+
+"""
+    forecast_at_point(i, trans, Vfct) -> NamedTuple
+
+Evaluate the value function at exogenous state `i` and transient state `trans`,
+returning a merged NamedTuple of state and value outputs.
+"""
+function forecast_at_point(i, trans, Vfct)
+    vals = Vfct(make_point(i, trans))
+    return merge((exst = i,), trans, vals)
+end
+
+"""
+    forecast_next(trans, obj) -> StructArray
+
+Evaluate `obj.Vfct` at `trans` across all exogenous states in `obj.exogenv`.
+Returns a StructArray used to form expectations over next-period values.
+"""
+function forecast_next(trans, obj)
+    exog_iterator = eachindex(obj.exogenv.pts)
+    return StructArray( map(i -> forecast_at_point(i, trans, obj.Vfct), exog_iterator))
+    #return StructArray(forecast_at_point(i,trans,obj.Vfct) for i in exog_iterator)
+end
+
 function fisher_burmeister(a::Real, b::Real)
     return a + b - sqrt(a^2 + b^2)
 end
 
 value(x::AbstractFloat) = x 
 value(x::ForwardDiff.Dual) = x.value  # Extract value from Dual numbers
-
-@inline make_point(exst, trans) = merge( (; exst,), trans)
-
-function forecast_at_point(i, trans, Vfct)
-    vals = Vfct(make_point(i, trans))
-    return merge((exst = i,), trans, vals)
-end
-
-function forecast_next(trans, obj)
-    exog_iterator = eachindex(obj.exogenv.pts)
-    return StructArray( map(i -> forecast_at_point(i, trans, obj.Vfct), exog_iterator))
-    #return StructArray(forecast_at_point(i,trans,obj.Vfct) for i in exog_iterator)
-end
 
 function solve_at_point!(policy, vals, guess, state, obj)
 
@@ -140,6 +158,19 @@ function perform_iteration!(obj, damp, npasses)
     return success, distances
 end
 
+"""
+    main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, logging=ITERATIONFAILED)
+
+Iterate policy and value functions of `obj` to convergence.
+
+Solves equilibrium conditions at every grid point (threaded), damps the value function
+update, and repeats until `log₁₀(max_distance) < tol` or `maxiter` is reached.
+
+- `tol`: convergence threshold as log₁₀ distance (`-5` means 1e-5)
+- `damp`: value function damping in [0,1] (1 = full update, 0 = no update)
+- `npasses`: revisit passes for grid points where the solver failed on the first pass
+- `logging`: minimum `LogLevel` to display (`COMPLETE` suppresses iteration logs)
+"""
 function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, logging=ITERATIONFAILED)
 
     iter = 1

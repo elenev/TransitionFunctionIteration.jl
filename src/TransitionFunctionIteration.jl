@@ -7,7 +7,7 @@ using Logging, LinearAlgebra, Random, Statistics
 # Types
 export AbstractEconomics, AbstractModel, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant
 export StateSpaceGrid, Interpolant, Exogenv, GenericModel
-export EvaluationMode, SolveMode, IterateMode, SimulationMode, SimulateMode
+export EvaluationMode, SolveMode, IterateMode, SimulateMode
 export points, dims, npt, nof, varnames, unigrids, singletons, ssidx, exnpt, nex
 export coefficients, knots, statespacegrid, name_values
 # Interface stub: model packages extend this

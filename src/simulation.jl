@@ -1,8 +1,23 @@
+"""
+    sample_shocks(sz::Pair, seed, burn) -> Matrix{Float64}
+
+Draw a `first(sz) × (last(sz) + burn)` matrix of uniform [0,1) random numbers
+using `MersenneTwister(seed)`. `sz` should be `N_runs => N_periods`.
+"""
 function sample_shocks(sz, seed, burn)
     rng = MersenneTwister(seed)
     return rand(rng, first(sz), last(sz)+burn)
 end
 
+"""
+    simulate_markov_chain(exogenv, start, shocks) -> Matrix{Int}
+
+Simulate exogenous state paths from `start` for `size(shocks, 2)` periods.
+
+- `start`: integer (broadcast to all runs) or `Vector{Int}` (per-run)
+- `shocks`: `N_runs × N_periods` matrix of uniform [0,1) draws
+- Returns: `N_runs × (N_periods+1)` matrix of 1-indexed state integers
+"""
 function simulate_markov_chain(exogenv, start::Int, shocks)
     startvec = fill(start, size(shocks,1))
     return simulate_markov_chain(exogenv, startvec, shocks)
@@ -21,6 +36,19 @@ function simulate_markov_chain(exogenv::AbstractExogenv, start::AbstractVector{T
 end
 
 
+"""
+    simulate(obj, stv=nothing; sz=12=>100, seed=100, burn=0,
+             exog_start=ssidx(obj.exogenv), endog_start=stv.state,
+             shocks=sample_shocks(sz, seed, burn))
+
+Simulate the solved model along stochastic paths.
+
+Returns `(simseries, fxerrs)`:
+- `simseries`: `N_runs × N_periods` StructArray of state and output variables
+- `fxerrs`: matching matrix of equilibrium residual vectors
+
+`sz = N_runs => N_periods`. Burn-in periods are simulated but excluded from output.
+"""
 function simulate(obj::GenericModel, stv=nothing;
                                 sz::Pair=12=>100,
                                 seed=100,
@@ -65,6 +93,14 @@ function abs!(X::AbstractArray)
     X .= abs.(X)
 end
 
+"""
+    calc_error_stats(fxerrs; percentiles=[50,75,90,95,99,100]) -> StructArray
+
+Summarize absolute equation errors from a simulation.
+
+Returns a StructArray with one entry per equation, each containing `:mean`
+and `:pXX` fields for the requested percentiles.
+"""
 function calc_error_stats(fxerrs; percentiles=[50, 75, 90, 95, 99, 100])
 
     Nof = length(first(fxerrs))
@@ -83,6 +119,12 @@ function calc_error_stats(fxerrs; percentiles=[50, 75, 90, 95, 99, 100])
 
 end
 
+"""
+    check_bounds(simseries, obj)
+
+Log whether simulated endogenous variables remain within their grid bounds.
+Prints `@info` if within bounds or `@warn` if any variable exceeds the grid.
+"""
 function check_bounds(simseries, obj)
     endog_vars = varnames(obj.ssg)[2:end]
     for var in endog_vars

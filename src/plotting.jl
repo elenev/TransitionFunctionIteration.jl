@@ -2,6 +2,17 @@ function _make_point(statevars, variablestates, fixedstates)
     return (; (k => (k in keys(fixedstates) ? fixedstates[k] : variablestates[k]) for k in statevars)...)
 end
 
+"""
+    plot(fct::Interpolant, varname::Symbol, fixedstates::NamedTuple; transform=identity)
+
+Plot one output variable of `fct` against the free (non-fixed) state dimensions.
+
+`fixedstates` pins values for all but 1 or 2 free dimensions; the remainder are swept
+across the full grid. `transform` is applied element-wise to values before plotting.
+
+Produces a line plot (1 free dimension) or a filled contour plot (2 free dimensions).
+Requires a Plots-compatible backend loaded by the caller.
+"""
 @recipe function f(fct::Interpolant, varname::Symbol, fixedstates::NamedTuple)
     # pop! retrieves transform and removes it before Plots sees an unrecognized attribute
     # (note: `transform` is also a real Plots attribute, so this is mandatory)
