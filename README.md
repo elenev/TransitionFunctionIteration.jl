@@ -8,4 +8,4 @@ Provides:
 - **Simulation**: `simulate`, `simulate_markov_chain` — Markov chain simulation with equation-error diagnostics
 - **Logging / plotting**: `ExecutionLogger`, `Plots.plot` extension for `Interpolant`
 
-Model-specific economics are supplied by the user: define a type `M <: AbstractEconomics` and extend `TransitionFunctionIteration.calc_eqm` dispatching on `GenericModel{M}`.
+Model-specific economics are supplied by the user: define a type `M <: AbstractModel` and extend `TransitionFunctionIteration.calc_eqm` dispatching on `ModelSolution{M}`.

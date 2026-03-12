@@ -5,8 +5,8 @@ using RecipesBase
 using Logging, LinearAlgebra, Random, Statistics
 
 # Types
-export AbstractEconomics, AbstractModel, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant
-export StateSpaceGrid, Interpolant, Exogenv, GenericModel
+export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant
+export StateSpaceGrid, Interpolant, Exogenv, ModelSolution
 export EvaluationMode, SolveMode, IterateMode, SimulateMode
 export points, dims, npt, nof, varnames, unigrids, singletons, ssidx, exnpt, nex
 export coefficients, knots, statespacegrid, name_values

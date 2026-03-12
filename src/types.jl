@@ -191,40 +191,40 @@ end
 "Return the steady-state index of the exogenous environment."
 @inline ssidx(exogenv::AbstractExogenv) = exogenv.ssidx
 
-"Abstract base for model-specific economics. Implement `calc_eqm` for each subtype."
-abstract type AbstractEconomics end
+"Abstract base for user-supplied economic model logic. Implement `calc_eqm` for each subtype."
+abstract type AbstractModel end
 
 """
     calc_eqm(state, policy, obj; mode=SolveMode())
 
 Compute equilibrium conditions at `state` given `policy`. Interface stub —
-model packages must add methods dispatching on `GenericModel{<:MyEconomics}`.
+model packages must add methods dispatching on `ModelSolution{<:MyModel}`.
 
 Expected return: a NamedTuple with fields `vals` (value outputs), `fx` (residuals),
 `trans` (next-period transient state), and `addvars` (extra simulation variables).
 """
-function calc_eqm end  # interface stub; model packages add methods dispatching on GenericModel{M}
+function calc_eqm end  # interface stub; model packages add methods dispatching on ModelSolution{M}
 
-"Abstract base for complete model objects."
-abstract type AbstractModel end
+"Abstract base for assembled solution objects."
+abstract type AbstractModelSolution end
 
 """
-    GenericModel(; econ, exogenv, ssg, Pfct, Vfct)
+    ModelSolution(; model, exogenv, ssg, Pfct, Vfct)
 
-Assembled model container.
+Assembled solution container for an economic model.
 
-- `econ`: model-specific `AbstractEconomics` instance
+- `model`: user-supplied `AbstractModel` instance (economics logic)
 - `exogenv`: `Exogenv` for the Markov exogenous process
 - `ssg`: combined `StateSpaceGrid` (exogenous + endogenous axes)
 - `Pfct`: policy function `Interpolant`
 - `Vfct`: value function `Interpolant`
 """
-@kwdef struct GenericModel{M<:AbstractEconomics,
+@kwdef struct ModelSolution{M<:AbstractModel,
             E<:AbstractExogenv,
             S<:AbstractStateSpaceGrid,
             PF<:AbstractInterpolant,
-            VF<:AbstractInterpolant} <: AbstractModel
-    econ::M
+            VF<:AbstractInterpolant} <: AbstractModelSolution
+    model::M
     exogenv::E
     ssg::S
     Pfct::PF

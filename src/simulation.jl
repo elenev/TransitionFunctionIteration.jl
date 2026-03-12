@@ -49,7 +49,7 @@ Returns `(simseries, fxerrs)`:
 
 `sz = N_runs => N_periods`. Burn-in periods are simulated but excluded from output.
 """
-function simulate(obj::GenericModel, stv=nothing;
+function simulate(obj::ModelSolution, stv=nothing;
                                 sz::Pair=12=>100,
                                 seed=100,
                                 burn=0,
