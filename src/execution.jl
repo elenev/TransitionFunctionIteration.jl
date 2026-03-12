@@ -155,10 +155,10 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, logging=IT
             distances .= abs.(distances)
             idxmax = Tuple(argmax(distances))
             max_distance = distances[idxmax...]
-            worst_var = names(obj.Vfct)[idxmax[1]]
+            worst_var = varnames(obj.Vfct)[idxmax[1]]
             worst_point = map((statevar, idx) -> statevar[idx], 
                 unigrids(obj.ssg), 
-                NamedTuple{names(obj.ssg)}(idxmax[2:end]) )
+                NamedTuple{varnames(obj.ssg)}(idxmax[2:end]) )
 
             dist = log10(max_distance)
 

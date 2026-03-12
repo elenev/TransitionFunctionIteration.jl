@@ -8,7 +8,7 @@ using Logging, LinearAlgebra, Random, Statistics
 export AbstractEconomics, AbstractModel, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant
 export StateSpaceGrid, Interpolant, Exogenv, GenericModel
 export EvaluationMode, SolveMode, IterateMode, SimulationMode, SimulateMode
-export points, dims, npt, nof, names, unigrids, singletons, ssidx, exnpt, nex
+export points, dims, npt, nof, varnames, unigrids, singletons, ssidx, exnpt, nex
 export coefficients, knots, statespacegrid, name_values
 # Interface stub: model packages extend this
 export calc_eqm

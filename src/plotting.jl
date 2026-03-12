@@ -8,7 +8,7 @@ end
     transform = pop!(plotattributes, :transform, identity)
 
     ssg = statespacegrid(fct)
-    statevars = names(ssg)
+    statevars = varnames(ssg)
     grid = (; (k => unigrids(ssg)[k] for k in statevars if k ∉ keys(fixedstates))...)
     Ndims = length(grid)
     fh_make_point = p -> _make_point(statevars, p, fixedstates)

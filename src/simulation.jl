@@ -84,7 +84,7 @@ function calc_error_stats(fxerrs; percentiles=[50, 75, 90, 95, 99, 100])
 end
 
 function check_bounds(simseries, obj)
-    endog_vars = names(obj.ssg)[2:end]
+    endog_vars = varnames(obj.ssg)[2:end]
     for var in endog_vars
         grid = unigrids(obj.ssg)[var]
         mingrid, maxgrid = extrema(grid)

@@ -1,7 +1,6 @@
 using Test
 using TransitionFunctionIteration
 using StructArrays, StaticArrays, RecipesBase
-import TransitionFunctionIteration: names  # Base also exports names; this shadows it
 
 # ─── shared fixtures ──────────────────────────────────────────────────────────
 
@@ -29,13 +28,13 @@ fct_ex  = Interpolant(ssg_ex, fvals_ex)
 
 @testset "StateSpaceGrid" begin
     # Accessors on 1D grid
-    @test names(ssg1) == (:x,)
+    @test varnames(ssg1) == (:x,)
     @test dims(ssg1) == (x=5,)    # dims() returns map(length, unigrids(ssg)), i.e. a NamedTuple
     @test npt(ssg1) == 5
     @test unigrids(ssg1).x == xgrid
 
     # Accessors on 2D grid
-    @test names(ssg2) == (:x, :y)
+    @test varnames(ssg2) == (:x, :y)
     @test dims(ssg2) == (x=3, y=3)
     @test npt(ssg2) == 9
 
@@ -54,7 +53,7 @@ fct_ex  = Interpolant(ssg_ex, fvals_ex)
 end
 
 @testset "Interpolant — constructors and accessors" begin
-    @test names(fct1) == (:y, :z)
+    @test varnames(fct1) == (:y, :z)
     @test nof(fct1) == 2
     @test npt(fct1) == 5
     @test statespacegrid(fct1) === ssg1
@@ -68,7 +67,7 @@ end
 
     # NamedTuple constructor: fills all grid points with the given constant values
     fct_const = Interpolant(ssg1, (y=0.0, z=0.0))
-    @test names(fct_const) == (:y, :z)
+    @test varnames(fct_const) == (:y, :z)
     @test nof(fct_const) == 2
     @test fct_const((; x=3.0)).y == 0.0
 end

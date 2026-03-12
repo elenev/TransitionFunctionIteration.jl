@@ -19,7 +19,7 @@ StateSpaceGrid(; kwargs...) = StateSpaceGrid(NamedTuple{keys(kwargs)}(values(kwa
 @inline npt(ssg::AbstractStateSpaceGrid) = prod(dims(ssg))
 @inline ndims(ssg::AbstractStateSpaceGrid) = length(keys(unigrids(ssg)))
 @inline dims(ssg::AbstractStateSpaceGrid) = map(length, unigrids(ssg))
-@inline names(ssg::AbstractStateSpaceGrid) = keys(unigrids(ssg))
+@inline varnames(ssg::AbstractStateSpaceGrid) = keys(unigrids(ssg))
 
 _points(grids::NamedTuple{NAMES,T}) where {NAMES,T} = (NamedTuple{NAMES}(x) for x in Iterators.product(grids...))
 points(ssg::AbstractStateSpaceGrid) = _points(unigrids(ssg))
@@ -32,7 +32,7 @@ struct Interpolant{SSG, ITP<:Interpolations.AbstractInterpolation, NAMES} <: Abs
         return new{SSG,ITP,NAMES}(ssg, itp)
     end
 end
-@inline names(::Interpolant{SSG,ITP,NAMES}) where {SSG, ITP, NAMES} = NAMES
+@inline varnames(::Interpolant{SSG,ITP,NAMES}) where {SSG, ITP, NAMES} = NAMES
 
 function Interpolant(ssg::AbstractStateSpaceGrid, returnvals::NamedTuple)
     Y = StructArray(map(x -> deepcopy(returnvals), points(ssg)))
@@ -96,8 +96,8 @@ end
 @inline knots(fct::AbstractInterpolant) = knots(fct.itp)
 
 @inline npt(fct::AbstractInterpolant) = npt(statespacegrid(fct))
-@inline nof(fct::AbstractInterpolant) = length(names(fct))
-@inline name_values(x, fct::AbstractInterpolant) = NamedTuple{names(fct)}(x)
+@inline nof(fct::AbstractInterpolant) = length(varnames(fct))
+@inline name_values(x, fct::AbstractInterpolant) = NamedTuple{varnames(fct)}(x)
 
 abstract type AbstractExogenv end
 
