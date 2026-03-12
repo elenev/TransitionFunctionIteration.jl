@@ -31,13 +31,13 @@ Requires a Plots-compatible backend loaded by the caller.
         xvec = values(grid)[1]
         fvec = transform.([fct(fh_make_point(p))[varname] for p in _points(grid)])
         xlabel --> string(keys(grid)[1])
-        marker --> :dot
+        markershape --> :circle
         xvec, fvec
 
     elseif Ndims == 2
         x1vec = values(grid)[1]
         x2vec = values(grid)[2]
-        fmat  = transform.([fct(fh_make_point(p))[varname] for p in _points(grid)])
+        fmat  = permutedims(transform.([fct(fh_make_point(p))[varname] for p in _points(grid)]))
         seriestype := :contourf
         levels     --> 20
         colorbar   --> true
