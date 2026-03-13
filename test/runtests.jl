@@ -1,6 +1,6 @@
 using Test
 using TransitionFunctionIteration
-using StructArrays, StaticArrays, RecipesBase
+using StructArrays, StaticArrays, RecipesBase, Statistics
 
 # ─── shared fixtures ──────────────────────────────────────────────────────────
 
@@ -210,6 +210,111 @@ end
     fvals3 = StructArray([(f=1.0,) for _ in 1:2, _ in 1:2, _ in 1:2])
     fct3   = Interpolant(ssg3, fvals3)
     @test_throws ErrorException RecipesBase.apply_recipe(Dict{Symbol,Any}(), fct3, :f, (;))
+end
+
+@testset "Exogenv — ExogenvAR1 constructor" begin
+    # --- basic construction (iid, n=3) ---
+    e3 = ExogenvAR1(n=3)
+    @test exnpt(e3) == 3
+    @test nex(e3) == 1
+    @test ssidx(e3) == 2                        # middle point for n=3
+    @test propertynames(points(e3)) == (:z,)    # default shock name
+    @test size(e3.mtrans) == (3, 3)
+    @test all(≈(1.0), sum(e3.mtrans, dims=2))  # rows sum to 1
+
+    # --- custom shock_name ---
+    ea = ExogenvAR1(n=3, shock_name=:a)
+    @test propertynames(points(ea)) == (:a,)
+
+    # --- ssidx for odd vs larger odd n ---
+    e5 = ExogenvAR1(n=5)
+    @test ssidx(e5) == 3
+
+    # --- shock_volatility flag ---
+    # With shock_volatility=false (default), σ is the *state* volatility → adjusted internally.
+    # For ρ=0 the adjustment is trivial (σ_shock = σ), so test with ρ≠0.
+    # The state std under shock_volatility=false should match the requested σ=1.
+    e_sv_false = ExogenvAR1(ρ=0.9, σ=1.0, n=5, shock_volatility=false)
+    e_sv_true  = ExogenvAR1(ρ=0.9, σ=1.0, n=5, shock_volatility=true)
+    # shock_volatility=true uses σ as-is, so it produces wider states
+    pts_false = collect(points(e_sv_false).z)
+    pts_true  = collect(points(e_sv_true).z)
+    @test maximum(abs, pts_true) > maximum(abs, pts_false)
+
+    # --- jensen correction ---
+    # Without jensen, Exogenv state values are in log space and expectation is exp(μ + σ²/2).
+    # With jensen=true, the mean correction shifts μ so that the ergodic mean ≈ exp(μ).
+    e_log  = ExogenvAR1(n=5, σ=0.2, μ=0.0, jensen=true)
+    @test propertynames(points(e_log)) == (:z,)
+    @test all(>(0), points(e_log).z)                       # exp transform → all positive
+    @test mean(e_log).z ≈ exp(0.0)  atol=0.05             # ergodic mean ≈ exp(μ)=1
+end
+
+@testset "Exogenv — product-space blending constructor" begin
+    e1 = ExogenvAR1(n=3, shock_name=:z1)
+    e2 = ExogenvAR1(n=5, shock_name=:z2)
+    eb = Exogenv(e1, e2)
+
+    # State count and transition matrix size
+    @test exnpt(eb) == 3 * 5
+    @test size(eb.mtrans) == (15, 15)
+    @test all(≈(1.0), sum(eb.mtrans, dims=2))
+
+    # Both field names present
+    @test :z1 in propertynames(points(eb))
+    @test :z2 in propertynames(points(eb))
+
+    # Steady-state index: linear position of (ssidx(e1), ssidx(e2)) = (2,3) in
+    # vec(Iterators.product(1:3, 1:5)) where first index varies fastest
+    combos = vec(collect(Iterators.product(1:3, 1:5)))
+    expected_ssidx = findfirst(==((ssidx(e1), ssidx(e2))), combos)
+    @test ssidx(eb) == expected_ssidx
+
+    # Transition matrix is kron(P2, P1) — rows sum to 1 already checked above
+    P1 = e1.mtrans
+    P2 = e2.mtrans
+    @test eb.mtrans ≈ kron(P2, P1)
+
+    # Duplicate field names → error
+    @test_throws ErrorException Exogenv(e1, e1)
+end
+
+@testset "Exogenv — ergodic statistics" begin
+    # Use a 3-state iid chain (ρ=0, μ=0) as a simple fixture.
+    # Its ergodic distribution is uniform (all rows of P are equal by symmetry of Rouwenhorst).
+    e = ExogenvAR1(ρ=0.0, σ=0.5, μ=0.0, n=3)
+
+    pvec = TransitionFunctionIteration.ergodic_distro(e)
+    @test length(pvec) == 3
+    @test sum(pvec) ≈ 1.0
+    @test all(>=(0.0), pvec)
+
+    # Symmetric chain → ergodic mean ≈ 0
+    @test mean(e).z  ≈ 0.0  atol=1e-10
+
+    # Variance is non-negative
+    @test var(e).z >= 0.0
+
+    # std = sqrt(var)
+    @test std(e).z ≈ sqrt(var(e).z)
+
+    # mode: returns a valid index and the corresponding state NamedTuple
+    idx_mode, pt_mode = TransitionFunctionIteration.mode(e)
+    @test 1 <= idx_mode <= exnpt(e)
+    @test pt_mode == points(e)[idx_mode]
+
+    # median: odd n → returns middle-index state
+    idx_med, pt_med = median(e)
+    @test idx_med == 2
+    @test pt_med == points(e)[2]
+
+    # median: even n → warns and returns (nothing, nothing)
+    e2 = ExogenvAR1(n=4)
+    @test_warn r"Even number" begin
+        idx2, pt2 = median(e2)
+        @test isnothing(idx2)
+        @test isnothing(pt2)
+    end
 end
 
 end  # @testset "TransitionFunctionIteration"
