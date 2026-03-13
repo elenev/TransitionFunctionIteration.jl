@@ -10,20 +10,25 @@ function sample_shocks(sz, seed, burn)
 end
 
 """
-    simulate_markov_chain(exogenv, start, shocks) -> Matrix{Int}
+    simulate_markov_chain(exogenv, start, shocks) -> Matrix{Integer}
 
 Simulate exogenous state paths from `start` for `size(shocks, 2)` periods.
 
-- `start`: integer (broadcast to all runs) or `Vector{Int}` (per-run)
+- `start`: integer (broadcast to all runs) or `Vector{Integer}` (per-run)
 - `shocks`: `N_runs × N_periods` matrix of uniform [0,1) draws
 - Returns: `N_runs × (N_periods+1)` matrix of 1-indexed state integers
 """
-function simulate_markov_chain(exogenv, start::Int, shocks)
+function simulate_markov_chain(exogenv::AbstractExogenv, start::Integer, shocks::AbstractMatrix)
     startvec = fill(start, size(shocks,1))
     return simulate_markov_chain(exogenv, startvec, shocks)
 end
 
-function simulate_markov_chain(exogenv::AbstractExogenv, start::AbstractVector{T} where T<:Int, shocks::AbstractMatrix)
+function simulate_markov_chain(exogenv::AbstractExogenv, sz, start = ssidx(exogenv), seed=100, burn=0)
+    shocks = sample_shocks(sz, seed, burn)
+    return simulate_markov_chain(exogenv, start, shocks)
+end
+
+function simulate_markov_chain(exogenv::AbstractExogenv, start::AbstractVector{T} where T<:Integer, shocks::AbstractMatrix)
     N_runs, N_periods = size(shocks)
     states = zeros(Int64, N_runs, N_periods+1)
     cumprobs = zeros(N_runs, exnpt(exogenv))
@@ -32,7 +37,7 @@ function simulate_markov_chain(exogenv::AbstractExogenv, start::AbstractVector{T
         cumprobs .= cumsum(exogenv.mtrans[states[:,t],:], dims=2)
         states[:,t+1] .= dropdims(sum(shocks[:,t] .> cumprobs, dims=2), dims=2) .+ 1
     end
-    return states
+    return states, points(exogenv, states)
 end
 
 
@@ -58,7 +63,7 @@ function simulate(obj::ModelSolution, stv=nothing;
                                 shocks=sample_shocks(sz, seed, burn)
                     )
 
-    exog_states = simulate_markov_chain(obj.exogenv, exog_start, shocks)
+    exog_states, _ = simulate_markov_chain(obj.exogenv, exog_start, shocks)
     start = make_point(exog_start, endog_start)
 
     function calc_result!(fx, state)
