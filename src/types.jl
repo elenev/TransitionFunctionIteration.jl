@@ -191,6 +191,11 @@ end
 "Return the steady-state index of the exogenous environment."
 @inline ssidx(exogenv::AbstractExogenv) = exogenv.ssidx
 
+"Return a StructArray of exogenous points given an AbstractArray of exogenous state integers."
+function points(exogenv::AbstractExogenv, states::AbstractArray{<:Integer})
+    return StructArray(exogenv.pts[states])
+end
+
 "Abstract base for user-supplied economic model logic. Implement `calc_eqm` for each subtype."
 abstract type AbstractModel end
 

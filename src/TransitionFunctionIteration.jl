@@ -18,6 +18,9 @@ export ExecutionLogger
 export COMPLETE, ITERATION, ITERATIONFAILED, FAILEDPOINT
 export @complete, @iteration, @iterationfailed, @failedpoint
 
+# Exogenous environment tools
+export ExogenvAR1, ergodic_distro
+
 # Solver
 export main_execute!, forecast_next, forecast_at_point, make_point
 
@@ -25,9 +28,11 @@ export main_execute!, forecast_next, forecast_at_point, make_point
 export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds
 
 include("types.jl")
+include("exog.jl")
 include("logging.jl")
 include("plotting.jl")
 include("execution.jl")
 include("simulation.jl")
+
 
 end
