@@ -54,7 +54,7 @@ function calc_eqm_from_state(state, obj)
     trans = obj.Tfct(state)
     next = forecast_next(trans, obj)
 
-    np = compute_expectations(next, prnext, obj, SimulateMode())
+    np = compute_expectations(next, prnext, obj.model, SimulateMode())
     
     # Compute equilibrium residuals, next period's transitions and simulated variables
     return calc_eqm(fullstate, obj.Pfct(state), obj.model, np, SimulateMode()), trans
@@ -223,7 +223,7 @@ const default_stats = merge( (; mean, std, minimum),
     (; max = maximum) )
 
 
-    
+
 function describe(simvector::StructArray{T,1} where T, stat_functions)
     varnames = propertynames(simvector)
     F = promote_type(fieldtypes(eltype(simvector))...)

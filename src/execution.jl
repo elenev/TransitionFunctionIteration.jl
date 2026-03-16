@@ -47,13 +47,13 @@ function stack_nextperiod_addvars(v::AbstractArray{T}) where {T<:NamedTuple}
 end
 
 
-function compute_expectations(next::StructArray, prnext, obj::ModelSolution, mode::EvaluationMode)
+function compute_expectations(next::StructArray, prnext, mdl::AbstractModel, mode::EvaluationMode)
     # Ensure probabilities are a statically sized SVector
     N = length(prnext)
     prnext = SVector{N}(prnext)
 
     # Returns an SVector of Tuples: Tuple(expectations_nt, continuations_nt)
-    results = SVector(ntuple(i -> compute_next_period_values(next[i], obj.model), N))
+    results = SVector(ntuple(i -> compute_next_period_values(next[i], mdl), N))
     
     # Accumulate Expectations via Functional Fold
     # Initialize with the first element
@@ -98,7 +98,7 @@ end
 function _compute_expectations_from_trans(trans::AbstractMatrix, prnext, obj::ModelSolution)
     named_trans = name_values(trans, obj.Tfct)
     next = forecast_next(named_trans, obj)
-    return compute_expectations(next, prnext, obj, SolveMode()), named_trans
+    return compute_expectations(next, prnext, obj.model, SolveMode()), named_trans
 end
 
 struct FunctionValuesAtPoint{S, P,V,T}
