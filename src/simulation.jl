@@ -40,6 +40,58 @@ function simulate_markov_chain(exogenv::AbstractExogenv, start::AbstractVector{T
     return states, points(exogenv, states)
 end
 
+# Returns an MVector type corresponding to the row of an MMatrix
+_row_mvec_type(::Type{<:StaticMatrix{R, C, T}}) where {R, C, T} = MVector{C, T}
+
+# Compute simulated results for one period
+function calc_result!(fx, transerr, state, obj)
+    # Get exogenous state info
+    exog = points(obj.exogenv)[state.exst]
+    prnext = conditional_distro(obj.exogenv, state.exst)
+    fullstate = merge(state, exog)
+
+    # Compute next period's transitions and expectations
+    trans = obj.Tfct(state)
+    next = forecast_next(trans, obj)
+    np = compute_expectations(next, prnext, obj, SimulateMode())
+    
+    # Compute equilibrium residuals, next period's transitions and simulated variables
+    out = calc_eqm(fullstate, obj.Pfct(state), obj.model, np, SimulateMode())
+
+    # Expand transitions
+    out_trans = expand_transitions(out.trans, obj.exogenv)
+    
+    # Fill equilibrium residuals
+    fx .= out.fx
+
+    # Compute transition errors
+    out_transerr = map(-, components(out_trans), trans)
+    fill_transerr!(this_transerr, this_out_transerr) = (this_transerr .= this_out_transerr)
+    foreach(fill_transerr!, transerr, out_transerr)
+
+    # Return transitions and simulated variables for this period
+    return out_trans, merge(state, exog, out.addvars)
+end
+
+# Select transition errors
+function select_errors(transerrs, exog_states)
+    N, M = size(transerrs)
+
+    # Preallocate
+    ScalarTuple = typeof(map(first, first(transerrs)))
+    out = StructArray{ScalarTuple}(undef, N, M)
+
+    for CI in CartesianIndices(transerrs)
+        n, m = Tuple(CI) # Unpack the spatial coordinates
+        
+        idx = m < M ? exog_states[n, m+1] : 3
+        
+        # CI natively indexes into both arrays seamlessly
+        out[CI] = map(v -> v[idx], transerrs[CI]) 
+    end
+
+    return out
+end
 
 """
     simulate(obj, stv=nothing; sz=12=>100, seed=100, burn=0,
@@ -59,38 +111,46 @@ function simulate(obj::ModelSolution, stv=nothing;
                                 seed=100,
                                 burn=0,
                                 exog_start=ssidx(obj.exogenv),
-                                endog_start=stv.state,
+                                endog_start=stv.endog,
                                 shocks=sample_shocks(sz, seed, burn)
                     )
 
     exog_states, _ = simulate_markov_chain(obj.exogenv, exog_start, shocks)
     start = make_point(exog_start, endog_start)
 
-    function calc_result!(fx, state)
-        out = calc_eqm(state, obj.Pfct(state), obj; mode=SimulateMode())
-        exog = points(obj.exogenv)[state.exst]
-        fx .= out.fx
-        return out.trans, merge(state, exog, out.addvars)
-    end
-
+    # Simulation size
     N_runs, N_periods = size(exog_states)
-    errtype = eltype(coefficients(obj.Pfct))
-    fxerrs = [errtype(undef) for _ in 1:N_runs, _ in 1:N_periods]
-    tmp = calc_result!(fxerrs[1,1], start)  # to compile
+
+    # Preallocate equation errors
+    fxerrtype = eltype(coefficients(obj.Pfct))
+    fxerrs = [fxerrtype(undef) for _ in 1:N_runs, _ in 1:N_periods]
+
+    # Preallocate transiton errors
+    transerrtype = (_row_mvec_type ∘ eltype ∘ coefficients)(obj.Tfct)
+    empty_transerr() = NamedTuple{varnames(obj.Tfct)}(ntuple(_ -> transerrtype(undef), nof(obj.Tfct)))
+    transerrs = [empty_transerr() for _ in 1:N_runs, _ in 1:N_periods]
+
+    # Identify the size of simulation output to preallocate
+    tmp = calc_result!(fxerrs[1,1], transerrs[1,1], start, obj)  # to compile
     simseries = Matrix{typeof(tmp[2])}(undef, N_runs, N_periods)
+
+    # Expand endog_start
+    endog_start = expand_transitions(endog_start, obj.exogenv)
 
     original_threads = BLAS.get_num_threads()
     BLAS.set_num_threads(1)  # To avoid thread oversubscription
-    Threads.@threads :dynamic for r in axes(exog_states,1)
-        trans = endog_start
+    #Threads.@threads :dynamic 
+    for r in axes(exog_states,1)
+        trans = endog_start # Start at initial endogenous state
         for t in axes(exog_states,2)
-            state = make_point(exog_states[r,t], trans)
-            trans, simseries[r,t] = calc_result!(fxerrs[r,t], state)
+            exog_idx = exog_states[r,t]
+            state = make_point(exog_idx, trans[exog_idx])
+            trans, simseries[r,t] = calc_result!(fxerrs[r,t],transerrs[r,t], state, obj)
         end
     end
     BLAS.set_num_threads(original_threads)  # Restore
 
-    return StructArray(simseries[:, burn+1:end]), fxerrs[:, burn+1:end]
+    return StructArray(simseries[:, burn+1:end-1]), fxerrs[:, burn+1:end-1], select_errors(transerrs, exog_states)
 
 end
 

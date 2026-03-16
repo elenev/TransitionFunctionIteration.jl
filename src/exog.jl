@@ -30,7 +30,13 @@ function ExogenvAR1(;
     # Markov chain constructor from QuantEcon
     mc = rouwenhorst(n, ρ, σ, μ)
 
-    state_values = SVector{length(mc.state_values)}(mc.state_values)
+    state_values = mc.state_values
+    mtrans = mc.p
+    if n <= 10
+        state_values = SVector{n}(state_values)
+        mtrans = SMatrix{n, n}(mtrans)
+    end
+
     pts = StructArray((; shock_name => transform.(state_values)))
 
     # Steady state index is middle point
@@ -38,7 +44,7 @@ function ExogenvAR1(;
 
     #@info "Created Exogenv with ρ=$(ρ), σ=$(σ), μ=$(μ), n=$(n), jensen=$(jensen)"
     #return mc, pts, ssidx
-    return Exogenv(pts = pts, mtrans = mc.p, ssidx = ssidx)
+    return Exogenv(; pts, mtrans, ssidx)
 
 end
 

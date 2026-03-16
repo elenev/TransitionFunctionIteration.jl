@@ -13,7 +13,7 @@ across the full grid. `transform` is applied element-wise to values before plott
 Produces a line plot (1 free dimension) or a filled contour plot (2 free dimensions).
 Requires a Plots-compatible backend loaded by the caller.
 """
-@recipe function f(fct::Interpolant, varname::Symbol, fixedstates::NamedTuple)
+@recipe function f(fct::Interpolant, varname::Union{Symbol, Tuple{Symbol, <:Integer}}, fixedstates::NamedTuple)
     # pop! retrieves transform and removes it before Plots sees an unrecognized attribute
     # (note: `transform` is also a real Plots attribute, so this is mandatory)
     transform = pop!(plotattributes, :transform, identity)
@@ -24,12 +24,19 @@ Requires a Plots-compatible backend loaded by the caller.
     Ndims = length(grid)
     fh_make_point = p -> _make_point(statevars, p, fixedstates)
 
+    if varname isa Tuple
+        # Each output argument is vector valued
+        varname, vec_idx = varname
+    else
+        vec_idx = 1
+    end
+
     title  --> string(varname)
     legend --> false
 
     if Ndims == 1
         xvec = values(grid)[1]
-        fvec = transform.([fct(fh_make_point(p))[varname] for p in _points(grid)])
+        fvec = transform.([fct(fh_make_point(p))[varname][vec_idx] for p in _points(grid)])
         xlabel --> string(keys(grid)[1])
         markershape --> :circle
         xvec, fvec
@@ -37,7 +44,7 @@ Requires a Plots-compatible backend loaded by the caller.
     elseif Ndims == 2
         x1vec = values(grid)[1]
         x2vec = values(grid)[2]
-        fmat  = permutedims(transform.([fct(fh_make_point(p))[varname] for p in _points(grid)]))
+        fmat  = permutedims(transform.([fct(fh_make_point(p))[varname][vec_idx] for p in _points(grid)]))
         seriestype := :contourf
         levels     --> 20
         colorbar   --> true

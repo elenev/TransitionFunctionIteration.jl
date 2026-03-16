@@ -1,17 +1,20 @@
 module TransitionFunctionIteration
 
+using LoopVectorization
+
 using Interpolations, NonlinearSolve, ForwardDiff, StaticArrays, StructArrays
 using RecipesBase
 using Logging, LinearAlgebra, Random, Statistics
 
 # Types
-export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant
-export StateSpaceGrid, Interpolant, Exogenv, ModelSolution
+export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant, AbstractSteadyState
+export StateSpaceGrid, Interpolant, Exogenv, ModelSolution, SteadyState, NextPeriod
 export EvaluationMode, SolveMode, IterateMode, SimulateMode
-export points, dims, npt, nof, varnames, unigrids, singletons, ssidx, exnpt, nex
+export points, dims, npt, nof, elsize, varnames, unigrids, singletons
 export coefficients, knots, statespacegrid, name_values
+
 # Interface stub: model packages extend this
-export calc_eqm
+export calc_eqm, compute_next_period_values, steadystate, define_endog_grids
 
 # Logging
 export ExecutionLogger
@@ -19,20 +22,23 @@ export COMPLETE, ITERATION, ITERATIONFAILED, FAILEDPOINT
 export @complete, @iteration, @iterationfailed, @failedpoint
 
 # Exogenous environment tools
-export ExogenvAR1, ergodic_distro
+export ExogenvAR1, ergodic_distro, ssidx, exnpt, nex, transition_matrix, conditional_distro
 
 # Solver
-export main_execute!, forecast_next, forecast_at_point, make_point
+export main_setup, main_execute!, forecast_next, forecast_at_point, make_point, compute_expectations, TFIMethod, STPFIMethod
 
 # Simulation
 export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds
 
 include("types.jl")
 include("exog.jl")
+include("utils.jl")
 include("logging.jl")
 include("plotting.jl")
+
+include("setup.jl")
 include("execution.jl")
 include("simulation.jl")
-
+include("economics.jl")
 
 end
