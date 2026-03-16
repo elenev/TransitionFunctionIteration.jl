@@ -199,18 +199,22 @@ function find_neighbors_with_diagonals(i, R, n=1)
     return setdiff(range,[I])
 end
 
-function perform_iteration!(obj, damp, npasses, solmethod)
-
-    new_Tfct = deepcopy(coefficients(obj.Tfct))
-    new_Vfct = deepcopy(coefficients(obj.Vfct))
-    distances = [zeros(nof(obj.Vfct)) for _ in new_Vfct]
-    distancesT = [zeros(nof(obj.Tfct), exnpt(obj.exogenv)) for _ in new_Tfct]
-    success = falses(npt(obj.Vfct))
+function perform_iteration!(obj, diag, damp, npasses, solmethod)
 
     states = collect(points(obj.ssg))
     Pfct_coeffs = coefficients(obj.Pfct)
     Vfct_coeffs = coefficients(obj.Vfct)
     Tfct_coeffs = coefficients(obj.Tfct)
+
+    new_Pfct = deepcopy(Pfct_coeffs)
+    new_Tfct = deepcopy(Tfct_coeffs)
+    new_Vfct = deepcopy(Vfct_coeffs)    
+
+    distances = diag.value_distances
+    distancesT = diag.transition_distances
+
+    success = diag.success
+    success .= false  # Reset success flags for this iteration
 
     R = CartesianIndices(values(dims(obj.ssg)))
 
@@ -220,7 +224,8 @@ function perform_iteration!(obj, damp, npasses, solmethod)
     while true
         unsolved_state_indices = findall(!s for s in success)
         total_unsolved = length(unsolved_state_indices)
-        new_Pfct = deepcopy(coefficients(obj.Pfct))
+        
+        
 
         #Threads.@threads :dynamic 
         for idx in eachindex(unsolved_state_indices)
@@ -305,8 +310,6 @@ function perform_iteration!(obj, damp, npasses, solmethod)
     # println(coefficients(obj.Vfct)[5,1,1])
     # println(coefficients(obj.Vfct)[5,5,1])
     # println(coefficients(obj.Vfct)[5,10,1])
-
-    return success, distances, distancesT
 end
 
 function summarize_distances(distances, Fct)
@@ -338,6 +341,26 @@ function summarize_distances(distances, Fct)
     return dist, worst_var, worst_point, exst_idx
 end
 
+struct IterationDiagnostics{B,V,T}
+    success::B    
+    value_distances::V 
+    transition_distances::T
+end
+
+function IterationDiagnostics(obj)
+    vcoefs = coefficients(obj.Vfct)
+    vtype = eltype(vcoefs)
+    vdistances = [vtype(undef) for _ in vcoefs]
+
+    tcoefs = coefficients(obj.Tfct)
+    ttype = eltype(tcoefs)
+    tdistances = [ttype(undef) for _ in tcoefs]
+
+    success = falses(npt(obj.Vfct))
+
+    return IterationDiagnostics(success, vdistances, tdistances)
+end
+
 """
     main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, logging=ITERATIONFAILED)
 
@@ -357,16 +380,18 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
     original_threads = BLAS.get_num_threads()
     BLAS.set_num_threads(1)  # To avoid thread oversubscription
 
+    diag = IterationDiagnostics(obj)
+
     exec = (; maxiter, tol, damp, npasses, solmethod)
 
     with_logger(ExecutionLogger(logging)) do
 
         while true 
 
-            _, distancesV, distancesT = perform_iteration!(obj, damp, npasses, solmethod)
+            perform_iteration!(obj, diag, damp, npasses, solmethod)
 
-            distV, worst_varV, worst_pointV = summarize_distances(distancesV, obj.Vfct)
-            distT, worst_varT, worst_pointT, worst_exst = summarize_distances(distancesT, obj.Tfct)
+            distV, worst_varV, worst_pointV = summarize_distances(diag.value_distances, obj.Vfct)
+            distT, worst_varT, worst_pointT, worst_exst = summarize_distances(diag.transition_distances, obj.Tfct)
 
             @iteration "$iter: max V distance = $distV at point $worst_pointV in variable $worst_varV"
             @iteration "$iter: max T distance = $distT at point $worst_pointT in variable $worst_varT for exog. state $worst_exst"
