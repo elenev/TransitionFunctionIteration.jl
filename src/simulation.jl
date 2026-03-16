@@ -44,8 +44,8 @@ end
 _row_mvec_type(::Type{<:StaticMatrix{R, C, T}}) where {R, C, T} = MVector{C, T}
 
 # Compute simulated results for one period
-function calc_result!(fx, transerr, state, obj)
-    # Get exogenous state info
+function calc_eqm_from_state(state, obj)
+   # Get exogenous state info
     exog = points(obj.exogenv)[state.exst]
     prnext = conditional_distro(obj.exogenv, state.exst)
     fullstate = merge(state, exog)
@@ -53,10 +53,19 @@ function calc_result!(fx, transerr, state, obj)
     # Compute next period's transitions and expectations
     trans = obj.Tfct(state)
     next = forecast_next(trans, obj)
+
     np = compute_expectations(next, prnext, obj, SimulateMode())
     
     # Compute equilibrium residuals, next period's transitions and simulated variables
-    out = calc_eqm(fullstate, obj.Pfct(state), obj.model, np, SimulateMode())
+    return calc_eqm(fullstate, obj.Pfct(state), obj.model, np, SimulateMode()), trans
+end
+
+function calc_result!(fx, transerr, state, obj)
+    # Get exogenous state info
+    exog = points(obj.exogenv)[state.exst]
+
+    # Calculate equilibrium
+    out, trans = calc_eqm_from_state(state, obj)
 
     # Expand transitions
     out_trans = expand_transitions(out.trans, obj.exogenv)
@@ -65,12 +74,12 @@ function calc_result!(fx, transerr, state, obj)
     fx .= out.fx
 
     # Compute transition errors
-    out_transerr = map(-, components(out_trans), trans)
+    out_transerr = map(-, out_trans, trans)
     fill_transerr!(this_transerr, this_out_transerr) = (this_transerr .= this_out_transerr)
     foreach(fill_transerr!, transerr, out_transerr)
 
     # Return transitions and simulated variables for this period
-    return out_trans, merge(state, exog, out.addvars)
+    return StructArray(out_trans), merge(state, exog, out.addvars)
 end
 
 # Select transition errors
@@ -107,7 +116,7 @@ Returns `(simseries, fxerrs)`:
 `sz = N_runs => N_periods`. Burn-in periods are simulated but excluded from output.
 """
 function simulate(obj::ModelSolution, stv=nothing;
-                                sz::Pair=12=>100,
+                                sz::Pair=12=>1000,
                                 seed=100,
                                 burn=0,
                                 exog_start=ssidx(obj.exogenv),
@@ -122,8 +131,9 @@ function simulate(obj::ModelSolution, stv=nothing;
     N_runs, N_periods = size(exog_states)
 
     # Preallocate equation errors
+    similar_to_coef = similar ∘ first ∘ coefficients
     fxerrtype = eltype(coefficients(obj.Pfct))
-    fxerrs = [fxerrtype(undef) for _ in 1:N_runs, _ in 1:N_periods]
+    fxerrs = [similar_to_coef(obj.Pfct) for _ in 1:N_runs, _ in 1:N_periods]
 
     # Preallocate transiton errors
     transerrtype = (_row_mvec_type ∘ eltype ∘ coefficients)(obj.Tfct)
@@ -135,7 +145,7 @@ function simulate(obj::ModelSolution, stv=nothing;
     simseries = Matrix{typeof(tmp[2])}(undef, N_runs, N_periods)
 
     # Expand endog_start
-    endog_start = expand_transitions(endog_start, obj.exogenv)
+    endog_start = StructArray(expand_transitions(endog_start, obj.exogenv))
 
     original_threads = BLAS.get_num_threads()
     BLAS.set_num_threads(1)  # To avoid thread oversubscription
@@ -203,4 +213,44 @@ function check_bounds(simseries, obj)
             @warn "Variable $var out of bounds! Grid: [$mingrid, $maxgrid], simulated: [$minsim, $maxsim]"
         end
     end
+end
+
+
+const default_percentiles = (1, 5, 25, 50, 75, 95, 99);
+
+const default_stats = merge( (; mean, std, minimum), 
+    (; (Symbol("p$k") => x -> quantile(x,k/100) for k in default_percentiles)...),
+    (; max = maximum) )
+
+
+    
+function describe(simvector::StructArray{T,1} where T, stat_functions)
+    varnames = propertynames(simvector)
+    F = promote_type(fieldtypes(eltype(simvector))...)
+    return [F(f(getproperty(simvector, var))) for var in varnames, f in values(stat_functions)]
+end
+
+
+function describe(simseries::StructArray{T,2} where T, stat_functions = default_stats)
+    first_run, runs_iterator = Iterators.peel(eachrow(simseries))
+
+    run_stats = describe(first_run, stat_functions)
+
+    mean_stats = deepcopy(run_stats)
+    new_mean_stats = similar(run_stats)
+    stderr_stats = similar(run_stats)
+
+    fill!(stderr_stats, 0.0)
+
+    for (n, simvector) in enumerate(runs_iterator)
+        run_stats .= describe(simvector, stat_functions)
+        new_mean_stats .= mean_stats + (run_stats - mean_stats) / n
+        stderr_stats .+= (run_stats - mean_stats) .* (run_stats .- new_mean_stats)
+    end
+
+    N = size(simseries, 1)
+    stderr_stats .= sqrt.( stderr_stats / (N - 1) ) / sqrt(N)
+
+    return MomentArray(mean_stats,propertynames(simseries), keys(stat_functions)),
+              MomentArray(stderr_stats, propertynames(simseries), keys(stat_functions))
 end

@@ -4,7 +4,7 @@ using LoopVectorization
 
 using Interpolations, NonlinearSolve, ForwardDiff, StaticArrays, StructArrays
 using RecipesBase
-using Logging, LinearAlgebra, Random, Statistics
+using Logging, LinearAlgebra, Random, Statistics, StatsBase, PrettyTables
 
 # Types
 export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant, AbstractSteadyState
@@ -19,7 +19,7 @@ export calc_eqm, compute_next_period_values, steadystate, define_endog_grids
 # Logging
 export ExecutionLogger
 export COMPLETE, ITERATION, ITERATIONFAILED, FAILEDPOINT
-export @complete, @iteration, @iterationfailed, @failedpoint
+#export @complete, @iteration, @iterationfailed, @failedpoint
 
 # Exogenous environment tools
 export ExogenvAR1, ergodic_distro, ssidx, exnpt, nex, transition_matrix, conditional_distro
@@ -28,7 +28,7 @@ export ExogenvAR1, ergodic_distro, ssidx, exnpt, nex, transition_matrix, conditi
 export main_setup, main_execute!, forecast_next, forecast_at_point, make_point, compute_expectations, TFIMethod, STPFIMethod
 
 # Simulation
-export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds
+export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, getmoment
 
 include("types.jl")
 include("exog.jl")

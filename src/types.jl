@@ -274,8 +274,8 @@ end
 @kwdef struct NextPeriod{E,C,A,V<:AbstractVector}
     expectations::E
     continuations::C
-    prnext::V
-    addvars::A
+    addvars::A = (;)
+    prnext::V  = SVector{1}(1.0)
 end
 
 E(x, np::NextPeriod) = dot(np.prnext, x)
@@ -383,6 +383,89 @@ function (sys::STPFISystem)(u,p)
     return vcat(out.fx, transition_residuals)
 end
 
+
+## Simulation Stats
+
+struct MomentArray{T, R <: NamedTuple, C <: NamedTuple, M <: AbstractMatrix{T}} <: AbstractMatrix{T}
+    data::M
+    row_idx::R  # e.g., (exst = 1, K = 2)
+    col_idx::C  # e.g., (mean = 1, std = 2)
+end
+
+function MomentArray(data::AbstractMatrix, rows::Tuple, cols::Tuple)
+    # Lock the symbol tuples into NamedTuples mapped to their integer indices
+    r_map = NamedTuple{rows}(ntuple(identity, length(rows)))
+    c_map = NamedTuple{cols}(ntuple(identity, length(cols)))
+    
+    return MomentArray(data, r_map, c_map)
+end
+
+
+# --- AbstractArray Interface ---
+Base.size(m::MomentArray) = size(m.data)
+Base.IndexStyle(::Type{<:MomentArray}) = IndexLinear()
+
+# Pass-through linear and cartesian indexing
+@inline Base.getindex(m::MomentArray, i::Int) = getindex(m.data, i)
+@inline Base.getindex(m::MomentArray, I::Vararg{Int, 2}) = getindex(m.data, I...)
+
+# Pass-through mutation (optional, but highly recommended)
+@inline Base.setindex!(m::MomentArray, v, i::Int) = setindex!(m.data, v, i)
+@inline Base.setindex!(m::MomentArray, v, I::Vararg{Int, 2}) = setindex!(m.data, v, I...)
+
+# ---  Beautiful REPL Printing ---
+function Base.show(io::IO, ::MIME"text/plain", m::MomentArray)
+    println(io, "MomentArray ($(size(m, 1)) × $(size(m, 2))):")
+    pretty_table(
+        io, 
+        m.data; 
+        column_labels = collect(keys(m.col_idx)), 
+        row_labels = collect(keys(m.row_idx)),
+    )
+end
+
+# This method handles "compact" printing (inside tuples/arrays/containers)
+function Base.show(io::IO, m::MomentArray)
+    print(io, "MomentArray{$(eltype(m))}($(size(m,1)) × $(size(m,2)))")
+end
+
+# --- 4. The getmoment Dispatch ---
+# Base Case: Scalar / Scalar -> Number
+@inline getmoment(m::MomentArray, var::Symbol, stat::Symbol) = 
+    m.data[m.row_idx[var], m.col_idx[stat]]
+
+_expand_colon(needle, haystack) = (needle isa Colon) ? haystack : needle
+
+# Collection / Scalar -> NamedTuple
+function getmoment(m::MomentArray, vars::Union{Tuple, AbstractVector, Colon}, stat::Symbol)
+    vars = _expand_colon(vars, keys(m.row_idx))
+    keys_tup = Tuple(vars)
+    vals_tup = Tuple(getmoment(m, v, stat) for v in keys_tup)
+    return map(v -> getmoment(m, v, stat), vars)
+end
+
+# Scalar / Collection -> NamedTuple
+function getmoment(m::MomentArray, var::Symbol, stats::Union{Tuple, AbstractVector, Colon})
+    stats = _expand_colon(stats, keys(m.col_idx))
+    keys_tup = Tuple(stats)
+    vals_tup = map(s -> getmoment(m, var, s), stats)
+    return NamedTuple{keys_tup}(vals_tup)
+end
+
+# Collection / Collection -> MomentArray
+@inline function getmoment(m::MomentArray, ::Val{vars}, ::Val{stats}) where {vars, stats}
+    # These lookups now happen at COMPILE TIME because 'vars' is in the type header
+    row_inds = SVector(map(v -> m.row_idx[v], vars))
+    col_inds = SVector(map(s -> m.col_idx[s], stats))
+    
+    # The return type is now perfectly predictable
+    return MomentArray(view(m.data, row_inds, col_inds), vars, stats)
+end
+
+# 3. The ergonomic wrapper 
+@inline getmoment(m::MomentArray, vars::Tuple, stats::Tuple) = 
+    getmoment(m, Val(vars), Val(stats))
+
 ## Stubs
 
 # 1. Define the custom exception type
@@ -411,11 +494,11 @@ function calc_eqm(state, policy, mdl::AbstractModel, np::NextPeriod, mode::Evalu
     throw(MethodNotImplementedError(:calc_eqm, typeof(mdl)))
 end
 
-function compute_next_period_values(next, mdl::AbstractModel)
+function compute_next_period_values(next, mdl::AbstractModel)::NextPeriod
     throw(MethodNotImplementedError(:compute_next_period_values, typeof(mdl)))
 end
 
-function Exogenv(mdl::AbstractModel)
+function Exogenv(mdl::AbstractModel)::Exogenv
     throw(MethodNotImplementedError(:Exogenv, typeof(mdl)))
 end
 

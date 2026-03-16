@@ -66,7 +66,7 @@ function compute_next_period_values(next, mdl::NeoclassicalGrowthModel)
     Kpayoff = MPK + (1 - δ)  # Next period's payoff from capital
     expectations = (; Ek = β * MU * Kpayoff,)
     continuations = (; Kpayoff, MPK, MU)
-    return (; expectations, continuations)
+    return NextPeriod(; expectations, continuations)
 end
 
 # Compute equilibrium
@@ -107,7 +107,10 @@ end
 # Build initial solution object
 ngm = NeoclassicalGrowthModel()
 obj, stv = main_setup(ngm)
-#main_execute!(obj, maxiter=1000)
+main_execute!(obj, maxiter=1000)
+simseries, fxerrs, transerrs = simulate(obj, stv)
+stats, _ = describe(simseries)
+
 
 # Testing
 function prep_testing_objects(obj)

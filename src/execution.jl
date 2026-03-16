@@ -38,6 +38,14 @@ function fisher_burmeister(a::Real, b::Real)
     return a + b - sqrt(a^2 + b^2)
 end
 
+function stack_nextperiod_addvars(v::AbstractArray{T}) where {T<:NamedTuple} 
+    if fieldcount(T) == 0
+        return (;)
+    else
+        return StaticStructArray(v)
+    end
+end
+
 
 function compute_expectations(next::StructArray, prnext, obj::ModelSolution, mode::EvaluationMode)
     # Ensure probabilities are a statically sized SVector
@@ -50,19 +58,19 @@ function compute_expectations(next::StructArray, prnext, obj::ModelSolution, mod
     # Accumulate Expectations via Functional Fold
     # Initialize with the first element
     # First [1] refers to the first exogenous state, second [1] extracts the expectations NamedTuple
-    init_exp = map(x -> x * prnext[1], results[1][1])
+    init_exp = map(x -> x * prnext[1], first(results).expectations)
     
     # foldl forces strict left-to-right accumulation without mutation
     expectations = foldl(2:N; init=init_exp) do acc, i
-        map((a, x) -> muladd(prnext[i], x, a), acc, results[i][1])
+        map((a, x) -> muladd(prnext[i], x, a), acc, results[i].expectations)
     end
 
     # Stack Continuations 
     # Extract just the continuations into an SVector of NamedTuples and make a StructArray
-    continuations = StaticStructArray(map(res -> res[2], results))
+    continuations = StaticStructArray(map(res -> res.continuations, results))
 
     if mode isa SimulateMode
-        addvars = StaticStructArray(map(res -> res[3], results))
+        addvars = stack_nextperiod_addvars(map(res -> res.addvars, results))
     else
         addvars = (;)
     end
