@@ -212,11 +212,12 @@ end
 @inline elsize(fct::AbstractInterpolant) = (size ∘ first ∘ coefficients)(fct)
 
 # 1. Helper to uniformly extract scalars from vectors and SVectors from matrices
+@inline _extract_row(y::Real, i) = y
 @inline _extract_row(y::AbstractVector, i) = @inbounds y[i]
 @inline _extract_row(y::AbstractMatrix, i) = @inbounds SVector{size(y, 2)}(y[i, :])
 
 # 2. The zero-allocation constructor
-@inline function _pack_rows(::Type{NamedTuple{K}}, y) where {K}
+@inline function _pack_rows(::Type{<:NamedTuple{K}}, y) where {K}
     # Val(length(K)) forces the compiler to completely unroll the tuple construction
     vals = ntuple(i -> _extract_row(y, i), Val(length(K)))
     return NamedTuple{K}(vals)
@@ -504,4 +505,11 @@ end
 
 function define_endog_grids(mdl::AbstractModel, ::AbstractSteadyState)
     throw(MethodNotImplementedError(:define_endog_grids, typeof(mdl)))
+end
+
+# This is only necessary if steadystate is not implemented.
+# In that case, the fallback steadystate will use this to construct next period vals.
+# Users can also use it in their own calc_eqm to create the IterateMode() branch output.
+function vals_from_policy(state, policy, mdl::AbstractModel, args...)
+    throw(MethodNotImplementedError(:vals_from_policy, typeof(mdl)))
 end

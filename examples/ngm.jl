@@ -1,7 +1,7 @@
 # Neoclassical Growth Model 
 using TransitionFunctionIteration
 import TransitionFunctionIteration as TFI
-import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate, compute_next_period_values
+import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate, compute_next_period_values, vals_from_policy
 import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime
 
 using StaticArrays
@@ -23,6 +23,9 @@ end
 ## Model 
 
 ## Model specific functions
+
+# [Optional] 
+vals_from_policy(_, policy, ::NeoclassicalGrowthModel) = (C = policy.C,)
 
 # Analytic steady state solution for initial guess
 function steadystate(model::NeoclassicalGrowthModel)
