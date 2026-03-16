@@ -150,7 +150,7 @@ function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
     sol = solve(problem, alg)
 
     if SciMLBase.successful_retcode(sol)
-        new_policy = view(sol.u, 1:p_nof)
+        new_policy = SVector{p_nof}(view(sol.u, 1:p_nof))
     else
         @failedpoint ("Solver did not converge: $(sol.retcode) at state $state")
         new_policy = guess # Revert to original guess if not solved
@@ -158,12 +158,9 @@ function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
 
     # # Update guess and values with the solution
     out = calc_eqm(fullstate, name_values(new_policy, obj.Pfct), obj.model, np, IterateMode())
-
-
     out_trans = values(expand_transitions(out.trans, obj.exogenv))
 
     new = FunctionValuesAtPoint(state, new_policy, SVector(values(out.vals)), hcat(out_trans...)')
-
     return new, SciMLBase.successful_retcode(sol)
 end
 
@@ -177,7 +174,7 @@ end
 
 function perform_iteration!(obj, diag, damp, npasses, solmethod)
 
-    states = collect(points(obj.ssg))
+    #states = collect(points(obj.ssg))
     Pfct_coeffs = coefficients(obj.Pfct)
     Vfct_coeffs = coefficients(obj.Vfct)
     Tfct_coeffs = coefficients(obj.Tfct)
@@ -205,7 +202,7 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod)
         #Threads.@threads :dynamic 
         for idx in eachindex(unsolved_state_indices)
             i = unsolved_state_indices[idx]
-            state = states[i]
+            state = obj.ssg[i]
             guess_indices = guess_selector(i)
             #guess = Pfct_coeffs[i]
             values = Vfct_coeffs[i]

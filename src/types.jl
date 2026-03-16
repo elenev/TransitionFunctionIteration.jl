@@ -1,5 +1,5 @@
 "Abstract base for multidimensional state space grids."
-abstract type AbstractStateSpaceGrid end
+abstract type AbstractStateSpaceGrid{T, N} <: AbstractArray{T, N} end
 
 @generated singleton_keys(::Type{NamedTuple{N,T}}) where {N,T} =
     tuple((N[i] for i in 1:length(N) if fieldtype(T, i) <: Number)...)
@@ -14,27 +14,41 @@ Each keyword argument defines one axis. Scalar-valued fields are marked as
 *singletons* — they are stored in the grid but excluded from interpolation axes.
 The second constructor prepends the exogenous state indices from `exogenv` as the `:exst` axis.
 """
-struct StateSpaceGrid{N,T,S} <: AbstractStateSpaceGrid
-    data::NamedTuple{N,T}
+struct StateSpaceGrid{NAMES,S,N,T,D<:Tuple} <: AbstractStateSpaceGrid{T,N}
+    data::D
 
-    function StateSpaceGrid(data::NamedTuple{N,T}) where {N,T}
-        S = singleton_keys(typeof(data))
-        new{N,T,S}(data)
+    function StateSpaceGrid{NAMES,S}(data::D) where {NAMES,S,D}
+        N = length(NAMES)
+        element_types = map(eltype, fieldtypes(D))
+        T = NamedTuple{NAMES, Tuple{element_types...}}
+        return new{NAMES, S, N, T, D}(data)
     end
 end
 
-"Return the names of scalar-valued (singleton) fields in `ssg`. Singletons are excluded from interpolation but appear in state NamedTuples."
-singletons(::StateSpaceGrid{N,T,S}) where {N,T,S} = S
+# Infer singletons from the data
+@inline function StateSpaceGrid{NAMES}(data::D) where {NAMES, D<:Tuple }
+    NT = NamedTuple{NAMES,D}
+    S = singleton_keys(NT)
+    return StateSpaceGrid{NAMES,S}(data)
+end
 
-StateSpaceGrid(; kwargs...) = StateSpaceGrid(NamedTuple{keys(kwargs)}(values(kwargs)))
+# Convenience constructor from named tuple 
+@inline StateSpaceGrid(nt::NamedTuple{NAMES,D}) where {NAMES, D} = StateSpaceGrid{NAMES}(values(nt))
+
+# Convenience constructor from kwargs
+@inline function StateSpaceGrid(; kwargs...)
+    nt = NamedTuple(kwargs)
+    return StateSpaceGrid{keys(nt)}(values(nt))
+end
+
+"Return the names of scalar-valued (singleton) fields in `ssg`. Singletons are excluded from interpolation but appear in state NamedTuples."
+singletons(::StateSpaceGrid{NAMES,S}) where {NAMES,S} = S
 
 "Return the NamedTuple of univariate grid vectors keyed by state variable name."
-@inline unigrids(ssg::AbstractStateSpaceGrid) = ssg.data
+@inline unigrids(ssg::StateSpaceGrid{NAMES}) where {NAMES} = NamedTuple{NAMES}(ssg.data)
 
 "Return the total number of grid points (product of all dimension lengths)."
 @inline npt(ssg::AbstractStateSpaceGrid) = prod(dims(ssg))
-
-@inline ndims(ssg::AbstractStateSpaceGrid) = length(keys(unigrids(ssg)))
 
 "Return the number of grid points per dimension as a NamedTuple."
 @inline dims(ssg::AbstractStateSpaceGrid) = map(length, unigrids(ssg))
@@ -52,6 +66,24 @@ For a state space grid: lazy generator of NamedTuples over the full Cartesian pr
 (first dimension varies fastest). For an exogenous environment: the array of exogenous state vectors.
 """
 points(ssg::AbstractStateSpaceGrid) = _points(unigrids(ssg))
+
+# Array interface: Iteration
+@inline Base.iterate(ssg::AbstractStateSpaceGrid) = iterate(points(ssg))
+@inline Base.iterate(ssg::AbstractStateSpaceGrid, state) = iterate(points(ssg), state)
+@inline Base.iterate(r::Iterators.Reverse{<:AbstractStateSpaceGrid}) = iterate(Iterators.reverse(points(r.itr)))
+@inline Base.iterate(r::Iterators.Reverse{<:AbstractStateSpaceGrid}, state) = iterate(Iterators.reverse(points(r.itr)), state)
+
+@inline Base.size(ssg::AbstractStateSpaceGrid) = values(dims(ssg))
+@inline Base.length(ssg::AbstractStateSpaceGrid) = npt(ssg)
+@inline Base.eltype(::Type{<:StateSpaceGrid{NAMES,S,N,T}}) where {NAMES,S,N,T} = T
+@inline Base.isdone(ssg::AbstractStateSpaceGrid, state) = Base.isdone(points(ssg), state)
+
+# Array interface: Indexing
+@inline Base.IndexStyle(::Type{<:StateSpaceGrid}) = IndexCartesian()
+@inline function Base.getindex(ssg::AbstractStateSpaceGrid{T,N}, I::Vararg{Int, N}) where {T,N}
+    ugrids = unigrids(ssg)
+    return NamedTuple{keys(ugrids)}(ntuple(i -> ugrids[i][I[i]], Val(N)))
+end
 
 "Abstract base for interpolated functions over a state space."
 abstract type AbstractInterpolant end
