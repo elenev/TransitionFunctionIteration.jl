@@ -103,7 +103,33 @@ function _compute_expectations_from_trans(trans::AbstractMatrix, prnext, obj::Mo
     return compute_expectations(next, prnext, obj, SolveMode()), named_trans
 end
 
-function solve_at_point!(policy, trans, vals, guess, state, obj, solmethod, init_trans)
+struct FunctionValuesAtPoint{S, P,V,T}
+    state::S
+    pfct::P
+    vfct::V    
+    tfct::T
+end
+
+function solve_at_point!(new::FunctionValuesAtPoint, old::FunctionValuesAtPoint, obj, solmethod)
+    # Unpack targets for update
+    policy = new.pfct
+    trans = new.tfct
+    vals = new.vfct
+
+    # Unpack initial values
+    # Guess needs to be separate since it's being overwritten during solution
+    # and if no solution is found will be left in a mutated state. But we want
+    # to keep the original policy value in that case.
+    guess = old.pfct
+
+    # init_trans needs to be separate for performance. This helps the 
+    # compiler avoid WAR aliasing issues between reads and writes
+    init_trans = old.tfct
+
+    # Unpack state
+    state = old.state
+
+    #policy, trans, vals, guess, state,  , init_trans
     p_nof = nof(obj.Pfct)
     fullstate = merge(state, points(obj.exogenv)[state.exst])  # Merge in exogenous state variables for calc_eqm
     prnext = conditional_distro(obj.exogenv, state.exst)
@@ -204,19 +230,27 @@ function perform_iteration!(obj, damp, npasses, solmethod)
             #guess = Pfct_coeffs[i]
             values = Vfct_coeffs[i]
             trans = Tfct_coeffs[i]
+            new_policy = new_Pfct[i]
             new_trans = new_Tfct[i]
             new_values = new_Vfct[i]
             dist = distances[i]
             distT = distancesT[i]
             
+            # Build target 
+            new = FunctionValuesAtPoint(state, new_policy, new_values, new_trans)
+
             for guess_idx in guess_indices
-                newpolicy = new_Pfct[guess_idx]
+                #newpolicy = new_Pfct[guess_idx]
                 if solmethod isa TFIMethod
                     oldguess = Pfct_coeffs[guess_idx]
                 elseif solmethod isa STPFIMethod
                     oldguess = (Pfct_coeffs[guess_idx], Tfct_coeffs[i])
                 end
-                success[i] = solve_at_point!(newpolicy, new_trans, new_values, oldguess, state, obj, solmethod, trans)
+
+                # Build initial value object
+                old = FunctionValuesAtPoint(state, oldguess, values, trans)
+
+                success[i] = solve_at_point!(new, old, obj, solmethod)
                 if success[i] break end
             end
 

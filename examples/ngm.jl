@@ -97,7 +97,7 @@ function calc_eqm(state, policy, mdl::NeoclassicalGrowthModel, np::NextPeriod, m
         if mode isa IterateMode
             return (; fx, trans, vals)
         elseif mode isa SimulateMode
-            addvars = (; Y, C)
+            addvars = (; Y, I)
             return (; fx, trans, addvars)
         end
 
@@ -110,13 +110,20 @@ obj, stv = main_setup(ngm)
 #main_execute!(obj, maxiter=1000)
 
 # Testing
-teststate = first(points(obj.Tfct.ssg))
-testpol = first(coefficients(obj.Pfct))
-testval = first(coefficients(obj.Vfct))
-testtrans = first(coefficients(obj.Tfct))
-guess = deepcopy(testpol)
+function prep_testing_objects(obj)
+    state = first(points(obj.Tfct.ssg))
+    pol = first(coefficients(obj.Pfct))
+    val = first(coefficients(obj.Vfct))
+    trans = first(coefficients(obj.Tfct))
+    guess = deepcopy(pol)
+    inittrans = deepcopy(trans)
 
-# fullstate = merge(teststate, points(obj.exogenv)[teststate.exst])
-# prnext = conditional_distro(obj.exogenv, teststate.exst)
-# np, _ = TransitionFunctionIteration._compute_expectations_from_trans(testtrans, prnext, obj)
-# x0 = SVector(guess)
+    old = TFI.FunctionValuesAtPoint(state, pol, val, inittrans)
+    new = TFI.FunctionValuesAtPoint(state, guess, val, trans)
+
+    fullstate = merge(state, points(obj.exogenv)[state.exst])
+    prnext = conditional_distro(obj.exogenv, state.exst)
+    np, _ = TransitionFunctionIteration._compute_expectations_from_trans(inittrans, prnext, obj)
+    x0 = SVector(guess)
+    return (; new, old, state, pol, val, trans, guess, fullstate, prnext, np, x0, inittrans)
+end
