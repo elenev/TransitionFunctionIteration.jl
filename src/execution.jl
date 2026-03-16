@@ -84,18 +84,8 @@ function expand_transitions(trans, exogenv::AbstractExogenv)
     expand_deterministic_transitions(t::Real) = SVector(ntuple(_ -> t, N))
     expand_deterministic_transitions(t::AbstractVector) = t
     return map(expand_deterministic_transitions, trans)
-    #return StructArray(map(expand_deterministic_transitions, trans))
 end
 
-function update_transitions!(trans, new)
-    new_vals = values(new)
-    ntuple(Val(length(new_vals))) do i
-        row_vec = new_vals[i]
-        for j in axes(trans, 2)
-            @inbounds trans[i, j] = row_vec[j]
-        end
-    end
-end
 
 function _compute_expectations_from_trans(trans::AbstractMatrix, prnext, obj::ModelSolution)
     named_trans = name_values(trans, obj.Tfct)
@@ -110,20 +100,9 @@ struct FunctionValuesAtPoint{S, P,V,T}
     tfct::T
 end
 
-function solve_at_point!(new::FunctionValuesAtPoint, old::FunctionValuesAtPoint, obj, solmethod)
-    # Unpack targets for update
-    policy = new.pfct
-    trans = new.tfct
-    vals = new.vfct
-
+function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
     # Unpack initial values
-    # Guess needs to be separate since it's being overwritten during solution
-    # and if no solution is found will be left in a mutated state. But we want
-    # to keep the original policy value in that case.
     guess = old.pfct
-
-    # init_trans needs to be separate for performance. This helps the 
-    # compiler avoid WAR aliasing issues between reads and writes
     init_trans = old.tfct
 
     # Unpack state
@@ -171,24 +150,21 @@ function solve_at_point!(new::FunctionValuesAtPoint, old::FunctionValuesAtPoint,
     sol = solve(problem, alg)
 
     if SciMLBase.successful_retcode(sol)
-        policy .= view(sol.u, 1:p_nof)
+        new_policy = view(sol.u, 1:p_nof)
     else
         @failedpoint ("Solver did not converge: $(sol.retcode) at state $state")
+        new_policy = guess # Revert to original guess if not solved
     end
 
     # # Update guess and values with the solution
-    out = calc_eqm(fullstate, name_values(policy, obj.Pfct), obj.model, np, IterateMode())
+    out = calc_eqm(fullstate, name_values(new_policy, obj.Pfct), obj.model, np, IterateMode())
 
 
     out_trans = values(expand_transitions(out.trans, obj.exogenv))
-    #out_trans = (K = SVector(1.0, 2.0, 3.0, 4.0, 5.0),) # Placeholder for testing, replace
-    update_transitions!(trans, out_trans)
-    # @debug "trans" typeof(trans)
-   #trans .= SMatrix{1,5}(3.1, 3.2, 3.3, 3.4, 3.5) # Placeholder for testing, replace with actual update
-    #trans .= values(out.trans)
-    vals .= values(out.vals)
 
-    return SciMLBase.successful_retcode(sol)
+    new = FunctionValuesAtPoint(state, new_policy, SVector(values(out.vals)), hcat(out_trans...)')
+
+    return new, SciMLBase.successful_retcode(sol)
 end
 
 function find_neighbors_with_diagonals(i, R, n=1)
@@ -225,7 +201,6 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod)
         unsolved_state_indices = findall(!s for s in success)
         total_unsolved = length(unsolved_state_indices)
         
-        
 
         #Threads.@threads :dynamic 
         for idx in eachindex(unsolved_state_indices)
@@ -235,17 +210,9 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod)
             #guess = Pfct_coeffs[i]
             values = Vfct_coeffs[i]
             trans = Tfct_coeffs[i]
-            new_policy = new_Pfct[i]
-            new_trans = new_Tfct[i]
-            new_values = new_Vfct[i]
-            dist = distances[i]
-            distT = distancesT[i]
             
-            # Build target 
-            new = FunctionValuesAtPoint(state, new_policy, new_values, new_trans)
-
+            local new
             for guess_idx in guess_indices
-                #newpolicy = new_Pfct[guess_idx]
                 if solmethod isa TFIMethod
                     oldguess = Pfct_coeffs[guess_idx]
                 elseif solmethod isa STPFIMethod
@@ -255,20 +222,17 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod)
                 # Build initial value object
                 old = FunctionValuesAtPoint(state, oldguess, values, trans)
 
-                success[i] = solve_at_point!(new, old, obj, solmethod)
+                new, success[i] = solve_at_point(old, obj, solmethod)
                 if success[i] break end
             end
 
-            dist .= new_values - values
+            new_Pfct[i] = new.pfct
 
-            #@debug "trans" trans
-            #@debug "new_trans" new_trans
-            distT .= new_trans - trans
-            new_values .*= damp
-            new_values .+= (1 - damp) * values
+            distances[i] .= new.vfct - values
+            new_Vfct[i] = @. damp * values + (1-damp) * new.vfct
 
-            new_trans .*= damp
-            new_trans .+= (1 - damp) * trans
+            distancesT[i] .= new.tfct - trans
+            new_Tfct[i] = @. damp * trans + (1-damp) * new.tfct
 
         end
 
@@ -348,13 +312,12 @@ struct IterationDiagnostics{B,V,T}
 end
 
 function IterationDiagnostics(obj)
+    similar_to_coef = similar ∘ first ∘ coefficients
     vcoefs = coefficients(obj.Vfct)
-    vtype = eltype(vcoefs)
-    vdistances = [vtype(undef) for _ in vcoefs]
+    vdistances = [similar_to_coef(obj.Vfct) for _ in vcoefs]
 
     tcoefs = coefficients(obj.Tfct)
-    ttype = eltype(tcoefs)
-    tdistances = [ttype(undef) for _ in tcoefs]
+    tdistances = [similar_to_coef(obj.Tfct) for _ in tcoefs]
 
     success = falses(npt(obj.Vfct))
 
