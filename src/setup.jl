@@ -4,8 +4,8 @@ function f_steadystate(x, p)
     policy = _pack_rows(typeof(p.policy_guess), view(x,1:p.nof))
     endog = _pack_rows(typeof(p.transition_guess), view(x, (p.nof+1):length(x)))
     state = merge(p.exog, endog)
-    next = StaticStructArray(SVector(merge(p.exog, endog, vals_from_policy(state, policy, p.model))))
-    np = compute_expectations(next, p.prnext, p.model, IterateMode())
+    next_nt = merge(p.exog, endog, vals_from_policy(state, policy, p.model))
+    np = compute_next_period_values(next_nt, p.model)
     out = calc_eqm(state, policy, p.model, np, IterateMode())
     transerr = map(-, out.trans, endog)
     return vcat(out.fx, SVector(values(transerr))), out
@@ -28,7 +28,7 @@ function steadystate_exogenv(exogenv)
 end
 
 function steadystate(mdl::AbstractModel, policy_guess, transition_guess, exogenv)
-    #exogenv = steadystate_exogenv(exogenv)
+    exogenv = steadystate_exogenv(exogenv)
 
     payload = (model = mdl, policy_guess = policy_guess, 
         nof = length(propertynames(policy_guess)),
@@ -42,7 +42,6 @@ function steadystate(mdl::AbstractModel, policy_guess, transition_guess, exogenv
     alg = SimpleTrustRegion()
 
     sol = solve(problem, alg)
-    
     policy_sol = _pack_rows(typeof(policy_guess), sol.u[1:payload.nof])
     transition_sol = _pack_rows(typeof(transition_guess), sol.u[payload.nof+1:end])
     _, out = f_steadystate(sol.u, payload)

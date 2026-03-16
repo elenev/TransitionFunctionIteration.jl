@@ -65,6 +65,7 @@ function compute_next_period_values(next, mdl::NeoclassicalGrowthModel)
     (; A, K, C) = next
     (; α, β, δ, γ) = mdl
     MPK = A * cobb_douglas_prime(K, 1.0, α, 1)  # Marginal Product of Capital at next period's state
+    #MPK = 1.2
     MU = crra.u′(C, γ)  # Marginal Utility at next period's state
     Kpayoff = MPK + (1 - δ)  # Next period's payoff from capital
     expectations = (; Ek = β * MU * Kpayoff,)

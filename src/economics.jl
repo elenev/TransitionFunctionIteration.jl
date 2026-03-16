@@ -53,8 +53,13 @@ end
 end
 
 "CES aggregator over two inputs `x₁`, `x₂` with weight `w` on `x₁` and `1-w` on `x₂` and elasticity of substitution `ε`."
-@inline ces(x₁::Real, x₂::Real, w::Real, ε::Real) = ces( SVector(x₁, x₂), SVector(w, 1-w), ε)
-@inline ces_strict(x₁::Real, x₂::Real, w::Real, ε::Real) = ces_strict( SVector(x₁, x₂), SVector(w, 1-w), ε)
+@inline function ces(x₁::Real, x₂::Real, w::Real, ε::Real)
+    ε == 1.0 ? cobb_douglas(x₁, x₂, w) : ces_strict(x₁, x₂, w, ε)
+end
+@inline function ces_strict(x₁::Real, x₂::Real, w::Real, ε::Real)
+    a = (ε - 1) / ε
+    return (w * x₁^a + (1 - w) * x₂^a)^(1 / a)
+end
 
 "Marginal product of input `i` in a CES function with inputs `x`, weights `w`, and elasticity of substitution `ε`."
 @inline function ces_prime(x::AbstractArray{<:Real}, w::AbstractArray{<:Real}, ε::Real, i::Integer)
@@ -91,7 +96,7 @@ end
 end
 
 "Cobb-Douglas aggregator over two inputs `x₁`, `x₂` with exponents `w` and `1-w`."
-@inline cobb_douglas(x₁::Real, x₂::Real, w::Real) = cobb_douglas(SVector(x₁, x₂), SVector(w, 1-w))
+@inline cobb_douglas(x₁::Real, x₂::Real, w::Real) = x₁^w * x₂^(1 - w)
 
 "Marginal product of input `i` in a Cobb-Douglas function with inputs `x` and exponents `w`."
 @inline function cobb_douglas_prime(x::AbstractArray{<:Real}, w::AbstractArray{<:Real}, i::Integer)
