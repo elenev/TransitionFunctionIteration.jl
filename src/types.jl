@@ -85,6 +85,24 @@ points(ssg::AbstractStateSpaceGrid) = _points(unigrids(ssg))
     return NamedTuple{keys(ugrids)}(ntuple(i -> ugrids[i][I[i]], Val(N)))
 end
 
+@inline Base.:(==)(ssg1::AbstractStateSpaceGrid, ssg2::AbstractStateSpaceGrid) = (unigrids(ssg1) == unigrids(ssg2))
+
+function _isapprox(v1::AbstractVector, v2::AbstractVector; kwargs...)
+    if length(v1) != length(v2)
+        return false
+    end
+    return all(isapprox(x, y; kwargs...) for (x, y) in zip(v1, v2))
+end
+
+
+@inline function Base.isapprox(ssg1::AbstractStateSpaceGrid, ssg2::AbstractStateSpaceGrid; kwargs...)
+    ugrids1 = unigrids(ssg1)
+    ugrids2 = unigrids(ssg2)
+
+    return keys(ugrids1) == keys(ugrids2) && 
+        all(Base.isapprox(v1, v2; kwargs...) for (v1, v2) in zip(values(ugrids1), values(ugrids2)))
+end
+
 "Abstract base for interpolated functions over a state space."
 abstract type AbstractInterpolant end
 
@@ -226,6 +244,21 @@ end
 "Wrap values `x` into a NamedTuple keyed by the output names of `fct`."
 @inline name_values(y, fct::AbstractInterpolant) = _pack_rows(NamedTuple{varnames(fct)}, y)
 
+@inline function Base.:(==)(fct1::AbstractInterpolant, fct2::AbstractInterpolant)
+    return (
+            (statespacegrid(fct1) == statespacegrid(fct2)) &&
+            (varnames(fct1) == varnames(fct2)) &&
+            all(coef1 == coef2 for (coef1, coef2) in zip(coefficients(fct1), coefficients(fct2)))
+    )
+end
+
+@inline function Base.isapprox(fct1::AbstractInterpolant, fct2::AbstractInterpolant; kwargs...)
+    return varnames(fct1) == varnames(fct2) && 
+        Base.isapprox(statespacegrid(fct1), statespacegrid(fct2); kwargs...) &&
+        all(Base.isapprox(coef1, coef2; kwargs...) for (coef1, coef2) in zip(coefficients(fct1), coefficients(fct2)))
+end
+
+
 "Abstract base for exogenous environments (Markov chains)."
 abstract type AbstractExogenv end
 
@@ -258,6 +291,8 @@ end
 "Return the number of discrete exogenous states."
 @inline exnpt(exogenv::Exogenv) = length(exogenv.pts)
 
+@inline varnames(exogenv::Exogenv) = varnames(eltype(exogenv.pts))
+
 @inline points(exogenv::Exogenv) = exogenv.pts
 @inline transition_matrix(exogenv::Exogenv) = exogenv.mtrans
 @inline conditional_distro(exogenv::AbstractExogenv, state_idx) = view(transition_matrix(exogenv), state_idx, :)
@@ -271,6 +306,19 @@ end
 function points(exogenv::AbstractExogenv, states::AbstractArray{<:Integer})
     return StructArray(points(exogenv)[states])
 end
+
+@inline function Base.:(==)(env1::Exogenv, env2::Exogenv) 
+    return (points(env1) == points(env2)) && 
+        (transition_matrix(env1) == transition_matrix(env2)) && 
+        (ssidx(env1) == ssidx(env2))
+end
+@inline function Base.isapprox(env1::Exogenv, env2::Exogenv; kwargs...)
+    return propertynames(points(env1)) == propertynames(points(env2)) && 
+        all(Base.isapprox(p1, p2; kwargs...) for (p1, p2) in zip(components(points(env1)), components(points(env2)))) &&
+        Base.isapprox(transition_matrix(env1), transition_matrix(env2); kwargs...) &&
+        (ssidx(env1) == ssidx(env2))
+end
+
 
 @kwdef struct NextPeriod{E,C,A,V<:AbstractVector}
     expectations::E
@@ -287,23 +335,28 @@ E(x, np::NextPeriod) = dot(np.prnext, x)
 abstract type Bounded end
 Base.broadcastable(b::Bounded) = Ref(b)
 
+
 struct Unbounded <: Bounded end
+@inline Base.:(==)(::Unbounded, ::Unbounded) = ( true )
 
 struct LowerBounded{L<:Real} <: Bounded
     lower::L
 end
 PositiveBounded() = LowerBounded(0.0)
+@inline Base.:(==)(b1::LowerBounded, b2::LowerBounded) = (b1.lower == b2.lower)
 
 struct UpperBounded{U<:Real} <: Bounded
     upper::U
 end
 NegativeBounded() = UpperBounded(0.0)
+@inline Base.:(==)(b1::UpperBounded, b2::UpperBounded) = (b1.upper == b2.upper)
 
 struct IntervalBounded{L<:Real,U<:Real} <: Bounded
     lower::L
     upper::U
 end
 IntervalBounded() = IntervalBounded(0.0, 1.0)
+Base.:(==)(b1::IntervalBounded, b2::IntervalBounded) = ((b1.lower == b2.lower) && (b1.upper == b2.upper))
 
 to_constrained(x, ::Unbounded) = x
 to_constrained(x, b::LowerBounded) = exp(x) + b.lower
@@ -352,6 +405,32 @@ Assembled solution container for an economic model.
     Tfct::TF
     Pfct_bounds::PB 
     Tfct_bounds::TB
+end
+
+function Base.:(==)(obj1::ModelSolution, obj2::ModelSolution)
+    return (
+        (obj1.model == obj2.model) &&
+        (obj1.exogenv == obj2.exogenv) &&
+        (obj1.ssg == obj2.ssg) &&
+        (obj1.Pfct == obj2.Pfct) &&
+        (obj1.Vfct == obj2.Vfct) &&
+        (obj1.Tfct == obj2.Tfct) &&
+        (obj1.Pfct_bounds == obj2.Pfct_bounds) &&
+        (obj1.Tfct_bounds == obj2.Tfct_bounds)
+    )
+end
+
+function Base.isapprox(obj1::ModelSolution, obj2::ModelSolution; kwargs...)
+    return (
+        (obj1.model == obj2.model) &&
+        Base.isapprox(obj1.exogenv, obj2.exogenv; kwargs...) &&
+        Base.isapprox(obj1.ssg, obj2.ssg; kwargs...) &&
+        Base.isapprox(obj1.Pfct, obj2.Pfct; kwargs...) &&
+        Base.isapprox(obj1.Vfct, obj2.Vfct; kwargs...) &&
+        Base.isapprox(obj1.Tfct, obj2.Tfct; kwargs...) &&
+        (obj1.Pfct_bounds == obj2.Pfct_bounds) &&
+        (obj1.Tfct_bounds == obj2.Tfct_bounds)
+    )
 end
 
 
