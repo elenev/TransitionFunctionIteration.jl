@@ -1,7 +1,7 @@
 # Neoclassical Growth Model 
 using TransitionFunctionIteration
 import TransitionFunctionIteration as TFI
-import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate, compute_next_period_values, vals_from_policy
+import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate, compute_next_period_values, vals_from_policy, bounds
 import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime
 
 using StaticArrays
@@ -27,6 +27,8 @@ end
 # [Optional] 
 vals_from_policy(_, policy, ::NeoclassicalGrowthModel) = (C = policy.C,)
 
+steadystate_guess(::NeoclassicalGrowthModel) = (; C = 1.0, K = 3.0)
+
 # Analytic steady state solution for initial guess
 function steadystate(model::NeoclassicalGrowthModel)
     (; α, β, δ, γ) = model
@@ -41,6 +43,13 @@ function steadystate(model::NeoclassicalGrowthModel)
 
     return SteadyState(; model, exog, endog, values, guess)
 end
+
+function bounds(::SteadyState{NeoclassicalGrowthModel})
+    policy_bounds = (C = TFI.PositiveBounded(),)
+    endog_bounds = (K = TFI.PositiveBounded(),)
+    return policy_bounds, endog_bounds
+end
+    
 
 # Grids for endogenous variables
 function define_endog_grids(model::NeoclassicalGrowthModel, ::AbstractSteadyState)
@@ -65,7 +74,6 @@ function compute_next_period_values(next, mdl::NeoclassicalGrowthModel)
     (; A, K, C) = next
     (; α, β, δ, γ) = mdl
     MPK = A * cobb_douglas_prime(K, 1.0, α, 1)  # Marginal Product of Capital at next period's state
-    #MPK = 1.2
     MU = crra.u′(C, γ)  # Marginal Utility at next period's state
     Kpayoff = MPK + (1 - δ)  # Next period's payoff from capital
     expectations = (; Ek = β * MU * Kpayoff,)
@@ -101,7 +109,7 @@ function calc_eqm(state, policy, mdl::NeoclassicalGrowthModel, np::NextPeriod, m
         if mode isa IterateMode
             return (; fx, trans, vals)
         elseif mode isa SimulateMode
-            addvars = (; Y, I)
+            addvars = (; Y, I, C)
             return (; fx, trans, addvars)
         end
 

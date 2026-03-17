@@ -27,7 +27,11 @@ function steadystate_exogenv(exogenv)
     return exogenv
 end
 
-function steadystate(mdl::AbstractModel, policy_guess, transition_guess, exogenv)
+function steadystate(mdl::AbstractModel)
+    policy_guess, transition_guess, exogenv = steadystate_guess(mdl)
+    if isnothing(exogenv)
+        exogenv = Exogenv(mdl)
+    end
     exogenv = steadystate_exogenv(exogenv)
 
     payload = (model = mdl, policy_guess = policy_guess, 
@@ -49,10 +53,18 @@ function steadystate(mdl::AbstractModel, policy_guess, transition_guess, exogenv
     
 end
 
+# Default is unbounded, but users can define their own bounds by overloading this method for their SteadyState type.
+function bounds(stv::SteadyState)
+    return map( _ -> Unbounded(), stv.guess), map( _ -> Unbounded(), stv.endog)
+end
+
 
 # Main setup 
 function main_setup(model::AbstractModel, initobj::Union{Nothing,AbstractModelSolution}=nothing; 
     grids=nothing)
+
+    # Create exogenous environment
+    exogenv = Exogenv(model)
 
     # Calculate steady state
     stv = steadystate(model)
@@ -61,15 +73,16 @@ function main_setup(model::AbstractModel, initobj::Union{Nothing,AbstractModelSo
     default_grids = define_endog_grids(model, stv)
     grids = isnothing(grids) ? default_grids : merge(default_grids, grids)
 
-    # Create exogenous environment
-    exogenv = Exogenv(model)
-
     # Create state space grid
     ssg = StateSpaceGrid(exogenv, grids)
 
+    # Define bounds
+    Pfct_bounds, Tfct_bounds = bounds(stv)
+
     # Create interpolants
     if isnothing(initobj)
-        Pfct = Interpolant(ssg, stv.guess)
+        unconstrained_guess = map(to_unconstrained, stv.guess, Pfct_bounds)
+        Pfct = Interpolant(ssg, unconstrained_guess)
         Vfct = Interpolant(ssg, stv.values)
 
         exog_ones = ones(exnpt(exogenv))
@@ -79,15 +92,12 @@ function main_setup(model::AbstractModel, initobj::Union{Nothing,AbstractModelSo
         )
         #@debug "Checking endog" typeof(endog) endog
         Tfct = Interpolant(ssg, endog)
-
-        Pfct = Interpolant(ssg, stv.guess)
-        Vfct = Interpolant(ssg, stv.values)
     else
         Pfct = Interpolant(ssg, initobj.Pfct(points(ssg)))
         Vfct = Interpolant(ssg, initobj.Vfct(points(ssg)))
-        Tfct = Interpolant(ssg, stv.transitions)
+        Tfct = Interpolant(ssg, initobj.Tfct(points(ssg)))
     end
 
-    obj = ModelSolution(; model, exogenv, ssg, Pfct, Vfct, Tfct)
+    obj = ModelSolution(; model, exogenv, ssg, Pfct, Vfct, Tfct, Pfct_bounds, Tfct_bounds)
     return obj, stv
 end

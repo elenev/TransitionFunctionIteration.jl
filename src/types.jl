@@ -281,6 +281,43 @@ end
 
 E(x, np::NextPeriod) = dot(np.prnext, x)
 
+
+
+### Transformations Into the Real Line 
+abstract type Bounded end
+
+struct Unbounded <: Bounded end
+
+struct LowerBounded{L<:Real} <: Bounded
+    lower::L
+end
+PositiveBounded() = LowerBounded(0.0)
+
+struct UpperBounded{U<:Real} <: Bounded
+    upper::U
+end
+NegativeBounded() = UpperBounded(0.0)
+
+struct IntervalBounded{L<:Real,U<:Real} <: Bounded
+    lower::L
+    upper::U
+end
+IntervalBounded() = IntervalBounded(0.0, 1.0)
+
+to_constrained(x, ::Unbounded) = x
+to_constrained(x, b::LowerBounded) = exp(x) + b.lower
+to_constrained(x, b::UpperBounded) = -exp(x) + b.upper
+to_constrained(x, b::IntervalBounded) = (b.upper - b.lower) / (1 + exp(-x)) + b.lower
+
+to_unconstrained(y, ::Unbounded) = y
+to_unconstrained(y, b::LowerBounded) = log(y - b.lower)
+to_unconstrained(y, b::UpperBounded) = log(b.upper - y)
+to_unconstrained(y, b::IntervalBounded) = log((y - b.lower) / (b.upper - y))
+
+
+
+
+
 "Abstract base for user-supplied economic model logic. Implement `calc_eqm` for each subtype."
 abstract type AbstractModel end
 
@@ -303,13 +340,17 @@ Assembled solution container for an economic model.
             S<:AbstractStateSpaceGrid,
             PF<:AbstractInterpolant,
             VF<:AbstractInterpolant,
-            TF<:AbstractInterpolant} <: AbstractModelSolution
+            TF<:AbstractInterpolant,
+            PB<:NamedTuple, 
+            TB<:NamedTuple} <: AbstractModelSolution
     model::M
     exogenv::E
     ssg::S
     Pfct::PF
     Vfct::VF
     Tfct::TF
+    Pfct_bounds::PB 
+    Tfct_bounds::TB
 end
 
 
@@ -354,33 +395,36 @@ end
 # NonlinearProblem functors
 abstract type EquilibriumSystem end
 
-struct TFISystem{S, N, P, M} <: EquilibriumSystem
+struct TFISystem{S, N, P, B, M} <: EquilibriumSystem
     fullstate::S
     np::N
     pfct::P
+    pfct_bounds::B
     model::M
 end
-TFISystem(fullstate, np, obj) = TFISystem(fullstate, np, obj.Pfct, obj.model)
+TFISystem(fullstate, np, obj) = TFISystem(fullstate, np, obj.Pfct, obj.Pfct_bounds, obj.model)
 
 function (sys::TFISystem)(u,p)
     named_policy = name_values(u, sys.pfct)
+    named_policy = map(to_constrained, named_policy, sys.pfct_bounds)
     return calc_eqm(sys.fullstate, named_policy, sys.model, sys.np, SolveMode())
 end
 
-struct STPFISystem{S, R, P, M} <: EquilibriumSystem
+struct STPFISystem{S, R, M} <: EquilibriumSystem
     fullstate::S
     prnext::R
     p_nof::Int
-    pfct::P
-    model::M
+    obj::M
 end
-STPFISystem(fullstate, prnext, p_nof, obj) = STPFISystem(fullstate, prnext, p_nof, obj.Pfct, obj.model)
 
 function (sys::STPFISystem)(u,p)
-    named_policy = name_values(u[1:sys.p_nof], sys.pfct)
-    np, named_transitions = _compute_expectations_from_trans(u[sys.p_nof+1:end], sys.prnext, sys.obj)
-    out = calc_eqm(sys.fullstate, named_policy, sys.model, np, IterateMode())
-    transition_residuals = map(-,named_transitions, out.transitions)
+    named_policy = name_values(u[1:sys.p_nof], sys.obj.Pfct)
+    named_policy = map(to_constrained, named_policy, sys.obj.Pfct_bounds)
+    named_trans = name_values(u[sys.p_nof+1:end], sys.obj.Tfct)
+    named_trans = map(to_constrained, named_trans, sys.obj.Tfct_bounds)
+    np, _ = _compute_expectations_from_trans(constrained_named_trans, sys.prnext, sys.obj)
+    out = calc_eqm(sys.fullstate, named_policy, sys.obj.model, np, IterateMode())
+    transition_residuals = map(-,named_trans, out.transitions)
     return vcat(out.fx, transition_residuals)
 end
 
@@ -513,3 +557,12 @@ end
 function vals_from_policy(state, policy, mdl::AbstractModel, args...)
     throw(MethodNotImplementedError(:vals_from_policy, typeof(mdl)))
 end
+
+# This is only necessary if steady state is not implemented. Must return a tuple (policy_guess, endog_guess, exogenv)
+# of NamedTuples keyed by the policy variable names and endogenous state variable names, respectively.
+# Exogenv should contain the 1-state MC in deterministic steady state.
+# It can also be nothing, in which case the default Exogenv(mdl) will be used to construct a constant MC at the ergodic mean.
+function steadystate_guess(mdl::AbstractModel)
+    throw(MethodNotImplementedError(:steadystate_guess, typeof(mdl)))
+end
+

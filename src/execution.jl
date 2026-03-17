@@ -97,6 +97,10 @@ end
 
 function _compute_expectations_from_trans(trans::AbstractMatrix, prnext, obj::ModelSolution)
     named_trans = name_values(trans, obj.Tfct)
+    return _compute_expectations_from_trans(named_trans, prnext, obj)
+end
+
+function _compute_expectations_from_trans(named_trans, prnext, obj::ModelSolution)
     next = forecast_next(named_trans, obj)
     return compute_expectations(next, prnext, obj.model, SolveMode()), named_trans
 end
@@ -165,7 +169,9 @@ function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
     end
 
     # # Update guess and values with the solution
-    out = calc_eqm(fullstate, name_values(new_policy, obj.Pfct), obj.model, np, IterateMode())
+    named_policy = name_values(new_policy, obj.Pfct)
+    named_policy = map(to_constrained, named_policy, obj.Pfct_bounds)
+    out = calc_eqm(fullstate, named_policy, obj.model, np, IterateMode())
     out_trans = values(expand_transitions(out.trans, obj.exogenv))
 
     new = FunctionValuesAtPoint(state, new_policy, SVector(values(out.vals)), hcat(out_trans...)')

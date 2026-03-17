@@ -57,7 +57,9 @@ function calc_eqm_from_state(state, obj)
     np = compute_expectations(next, prnext, obj.model, SimulateMode())
     
     # Compute equilibrium residuals, next period's transitions and simulated variables
-    return calc_eqm(fullstate, obj.Pfct(state), obj.model, np, SimulateMode()), trans
+    policies = map( to_constrained, obj.Pfct(state), obj.Pfct_bounds)
+    #@debug "Simulated policys at state $state: " policies
+    return calc_eqm(fullstate, policies, obj.model, np, SimulateMode()), trans
 end
 
 function calc_result!(fx, transerr, state, obj)
@@ -220,7 +222,7 @@ const default_percentiles = (1, 5, 25, 50, 75, 95, 99);
 
 const default_stats = merge( (; mean, std, minimum), 
     (; (Symbol("p$k") => x -> quantile(x,k/100) for k in default_percentiles)...),
-    (; max = maximum) )
+    (; max = maximum, ac = x -> autocor(x,[1])[1]) )
 
 
 
