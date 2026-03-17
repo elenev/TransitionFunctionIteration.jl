@@ -96,9 +96,8 @@ function calc_eqm(state, policy, mdl::NeoclassicalGrowthModel, np::NextPeriod, m
     MU = crra.u′(C, γ)
     
     # Euler equation residual: 1 = β E[u′(C′) / u′(C) * (MPK′ + 1 - δ)] 
-    fx = @SVector [
-        1 - np.expectations.Ek / MU
-        ]
+    #fx = (euler = 1 - np.expectations.Ek / MU,)
+    fx = SVector(1 - np.expectations.Ek / MU,)
 
     if mode isa SolveMode
         return fx

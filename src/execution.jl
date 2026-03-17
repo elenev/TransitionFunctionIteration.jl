@@ -106,6 +106,9 @@ function _compute_expectations_from_trans(named_trans, prnext, obj::ModelSolutio
     return compute_expectations(next, prnext, obj.model, SolveMode()), named_trans
 end
 
+_fx_to_svec(fx::NamedTuple) = SVector(values(fx))
+_fx_to_svec(fx::StaticVector) = fx
+
 struct FunctionValuesAtPoint{S, P,V,T}
     state::S
     pfct::P
@@ -130,7 +133,7 @@ function (sys::TFISystem)(u,p::EvaluationMode)
     named_policy = map(to_constrained, named_policy, sys.obj.Pfct_bounds)
 
     if p isa SolveMode
-        return calc_eqm(fullstate, named_policy, sys.obj.model, sys.np, SolveMode())
+        return _fx_to_svec(calc_eqm(fullstate, named_policy, sys.obj.model, sys.np, SolveMode()))
     else
         out = calc_eqm(fullstate, named_policy, sys.obj.model, sys.np, p)
         out_trans = expand_transitions(out.trans, sys.obj.exogenv)
@@ -167,7 +170,7 @@ function (sys::STPFISystem)(u,p::EvaluationMode)
     transition_residuals = map(-,named_trans, out_trans)
 
     if p isa SolveMode
-        return vcat(out.fx, transition_residuals...)
+        return vcat(_fx_to_svec(out.fx), transition_residuals...)
     else
         return FunctionValuesAtPoint(sys.state, view(u, 1:p_nof), SVector(values(out.vals)), hcat(out_trans...)')
     end

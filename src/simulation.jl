@@ -40,8 +40,18 @@ function simulate_markov_chain(exogenv::AbstractExogenv, start::AbstractVector{T
     return states, points(exogenv, states)
 end
 
-# Returns an MVector type corresponding to the row of an MMatrix
-_row_mvec_type(::Type{<:StaticMatrix{R, C, T}}) where {R, C, T} = MVector{C, T}
+
+_fx_to_nt(fx::NamedTuple) = fx
+function _fx_to_nt(fx::AbstractVector)
+    names = ntuple(i -> Symbol("fx$i"), length(fx))
+    return NamedTuple{names}(Tuple(fx))
+end
+
+# Next period's exogenous state index; falls back to ssidx at the end of the path.
+get_next_exst(t, ssidx, exog_run) = t < length(exog_run) ? exog_run[t+1] : ssidx
+
+# Merge scalar fx errors with transition errors selected for the realized next exog state.
+merge_error(fx_nt, transerr, next_exst) = merge(fx_nt, map(v -> v[next_exst], transerr))
 
 # Compute simulated results for one period
 function calc_eqm_from_state(state, obj)
@@ -62,58 +72,32 @@ function calc_eqm_from_state(state, obj)
     return calc_eqm(fullstate, policies, obj.model, np, SimulateMode()), trans
 end
 
-function calc_result!(fx, transerr, state, obj)
+function calc_result(state, obj)
     # Get exogenous state info
     exog = points(obj.exogenv)[state.exst]
 
     # Calculate equilibrium
     out, trans = calc_eqm_from_state(state, obj)
 
-    # Expand transitions
+    # Expand transitions and compute errors
     out_trans = expand_transitions(out.trans, obj.exogenv)
-    
-    # Fill equilibrium residuals
-    fx .= out.fx
+    fx_nt = _fx_to_nt(out.fx)
+    transerr = map(-, out_trans, trans)   # NamedTuple of SVectors, one per exog state
 
-    # Compute transition errors
-    out_transerr = map(-, out_trans, trans)
-    fill_transerr!(this_transerr, this_out_transerr) = (this_transerr .= this_out_transerr)
-    foreach(fill_transerr!, transerr, out_transerr)
-
-    # Return transitions and simulated variables for this period
-    return StructArray(out_trans), merge(state, exog, out.addvars)
-end
-
-# Select transition errors
-function select_errors(transerrs, exog_states)
-    N, M = size(transerrs)
-
-    # Preallocate
-    ScalarTuple = typeof(map(first, first(transerrs)))
-    out = StructArray{ScalarTuple}(undef, N, M)
-
-    for CI in CartesianIndices(transerrs)
-        n, m = Tuple(CI) # Unpack the spatial coordinates
-        
-        idx = m < M ? exog_states[n, m+1] : 3
-        
-        # CI natively indexes into both arrays seamlessly
-        out[CI] = map(v -> v[idx], transerrs[CI]) 
-    end
-
-    return out
+    return StructArray(out_trans), merge(state, exog, out.addvars), fx_nt, transerr
 end
 
 """
     simulate(obj, stv=nothing; sz=12=>100, seed=100, burn=0,
-             exog_start=ssidx(obj.exogenv), endog_start=stv.state,
+             exog_start=ssidx(obj.exogenv), endog_start=stv.endog,
              shocks=sample_shocks(sz, seed, burn))
 
 Simulate the solved model along stochastic paths.
 
-Returns `(simseries, fxerrs)`:
+Returns `(simseries, errs)`:
 - `simseries`: `N_runs × N_periods` StructArray of state and output variables
-- `fxerrs`: matching matrix of equilibrium residual vectors
+- `errs`: matching StructArray of equation and transition errors, named after the
+  corresponding equations and endogenous state variables
 
 `sz = N_runs => N_periods`. Burn-in periods are simulated but excluded from output.
 """
@@ -132,67 +116,55 @@ function simulate(obj::ModelSolution, stv=nothing;
     # Simulation size
     N_runs, N_periods = size(exog_states)
 
-    # Preallocate equation errors
-    similar_to_coef = similar ∘ first ∘ coefficients
-    fxerrtype = eltype(coefficients(obj.Pfct))
-    fxerrs = [similar_to_coef(obj.Pfct) for _ in 1:N_runs, _ in 1:N_periods]
-
-    # Preallocate transiton errors
-    transerrtype = (_row_mvec_type ∘ eltype ∘ coefficients)(obj.Tfct)
-    empty_transerr() = NamedTuple{varnames(obj.Tfct)}(ntuple(_ -> transerrtype(undef), nof(obj.Tfct)))
-    transerrs = [empty_transerr() for _ in 1:N_runs, _ in 1:N_periods]
-
-    # Identify the size of simulation output to preallocate
-    tmp = calc_result!(fxerrs[1,1], transerrs[1,1], start, obj)  # to compile
-    simseries = Matrix{typeof(tmp[2])}(undef, N_runs, N_periods)
+    # Infer element types from a trial run (also triggers compilation)
+    _, _tmp_simvar, _tmp_fxerr, _tmp_transerr = calc_result(start, obj)
+    _tmp_errs = merge_error(_tmp_fxerr, _tmp_transerr, exog_start)
+    simseries = Matrix{typeof(_tmp_simvar)}(undef, N_runs, N_periods)
+    errs      = Matrix{typeof(_tmp_errs)}(undef,   N_runs, N_periods)
 
     # Expand endog_start
     endog_start = StructArray(expand_transitions(endog_start, obj.exogenv))
 
     original_threads = BLAS.get_num_threads()
     BLAS.set_num_threads(1)  # To avoid thread oversubscription
-    #Threads.@threads :dynamic 
-    for r in axes(exog_states,1)
-        trans = endog_start # Start at initial endogenous state
-        for t in axes(exog_states,2)
-            exog_idx = exog_states[r,t]
+    #Threads.@threads :dynamic
+    for r in axes(exog_states, 1)
+        exog_run = view(exog_states, r, :)
+        trans = endog_start
+        for t in axes(exog_states, 2)
+            exog_idx = exog_states[r, t]
             state = make_point(exog_idx, trans[exog_idx])
-            trans, simseries[r,t] = calc_result!(fxerrs[r,t],transerrs[r,t], state, obj)
+            trans, simseries[r,t], fx_nt, transerr = calc_result(state, obj)
+            errs[r,t] = merge_error(fx_nt, transerr, get_next_exst(t, ssidx(obj.exogenv), exog_run))
         end
     end
     BLAS.set_num_threads(original_threads)  # Restore
 
-    return StructArray(simseries[:, burn+1:end-1]), fxerrs[:, burn+1:end-1], select_errors(transerrs, exog_states)
+    t_range = (burn+1):(N_periods-1)
+    return StructArray(simseries[:, t_range]), StructArray(errs[:, t_range])
 
 end
 
-function abs!(X::AbstractArray)
-    X .= abs.(X)
-end
-
 """
-    calc_error_stats(fxerrs; percentiles=[50,75,90,95,99,100]) -> StructArray
+    calc_error_stats(errs; percentiles=[50,75,90,95,99,100]) -> MomentArray
 
-Summarize absolute equation errors from a simulation.
+Summarize absolute equation and transition errors from a simulation.
 
-Returns a StructArray with one entry per equation, each containing `:mean`
-and `:pXX` fields for the requested percentiles.
+Returns a `MomentArray` with error names as rows and stat names (`:mean`, `:p50`, …)
+as columns. Access entries with `getmoment(out, :euler, :mean)` etc.
 """
-function calc_error_stats(fxerrs; percentiles=[50, 75, 90, 95, 99, 100])
-
-    Nof = length(first(fxerrs))
-    allerrs = stack(fxerrs, dims=1)
-    abs!(allerrs)
+function calc_error_stats(errs::StructArray; percentiles=[50, 75, 90, 95, 99, 100])
 
     ntprct = (; (Symbol("p$p") => x -> quantile(x, p/100) for p in percentiles)...)
-    statfcns = merge( (mean = mean, ), ntprct)
+    statfcns = merge((mean = mean,), ntprct)
 
-    function calc_error_stats_for_dim(i)
-        this_err = view(allerrs, :, i)
-        return map(f -> f(this_err), statfcns)
-    end
+    row_names = propertynames(errs)
+    col_names = keys(statfcns)
 
-    return StructArray(calc_error_stats_for_dim(i) for i in 1:Nof)
+    errvecs = map(c -> vec(abs.(c)), StructArrays.components(errs))
+    data = [f(v) for v in errvecs, f in values(statfcns)]
+
+    return MomentArray(data, row_names, col_names)
 
 end
 
