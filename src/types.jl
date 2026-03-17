@@ -446,6 +446,25 @@ end
 
 state(ss::SteadyState) = merge(ss.exog, ss.endog)
 
+@inline function Base.:(==)(ss1::SteadyState, ss2::SteadyState)
+    return (ss1.model == ss2.model) &&
+        (ss1.guess == ss2.guess) &&
+        (ss1.endog == ss2.endog) &&
+        (ss1.exog == ss2.exog) &&
+        (ss1.values == ss2.values)
+end
+@inline function Base.isapprox(ss1::SteadyState, ss2::SteadyState; kwargs...)
+    return (ss1.model == ss2.model) &&
+        keys(ss1.guess) == keys(ss2.guess) &&
+        all(Base.isapprox(v1, v2; kwargs...) for (v1, v2) in zip(values(ss1.guess), values(ss2.guess))) &&
+        keys(ss1.endog) == keys(ss2.endog) &&
+        all(Base.isapprox(v1, v2; kwargs...) for (v1, v2) in zip(values(ss1.endog), values(ss2.endog))) &&
+        keys(ss1.exog) == keys(ss2.exog) &&
+        all(Base.isapprox(v1, v2; kwargs...) for (v1, v2) in zip(values(ss1.exog), values(ss2.exog))) &&
+        keys(ss1.values) == keys(ss2.values) &&
+        all(Base.isapprox(v1, v2; kwargs...) for (v1, v2) in zip(values(ss1.values), values(ss2.values)))
+end
+
 
 "Abstract dispatch tag for evaluation context."
 abstract type EvaluationMode end
