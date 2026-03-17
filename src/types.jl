@@ -313,7 +313,8 @@ end
         (ssidx(env1) == ssidx(env2))
 end
 @inline function Base.isapprox(env1::Exogenv, env2::Exogenv; kwargs...)
-    return propertynames(points(env1)) == propertynames(points(env2)) && 
+    return exnpt(env1) == exnpt(env2) &&
+        propertynames(points(env1)) == propertynames(points(env2)) &&
         all(Base.isapprox(p1, p2; kwargs...) for (p1, p2) in zip(components(points(env1)), components(points(env2)))) &&
         Base.isapprox(transition_matrix(env1), transition_matrix(env2); kwargs...) &&
         (ssidx(env1) == ssidx(env2))
