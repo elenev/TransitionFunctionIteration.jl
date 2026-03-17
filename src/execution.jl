@@ -28,6 +28,7 @@ Evaluate `obj.Vfct` at `trans` across all exogenous states in `obj.exogenv`.
 Returns a StructArray used to form expectations over next-period values.
 """
 function forecast_next(trans, obj)
+
     forecast_tuple = ntuple(
         i -> forecast_at_point(i, map( t -> t[i], trans), obj.Vfct, obj.exogenv), 
         exnpt(obj.exogenv) )
@@ -112,6 +113,66 @@ struct FunctionValuesAtPoint{S, P,V,T}
     tfct::T
 end
 
+abstract type EquilibriumSystem end
+
+@inline get_fullstate(sys::EquilibriumSystem) = merge(sys.state, sys.exog)
+
+struct TFISystem{S, E, N, M} <: EquilibriumSystem
+    state::S
+    exog::E
+    np::N
+    obj::M
+end
+
+function (sys::TFISystem)(u,p::EvaluationMode)
+    fullstate = get_fullstate(sys)
+    named_policy = name_values(u, sys.obj.Pfct)
+    named_policy = map(to_constrained, named_policy, sys.obj.Pfct_bounds)
+
+    if p isa SolveMode
+        return calc_eqm(fullstate, named_policy, sys.obj.model, sys.np, SolveMode())
+    else
+        out = calc_eqm(fullstate, named_policy, sys.obj.model, sys.np, p)
+        out_trans = expand_transitions(out.trans, sys.obj.exogenv)
+        return FunctionValuesAtPoint(sys.state, u, SVector(values(out.vals)), hcat(out_trans...)')
+    end
+end
+
+struct STPFISystem{S, E, R, M} <: EquilibriumSystem
+    state::S
+    exog::E
+    prnext::R
+    obj::M
+end
+
+function (sys::STPFISystem)(u,p::EvaluationMode)
+    # Full state
+    fullstate = get_fullstate(sys)
+
+    # Construct policy named tuple
+    p_nof = nof(sys.obj.Pfct)
+    named_policy = name_values(view(u, 1:p_nof), sys.obj.Pfct)
+    named_policy = map(to_constrained, named_policy, sys.obj.Pfct_bounds)
+
+    # Construct transition matrix
+    u_tfct = SMatrix{ nof(sys.obj.Tfct), exnpt(sys.obj.exogenv)}(view(u,(p_nof+1):length(u)))    
+    u_tfct = to_constrained.(u_tfct, values(sys.obj.Tfct_bounds)) # DOES NOT CHECK THAT ORDER IS THE SAME YET
+
+    # Name it
+    named_trans = name_values(u_tfct, sys.obj.Tfct)
+    np, _ = _compute_expectations_from_trans(named_trans, sys.prnext, sys.obj)
+    out = calc_eqm(fullstate, named_policy, sys.obj.model, np, IterateMode())
+    out_trans = expand_transitions(out.trans, sys.obj.exogenv)
+
+    transition_residuals = map(-,named_trans, out_trans)
+
+    if p isa SolveMode
+        return vcat(out.fx, transition_residuals...)
+    else
+        return FunctionValuesAtPoint(sys.state, view(u, 1:p_nof), SVector(values(out.vals)), hcat(out_trans...)')
+    end
+end
+
 function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
     # Unpack initial values
     guess = old.pfct
@@ -122,21 +183,22 @@ function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
 
     #policy, trans, vals, guess, state,  , init_trans
     p_nof = nof(obj.Pfct)
-    fullstate = merge(state, points(obj.exogenv)[state.exst])  # Merge in exogenous state variables for calc_eqm
+    exog = points(obj.exogenv)[state.exst]  # exogenous state variables
     prnext = conditional_distro(obj.exogenv, state.exst)
 
     if solmethod isa TFIMethod
         # Pre-compute expectations using old (read-only) init_trans — avoids WAR aliasing with trans writes below
         np, _ = _compute_expectations_from_trans(SMatrix(init_trans), prnext, obj)
-        sys = TFISystem(fullstate, np, obj)
+        sys = TFISystem(state, exog, np, obj)
     end
 
     if solmethod isa STPFIMethod
         # Add transition function residuals to the system of equations: consistency checking
-        sys = STPFISystem(fullstate, prnext, p_nof, obj) 
+        sys = STPFISystem(state, exog, prnext, obj) 
 
         x0p = SVector(guess[1])
         x0t = SArray(guess[2])
+        x0t = to_unconstrained.(x0t, values(obj.Tfct_bounds)) # DOES NOT CHECK THAT ORDER IS THE SAME YET
         x0 = vcat(x0p, vec(x0t))
     elseif solmethod isa TFIMethod
         # Use pre-computed expectations, solve only for policy function residuals
@@ -145,7 +207,7 @@ function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
 
     # Set up the problem
     
-    problem = NonlinearProblem{false}(sys, x0, nothing)
+    problem = NonlinearProblem{false}(sys, x0, SolveMode())
 
     # Algorithm sequence
     # alg = NonlinearSolvePolyAlgorithm((
@@ -162,19 +224,13 @@ function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
     sol = solve(problem, alg)
 
     if SciMLBase.successful_retcode(sol)
-        new_policy = SVector{p_nof}(view(sol.u, 1:p_nof))
+        solution = sol.u
     else
         @failedpoint ("Solver did not converge: $(sol.retcode) at state $state")
-        new_policy = guess # Revert to original guess if not solved
+        solution = x0 # Revert to original guess if not solved
     end
 
-    # # Update guess and values with the solution
-    named_policy = name_values(new_policy, obj.Pfct)
-    named_policy = map(to_constrained, named_policy, obj.Pfct_bounds)
-    out = calc_eqm(fullstate, named_policy, obj.model, np, IterateMode())
-    out_trans = values(expand_transitions(out.trans, obj.exogenv))
-
-    new = FunctionValuesAtPoint(state, new_policy, SVector(values(out.vals)), hcat(out_trans...)')
+    new = sys(solution, IterateMode())
     return new, SciMLBase.successful_retcode(sol)
 end
 

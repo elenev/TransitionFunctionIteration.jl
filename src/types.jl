@@ -285,6 +285,7 @@ E(x, np::NextPeriod) = dot(np.prnext, x)
 
 ### Transformations Into the Real Line 
 abstract type Bounded end
+Base.broadcastable(b::Bounded) = Ref(b)
 
 struct Unbounded <: Bounded end
 
@@ -392,41 +393,6 @@ function StateSpaceGrid(exogenv::AbstractExogenv, endog_grids::NamedTuple)
     return StateSpaceGrid(; exst = eachindex(exogenv.pts), endog_grids...)
 end
 
-# NonlinearProblem functors
-abstract type EquilibriumSystem end
-
-struct TFISystem{S, N, P, B, M} <: EquilibriumSystem
-    fullstate::S
-    np::N
-    pfct::P
-    pfct_bounds::B
-    model::M
-end
-TFISystem(fullstate, np, obj) = TFISystem(fullstate, np, obj.Pfct, obj.Pfct_bounds, obj.model)
-
-function (sys::TFISystem)(u,p)
-    named_policy = name_values(u, sys.pfct)
-    named_policy = map(to_constrained, named_policy, sys.pfct_bounds)
-    return calc_eqm(sys.fullstate, named_policy, sys.model, sys.np, SolveMode())
-end
-
-struct STPFISystem{S, R, M} <: EquilibriumSystem
-    fullstate::S
-    prnext::R
-    p_nof::Int
-    obj::M
-end
-
-function (sys::STPFISystem)(u,p)
-    named_policy = name_values(u[1:sys.p_nof], sys.obj.Pfct)
-    named_policy = map(to_constrained, named_policy, sys.obj.Pfct_bounds)
-    named_trans = name_values(u[sys.p_nof+1:end], sys.obj.Tfct)
-    named_trans = map(to_constrained, named_trans, sys.obj.Tfct_bounds)
-    np, _ = _compute_expectations_from_trans(constrained_named_trans, sys.prnext, sys.obj)
-    out = calc_eqm(sys.fullstate, named_policy, sys.obj.model, np, IterateMode())
-    transition_residuals = map(-,named_trans, out.transitions)
-    return vcat(out.fx, transition_residuals)
-end
 
 
 ## Simulation Stats

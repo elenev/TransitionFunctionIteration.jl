@@ -125,7 +125,7 @@ stats, _ = describe(simseries)
 
 
 # Testing
-function prep_testing_objects(obj)
+function prep_testing_objects(obj, stpfi = false)
     state = first(points(obj.Tfct.ssg))
     pol = first(coefficients(obj.Pfct))
     val = first(coefficients(obj.Vfct))
@@ -133,8 +133,10 @@ function prep_testing_objects(obj)
     guess = deepcopy(pol)
     inittrans = deepcopy(trans)
 
-    old = TFI.FunctionValuesAtPoint(state, pol, val, inittrans)
-    new = TFI.FunctionValuesAtPoint(state, guess, val, trans)
+    fullguess = stpfi ? (guess, inittrans) : guess
+
+    old = TFI.FunctionValuesAtPoint(state, fullguess, val, inittrans)
+    new = TFI.FunctionValuesAtPoint(state, pol, val, trans)
 
     fullstate = merge(state, points(obj.exogenv)[state.exst])
     prnext = conditional_distro(obj.exogenv, state.exst)
