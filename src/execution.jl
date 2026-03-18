@@ -172,7 +172,7 @@ function (sys::STPFISystem)(u,p::EvaluationMode)
     if p isa SolveMode
         return vcat(_fx_to_svec(out.fx), transition_residuals...)
     else
-        return FunctionValuesAtPoint(sys.state, view(u, 1:p_nof), SVector(values(out.vals)), hcat(out_trans...)')
+        return FunctionValuesAtPoint(sys.state, SVector{p_nof}(view(u, 1:p_nof)), SVector(values(out.vals)), hcat(out_trans...)')
     end
 end
 

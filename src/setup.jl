@@ -1,3 +1,47 @@
+# Main setup 
+function main_setup(model::AbstractModel, 
+    initobj::Union{Nothing,AbstractModelSolution}=nothing; 
+    grids=nothing)
+
+    # Create exogenous environment
+    exogenv = Exogenv(model)
+
+    # Calculate steady state
+    stv = steadystate(model)
+
+    # Define endogenous grids
+    default_grids = define_endog_grids(model, stv)
+    grids = isnothing(grids) ? default_grids : merge(default_grids, grids)
+
+    # Create state space grid
+    ssg = StateSpaceGrid(exogenv, grids)
+
+    # Define bounds
+    Pfct_bounds, Tfct_bounds = bounds(stv)
+
+    # Create interpolants
+    if isnothing(initobj)
+        unconstrained_guess = map(to_unconstrained, stv.guess, Pfct_bounds)
+        Pfct = Interpolant(ssg, unconstrained_guess)
+        Vfct = Interpolant(ssg, stv.values)
+
+        exog_ones = ones(exnpt(exogenv))
+        endog = StructArray(
+            map(p -> p * exog_ones, Base.structdiff(pt, (exst = nothing,)) ) 
+            for pt in points(ssg)
+        )
+        #@debug "Checking endog" typeof(endog) endog
+        Tfct = Interpolant(ssg, endog)
+    else
+        Pfct = Interpolant(ssg, initobj.Pfct(points(ssg)))
+        Vfct = Interpolant(ssg, initobj.Vfct(points(ssg)))
+        Tfct = Interpolant(ssg, initobj.Tfct(points(ssg)))
+    end
+
+    obj = ModelSolution(; model, exogenv, ssg, Pfct, Vfct, Tfct, Pfct_bounds, Tfct_bounds)
+    return obj, stv
+end
+
 # Methods for configuring the initial guess
 
 function f_steadystate(x, p)
@@ -59,45 +103,12 @@ function bounds(stv::SteadyState)
 end
 
 
-# Main setup 
-function main_setup(model::AbstractModel, initobj::Union{Nothing,AbstractModelSolution}=nothing; 
-    grids=nothing)
+# Fallback function for updating the user model with new parameter values
+function explicit_parameters(::T) where {T<:AbstractModel}
+    return fieldnames(T)
+end
 
-    # Create exogenous environment
-    exogenv = Exogenv(model)
-
-    # Calculate steady state
-    stv = steadystate(model)
-
-    # Define endogenous grids
-    default_grids = define_endog_grids(model, stv)
-    grids = isnothing(grids) ? default_grids : merge(default_grids, grids)
-
-    # Create state space grid
-    ssg = StateSpaceGrid(exogenv, grids)
-
-    # Define bounds
-    Pfct_bounds, Tfct_bounds = bounds(stv)
-
-    # Create interpolants
-    if isnothing(initobj)
-        unconstrained_guess = map(to_unconstrained, stv.guess, Pfct_bounds)
-        Pfct = Interpolant(ssg, unconstrained_guess)
-        Vfct = Interpolant(ssg, stv.values)
-
-        exog_ones = ones(exnpt(exogenv))
-        endog = StructArray(
-            map(p -> p * exog_ones, Base.structdiff(pt, (exst = nothing,)) ) 
-            for pt in points(ssg)
-        )
-        #@debug "Checking endog" typeof(endog) endog
-        Tfct = Interpolant(ssg, endog)
-    else
-        Pfct = Interpolant(ssg, initobj.Pfct(points(ssg)))
-        Vfct = Interpolant(ssg, initobj.Vfct(points(ssg)))
-        Tfct = Interpolant(ssg, initobj.Tfct(points(ssg)))
-    end
-
-    obj = ModelSolution(; model, exogenv, ssg, Pfct, Vfct, Tfct, Pfct_bounds, Tfct_bounds)
-    return obj, stv
+function update_model(mdl::T, newparams::NamedTuple) where {T<:AbstractModel}
+    oldparams = (; (k => getproperty(mdl, k) for k in explicit_parameters(mdl) )...)
+    return T(; merge(oldparams, newparams)...)
 end

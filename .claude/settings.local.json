@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(julia --project=test -e \"using Pkg; Pkg.test\\(\\)\")",
+      "Bash(julia --project=. -e \"using Pkg; Pkg.test\\(\\)\")",
+      "Bash(grep *)",
+      "Bash(cd */juliadev/TransitionFunctionIteration.jl* && grep *)"
+    ]
+  }
+}

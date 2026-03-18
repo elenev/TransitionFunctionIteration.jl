@@ -404,8 +404,8 @@ Assembled solution container for an economic model.
     Pfct::PF
     Vfct::VF
     Tfct::TF
-    Pfct_bounds::PB 
-    Tfct_bounds::TB
+    Pfct_bounds::PB   = NamedTuple{varnames(Pfct)}(ntuple(_ -> Unbounded(), nof(Pfct)))
+    Tfct_bounds::TB   = NamedTuple{varnames(Tfct)}(ntuple(_ -> Unbounded(), nof(Tfct)))
 end
 
 function Base.:(==)(obj1::ModelSolution, obj2::ModelSolution)
