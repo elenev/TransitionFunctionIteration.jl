@@ -1,15 +1,19 @@
 # Neoclassical Growth Model 
-using TransitionFunctionIteration
-import TransitionFunctionIteration as TFI
+using TransitionFunctionIteration, StaticArrays
+
+# Explicitly import functions that must be overloaded
 import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate, compute_next_period_values, vals_from_policy, bounds
+
+# Import some other functions for convenience
 import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime
 
-using StaticArrays
 
 # For debugging:
-import TransitionFunctionIteration: StructArrays, ForwardDiff, NonlinearSolve
+# import TransitionFunctionIteration: StructArrays, ForwardDiff, NonlinearSolve
 
 # Define model 
+# can be a more nested, complicated struct if needed
+# but if it's more complicated it's probably worth it to overload update_model()
 @kwdef struct NeoclassicalGrowthModel <: AbstractModel
     α::Float64 = 0.33   # capital share (implicit labor endowment of 1)
     β::Float64 = 0.96   # discount factor
@@ -24,14 +28,14 @@ end
 
 ## Model specific functions
 
-# [Optional] 
+# [Optional] Only needed if steadystate() is not overloaded.
 vals_from_policy(_, policy, ::NeoclassicalGrowthModel) = (C = policy.C,)
 
 steadystate_guess(::NeoclassicalGrowthModel) = (; C = 1.0, K = 3.0)
 
 # Analytic steady state solution for initial guess
 function steadystate(model::NeoclassicalGrowthModel)
-    (; α, β, δ, γ) = model
+    (; α, β, δ) = model
     A = 1.0
     K = (α * β * A / (1 - β * (1 - δ)))^(1/(1-α))
     C = A * K^α - δ * K
@@ -44,6 +48,8 @@ function steadystate(model::NeoclassicalGrowthModel)
     return SteadyState(; model, exog, endog, values, guess)
 end
 
+# If solver is guessing quantities whose domain is constrained, it's best to specify
+# the constrained domain. Then the solver will operate in an unconstrained space and transform guesses and interpolant evaluations to the constrained space as needed. 
 function bounds(::SteadyState{NeoclassicalGrowthModel})
     policy_bounds = (C = TFI.PositiveBounded(),)
     endog_bounds = (K = TFI.PositiveBounded(),)
@@ -53,12 +59,12 @@ end
 
 # Grids for endogenous variables
 function define_endog_grids(model::NeoclassicalGrowthModel, ::AbstractSteadyState)
-    (; α, δ) = model
     # Maximum attainable K is given by the solution to the equation 
     # A * K^α - δ * K = 0, which defines the point where all output is invested and there is no consumption. 
     # We can use this to set a reasonable range for the capital grid around the steady state value.
     # Set A = 1. Then,
-    #Kmax = (δ)^(1/(α-1))
+    # (; α, δ) = model    
+    # Kmax = (δ)^(1/(α-1))
     K_grid = range(0.8, 1.2, length=20) * steadystate(model).endog.K
     return (; K = K_grid)
 end
@@ -119,27 +125,6 @@ end
 ngm = NeoclassicalGrowthModel()
 obj, stv = main_setup(ngm)
 main_execute!(obj, maxiter=1000)
-simseries, fxerrs, transerrs = simulate(obj, stv)
+simseries, errs = simulate(obj, stv)
 stats, _ = describe(simseries)
-
-
-# Testing
-function prep_testing_objects(obj, stpfi = false)
-    state = first(points(obj.Tfct.ssg))
-    pol = first(coefficients(obj.Pfct))
-    val = first(coefficients(obj.Vfct))
-    trans = first(coefficients(obj.Tfct))
-    guess = deepcopy(pol)
-    inittrans = deepcopy(trans)
-
-    fullguess = stpfi ? (guess, inittrans) : guess
-
-    old = TFI.FunctionValuesAtPoint(state, fullguess, val, inittrans)
-    new = TFI.FunctionValuesAtPoint(state, pol, val, trans)
-
-    fullstate = merge(state, points(obj.exogenv)[state.exst])
-    prnext = conditional_distro(obj.exogenv, state.exst)
-    np, _ = TransitionFunctionIteration._compute_expectations_from_trans(inittrans, prnext, obj)
-    x0 = SVector(guess)
-    return (; new, old, state, pol, val, trans, guess, fullstate, prnext, np, x0, inittrans)
-end
+errstats = calc_error_stats(errs)
