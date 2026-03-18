@@ -40,7 +40,7 @@ function ces_strict(x::AbstractArray{<:Real}, w::AbstractArray{<:Real}, ε::Real
     # Initialize accumulator with the correct type to maintain type stability
     s = zero(promote_type(eltype(x), eltype(w))) 
     
-    @inbounds @turbo for i in eachindex(w, x)
+    @inbounds @simd for i in eachindex(w, x)
         s += w[i] * x[i]^a
     end
     
@@ -84,7 +84,7 @@ function cobb_douglas(x::AbstractArray{<:Real}, w::AbstractArray{<:Real})
     # Initialize accumulator with the correct type to maintain type stability
     p = one(promote_type(eltype(x), eltype(w))) 
     
-    @inbounds @turbo for i in eachindex(w, x)
+    @inbounds @simd for i in eachindex(w, x)
         p *= x[i]^w[i]
     end
     

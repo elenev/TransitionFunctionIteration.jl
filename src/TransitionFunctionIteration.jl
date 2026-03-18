@@ -1,7 +1,5 @@
 module TransitionFunctionIteration
 
-using LoopVectorization
-
 using Interpolations, NonlinearSolve, ForwardDiff, StaticArrays, StructArrays
 using RecipesBase
 using Logging, LinearAlgebra, Random, Statistics, StatsBase, PrettyTables
@@ -29,6 +27,7 @@ export main_setup, main_execute!, forecast_next, forecast_at_point, make_point, 
 
 # Simulation
 export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, getmoment
+
 
 include("types.jl")
 include("exog.jl")
