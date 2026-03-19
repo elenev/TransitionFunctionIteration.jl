@@ -68,6 +68,31 @@ end
 
 end
 
+@testset "Interpolant — argument order robustness" begin
+
+    # Correct order: fast path, no reordering
+    @test fct2((; x=2.0, y=20.0)).f ≈ 22.0
+
+    # Wrong order: silently reordered, result must match correct-order call
+    @test fct2((; y=20.0, x=2.0)).f ≈ fct2((; x=2.0, y=20.0)).f
+
+    # Wrong order with exogenous state (NoInterp + Linear)
+    @test fct_ex((; x=2.0, exst=2)).y ≈ fct_ex((; exst=2, x=2.0)).y
+
+    # Keyword syntax with wrong order
+    @test fct2(; y=20.0, x=2.0).f ≈ 22.0
+
+    # Missing key → ArgumentError
+    @test_throws ArgumentError fct2((; x=2.0))
+
+    # Wrong key name → ArgumentError
+    @test_throws ArgumentError fct2((; x=2.0, z=20.0))
+
+    # Extra non-singleton key → ArgumentError
+    @test_throws ArgumentError fct2((; x=2.0, y=20.0, extra=5.0))
+
+end
+
 @testset "Interpolant — equality and isapprox" begin
 
     @test fct1 == fct1

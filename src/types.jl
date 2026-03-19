@@ -44,6 +44,8 @@ end
 "Return the names of scalar-valued (singleton) fields in `ssg`. Singletons are excluded from interpolation but appear in state NamedTuples."
 singletons(::StateSpaceGrid{NAMES,S}) where {NAMES,S} = S
 
+nonsingletons(::StateSpaceGrid{NAMES,S}) where {NAMES,S} = filter(n -> n ∉ S, NAMES)
+
 "Return the NamedTuple of univariate grid vectors keyed by state variable name."
 @inline unigrids(ssg::StateSpaceGrid{NAMES}) where {NAMES} = NamedTuple{NAMES}(ssg.data)
 
@@ -128,6 +130,7 @@ end
 
 @inline varnames(::Interpolant{SSG,ITP,NAMES}) where {SSG, ITP, NAMES} = NAMES
 
+# Non-singleton state variable names in the order itp expects them for positional evaluation.
 function Interpolant(ssg::AbstractStateSpaceGrid, returnvals::NamedTuple)
     Y = StructArray(map(x -> deepcopy(returnvals), points(ssg)))
     return Interpolant(ssg, Y)
@@ -180,6 +183,12 @@ function Interpolant(ssg::AbstractStateSpaceGrid, returnvals::StructArray)
     return Interpolant(ssg, itp, example_returnvals)
 end
 
+@inline function _same_keys(fct::AbstractInterpolant, statevars)
+    itp_keys = nonsingletons(statespacegrid(fct))
+    return length(keys(statevars)) == length(itp_keys) && 
+            all(∈(itp_keys), keys(statevars))
+end
+
 """
     (fct::Interpolant)(state::NamedTuple) -> NamedTuple
     (fct::Interpolant)(; kwargs...) -> NamedTuple
@@ -189,16 +198,22 @@ Evaluate the interpolant at one state point or a collection of points.
 Singleton dimensions in the state are silently dropped before evaluation.
 Calling on a collection returns a StructArray.
 """
-@inline function (fct::Interpolant)(; x...)
+@inline function (fct::AbstractInterpolant)(; x...)
     return fct((;x...))
 end
 
-@inline function (fct::Interpolant)(statevars::NamedTuple)
+@inline function (fct::AbstractInterpolant)(statevars::NamedTuple)
     statevars = Base.structdiff(statevars, NamedTuple{singletons(statespacegrid(fct))})
-    return _evaluate(fct, statevars)
+    if keys(statevars) === nonsingletons(statespacegrid(fct))
+        return _evaluate(fct, statevars)
+    elseif _same_keys(fct, statevars)
+        return _evaluate(fct, NamedTuple{_itp_keys(fct)}(statevars))
+    else
+        throw(ArgumentError("Interpolant expects state variables $(_itp_keys(fct)), got $(keys(statevars))"))
+    end
 end
 
-@inline function (fct::Interpolant)(pts::Union{AbstractArray,Base.Generator})
+@inline function (fct::AbstractInterpolant)(pts::Union{AbstractArray,Base.Generator})
     return StructArray(_evaluate(fct,x) for x in pts)
 end
 
@@ -208,19 +223,19 @@ end
 end
 
 "Return the `StateSpaceGrid` underlying the interpolant."
-@inline statespacegrid(fct::AbstractInterpolant) = fct.ssg
+@inline statespacegrid(fct::AbstractInterpolant) = statespacegrid(fct)
 
 @inline coefficients(itp::Interpolations.GriddedInterpolation) = itp.coefs
 @inline coefficients(itp::Interpolations.Extrapolation) = coefficients(itp.itp)
 
 "Return interpolation coefficients shaped as an array matching `dims(statespacegrid(fct))`. Each element is a vector of length `nof(fct)`."
-@inline coefficients(fct::AbstractInterpolant) = reshape(coefficients(fct.itp), values(dims(fct.ssg)))
+@inline coefficients(fct::Interpolant) = reshape(coefficients(fct.itp), values(dims(fct.ssg)))
 
 @inline knots(itp::Interpolations.GriddedInterpolation) = itp.knots
 @inline knots(itp::Interpolations.Extrapolation) = knots(itp.itp)
 
 "Return the grid knots of the interpolant as a tuple of univariate vectors."
-@inline knots(fct::AbstractInterpolant) = knots(fct.itp)
+@inline knots(fct::Interpolant) = knots(fct.itp)
 
 @inline npt(fct::AbstractInterpolant) = npt(statespacegrid(fct))
 
