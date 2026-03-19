@@ -104,7 +104,7 @@ Returns `(simseries, errs)`:
 function simulate(obj::ModelSolution, stv=nothing;
                                 sz::Pair=12=>1000,
                                 seed=100,
-                                burn=0,
+                                burn=500,
                                 exog_start=ssidx(obj.exogenv),
                                 endog_start=stv.endog,
                                 shocks=sample_shocks(sz, seed, burn)
