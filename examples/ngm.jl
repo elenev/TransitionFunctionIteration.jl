@@ -236,10 +236,18 @@ function solve_linearized(model::NeoclassicalGrowthModel)
     # log C - log Cbar = Ck * (log K - log Kbar) + Ca * (log A - log Abar)
     # log K - log Kbar = Kk * (log K - log Kbar) + Ka * (log A - log Abar)
 
-    return pt -> (C = Cbar * (pt.K/Kbar)^Ck * (pt.A/Abar)^Ca, 
-                  K = Kbar * (pt.K/Kbar)^Kk * (pt.A/Abar)^Ka),
+    vcoefs = TransitionFunctionIteration.MomentArray([0.0 Ca Ck], (:C,), (:constant, :A, :K))
+    tcoefs = TransitionFunctionIteration.MomentArray([0.0 Ka Kk 0.0], (:K′,), (:constant, :A, :K, :A′))
 
-                  (; Ck, Ca, Kk, Ka)
-
+    return vcoefs, tcoefs #, pt -> (C = Cbar * (pt.K/Kbar)^Ck * (pt.A/Abar)^Ca, 
+                          #        K = Kbar * (pt.K/Kbar)^Kk * (pt.A/Abar)^Ka)
 
 end
+
+Vlin, Tlin = solve_linearized(ngm)
+Vsim, Tsim = linearize(simseries, stv)
+
+# Exclude constant -- even for a linear model, the stochastic steady state will be a bit different than deterministic
+# so we don't expect the constant to be zero
+isapprox(Vlin[:,2:end], Vsim[:,2:end], atol=1e-3)
+isapprox(Tlin[:,2:end], Tsim[:,2:end], atol=1e-3)

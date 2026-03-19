@@ -228,3 +228,101 @@ function describe(simseries::StructArray{T,2} where T, stat_functions = default_
     return MomentArray(mean_stats,propertynames(simseries), keys(stat_functions)),
               MomentArray(stderr_stats, propertynames(simseries), keys(stat_functions))
 end
+
+
+## Linear approximation from solved model 
+
+@inline _add_primes(names) = map(n -> Symbol("$(n)′"), names)
+
+function _rename_exogenous_points(exogenv, stvexog, demean)
+    nextnames = _add_primes(varnames(exogenv))
+    expoints = map(demean, components(points(exogenv)), stvexog)
+    return StructArray(NamedTuple{nextnames}(values(expoints)))
+end
+
+function _regress(states, values, valnames; constant = true)
+    states = states isa StructArray ? states : StructArray(states)
+    if constant
+        states = StructArray(merge((constant = ones(size(states, 1)),), components(states)))
+    end
+    statesmat = hcat(components(states)...)  # npt x nvar
+    #return statesmat
+    coefs = statesmat \ values  # nof x nvar
+    coefs = SMatrix{size(coefs)...}(coefs)  # Convert to static for easier handling
+    return MomentArray(coefs', valnames, keys(components(states)))
+end
+
+function linearize(obj::ModelSolution, stv::SteadyState; loglin=true)
+
+    _demean_logs(x,xss) = @. log(x) - log(xss)
+    _demean_levels(x,xss) = @. x - xss
+    demean = loglin ? _demean_logs : _demean_levels
+
+    function assemble_state(pt)
+        exst = pt.exst
+        exog = points(obj.exogenv)[exst]
+        endog = NamedTuple{filter(n -> n ≠ :exst, keys(pt))}(pt)
+        
+        exog = map(demean, exog, stv.exog)
+        endog = map(demean, endog, stv.endog)
+        return merge( exog, endog)
+    end
+
+    # Get state variables
+    states = vec( StructArray(map(assemble_state, points(obj.ssg))) )
+
+    # Get v functions
+    vfct = vec( obj.Vfct(points(obj.ssg)) )  # npt x nof
+    vfct = map(demean, components(vfct), stv.values)  # Demean v functions
+    vfct = stack(vfct) # npt x nof
+    vcoefs = _regress(states, vfct, varnames(obj.Vfct))
+    #return vcoefs
+
+    # add future exogenous states
+    nextexog = _rename_exogenous_points(obj.exogenv, stv.exog, demean)
+    merged_states = StructArray(merge(o,n) for o in states, n in nextexog)
+    merged_states = vec(merged_states)
+
+    # Get transition functions
+    tfct = vec( obj.Tfct(points(obj.ssg)) )  # npt x nvar
+    tfct = map((x,xss) -> demean(stack(x, dims=1), xss), components(tfct), stv.endog)  # Demean v functions
+    tfct = stack(map(vec, tfct))
+    # tfct = stack(vec(coefficients(obj.Tfct)),dims=1) # npt x nsten x exnpt
+    tcoefs = _regress(merged_states, tfct, _add_primes(varnames(obj.Tfct)))
+
+
+    return vcoefs, tcoefs
+end
+
+
+function linearize(simseries::StructArray{T,2} where T, stv::SteadyState; loglin=true)
+    _demean_logs(x,xss) = @. log(x) - log(xss)
+    _demean_levels(x,xss) = @. x - xss
+    demean = loglin ? _demean_logs : _demean_levels
+
+    statevars = merge(stv.exog, stv.endog)
+    stvvars = merge(statevars, stv.values)
+    vars = map(demean, NamedTuple{keys(stvvars)}(components(simseries)), stvvars)
+    states =  NamedTuple{keys(statevars)}(vars)
+    vals = NamedTuple{keys(stv.values)}(vars)
+    vals = map(vec, vals)
+
+    vcoefs = _regress(map(vec, states), stack(vals), keys(stv.values))
+
+    next_exog_names = _add_primes(keys(stv.exog))
+    next_endog_names = _add_primes(keys(stv.endog))
+    nextnames = (next_exog_names..., next_endog_names...)
+
+    nextstates = map(x -> x[:,2:end], states)
+    nextstates = NamedTuple{nextnames}(values(nextstates))
+    prevstates = map(x -> x[:,1:end-1], states)
+    merged_states = merge(prevstates, nextstates)
+
+    x_names = (keys(statevars)..., next_exog_names...)
+    X = map(vec, NamedTuple{x_names}(merged_states))
+    Y = map(vec, NamedTuple{next_endog_names}(merged_states)) 
+
+    tcoefs = _regress(X, stack(Y), next_endog_names)
+
+    return vcoefs, tcoefs
+end
