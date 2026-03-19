@@ -26,8 +26,10 @@ export ExogenvAR1, ergodic_distro, ssidx, exnpt, nex, transition_matrix, conditi
 export main_setup, main_execute!, forecast_next, forecast_at_point, make_point, compute_expectations, TFIMethod, STPFIMethod
 
 # Simulation
-export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, getmoment
+export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize
 
+# MomentArray
+export MomentArray, row_names, col_names
 
 include("types.jl")
 include("exog.jl")

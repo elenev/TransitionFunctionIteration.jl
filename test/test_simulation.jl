@@ -56,17 +56,17 @@ end
     @test stats isa TFI.MomentArray
     @test size(stats, 1) == 2                    # :euler and :K
     @test size(stats, 2) == 7                    # mean + 6 default percentiles
-    @test keys(stats.row_idx) == (:euler, :K)
-    @test :mean in keys(stats.col_idx)
-    @test :p99  in keys(stats.col_idx)
+    @test row_names(stats) == (:euler, :K)
+    @test :mean in col_names(stats)
+    @test :p99  in col_names(stats)
 
     # Basic statistical sanity checks
-    @test getmoment(stats, :euler, :mean) > 0
-    @test getmoment(stats, :K,     :mean) > 0
+    @test stats(:euler, :mean) > 0
+    @test stats(:K,     :mean) > 0
 
     # Higher percentiles ≥ lower percentiles
-    @test getmoment(stats, :euler, :p99) >= getmoment(stats, :euler, :p50)
-    @test getmoment(stats, :K,     :p99) >= getmoment(stats, :K,     :p50)
+    @test stats(:euler, :p99) >= stats(:euler, :p50)
+    @test stats(:K,     :p99) >= stats(:K,     :p50)
 
     # Custom percentiles list is respected
     stats2 = calc_error_stats(errs_data; percentiles=[50, 95])
