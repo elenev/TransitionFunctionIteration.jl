@@ -49,17 +49,17 @@ $
 
 === Stationarized Problem
 
-Let $hat(c)_t = c_t / Z_t$, $hat(a)_t = a_t / Z_t$, $hat(Q)_t = Q_t / Z_t$, $hat(D)_t = D_t / Z_t$, $hat(b)_t^h = b_t^h / Z_t$, and $hat(w)_t = w_t / Z_t$, and $hat(V)^H_t = V^H_t / Z_t^(1-gamma)$. Then the stationarized problem is:
+Let $hat(c)_t = c_t / Z_t$, $hat(a)_t = a_t / Z_t$, $hat(Q)_t = Q_t / Z_t$, $hat(D)_t = D_t / Z_t$, $hat(b)_(t-1)^h = b_(t-1)^h / Z_t$, $hat(hat(b))_t^h = b_t^h / Z_t$, and $hat(w)_t = w_t / Z_t$, and $hat(V)^H_t = V^H_t / Z_t^(1-gamma)$. Then the stationarized problem is:
 
 $
   hat(V)^H (hat(a)_t, cal(hat(Z))_t^H ) = max_(hat(c)_t, s_t, b_t^h)  u(hat(c)_t) + beta  E_t [ hat(V)^H (hat(a)_(t+1), cal(hat(Z))_(t+1)) exp((1-gamma) g_(t+1)) ]
 $
 subject to:
 $
-  hat(c)_t + s_t hat(Q)_t + p_t hat(b)_t^h &= hat(a)_t + hat(w)_t \
-  hat(a)_t  &= (hat(Q)_t + hat(D)_t) s_(t-1) + exp(-g_t) hat(b)_(t-1)^h
+  hat(c)_t + s_t hat(Q)_t + p_t hat(hat(b))_t^h &= hat(a)_t + hat(w)_t \
+  hat(a)_t  &= (hat(Q)_t + hat(D)_t) s_(t-1) + exp(-g_t) hat(hat(b))_(t-1)^h
 $
-where $cal(hat(Z))_t^H = (hat(K)_t, hat(N)_t, hat(g)_t)$.
+where $cal(hat(Z))_t^H = (hat(K)_(t-1), hat(N)_t, hat(g)_t)$.
 
 
 === Optimality Conditions
@@ -148,24 +148,37 @@ $
   1 + phi (i_t - tilde(delta)) &= q_t
 $
 
+Plugging in the wage optimality condition into $r^k_t$, we get:
+
+$
+  r^k_t equiv (1-alpha) l_t^(1-alpha) - phi/2 (i_t - tilde(delta))^2 + (q_t - 1) i_t
+$
+
 === Stationarized Problem
 
-Let $hat(K)_t = K_t / Z_t$, $hat(N)_t = N_t / Z_t$, $hat(B)_t = B_t / Z_t$, $hat(V)^F_t = V^F_t / Z_t$. 
+Let $hat(K)_(t-1) = K_(t-1) / Z_t$ and $hat(hat(K))_t = K_t / Z_t$ denote stationarized start-of-period and end-of-period capital,respectively. The same convention applies to $hat(B)_(t-1) = B_(t-1) / Z_t$ and $hat(hat(B))_t = B_t / Z_t$. Let $hat(N)_t = N_t / Z_t$ be stationarized net worth and $hat(V)^F_t = V^F_t / Z_t$.
 
 Plugging in the stationarized SDF $hat(M)_(t,t+1)$, we get the stationarized problem is:
 
 $
-  V^F (hat(N)_t, cal(hat(Z))_t^F ) = max_(hat(K)_t,hat(X)_t, hat(B)_t) eta hat(N)_t - hat(X)_t + E_t [hat(M)_(t,t+1)  hat(V)^F ( hat(N)_(t+1), cal(hat(Z))_(t+1)) ]
+  V^F (hat(N)_t, cal(hat(Z))_t^F ) = max_(hat(hat(K))_t,hat(X)_t, hat(hat(B))_t) eta hat(N)_t - hat(X)_t + E_t [hat(M)_(t,t+1)  hat(V)^F ( hat(N)_(t+1), cal(hat(Z))_(t+1)) ]
 $
 subject to:
 
 $
-  q_t hat(K)_t &= p_t hat(B)_t + (1-eta) hat(N)_t + hat(X)_t - xi / 2 (hat(X)_t / hat(N)_t)^2 hat(N)_t \
-  hat(N)_t &= exp(-g_t)( hat(K)_(t-1) (r_t^k + (1-delta)) -  hat(B)_(t-1) ) \
-  p_t hat(B)_t &<= theta q_t hat(K)_t
+  q_t hat(hat(K))_t &= p_t hat(hat(B))_t + (1-eta) hat(N)_t + hat(X)_t - xi / 2 (hat(X)_t / hat(N)_t)^2 hat(N)_t \
+  hat(N)_(t+1) &= exp(-g_(t+1)) [R^K hat(hat(K))_t (r_t^k + (1-delta)) -  hat(hat(B))_t ] \
+  hat(K)_t &= hat(hat(K))_t exp(-g_(t+1)) \
+  p_t hat(hat(B))_t &<= theta q_t hat(hat(K))_t
 $
 
-where $cal(hat(Z))_t^F = (hat(K)_t, hat(N)_t, hat(g)_t)$ denotes the state variables exogenous to the intermediary. Note that here $hat(K)_t$ and $hat(N)_t$ denote _aggregate_ variables, which affect equilibrium prices, but which the intermediary cannot optimize over.
+where $cal(hat(Z))_t^F = (hat(K)_(t-1), hat(N)_t, hat(g)_t)$ denotes the state variables exogenous to the intermediary. Note that here $hat(K)_(t-1)$ and $hat(N)_t$ denote _aggregate_ variables, which affect equilibrium prices, but which the intermediary cannot optimize over.
+
+Plugging in $hat(K)_(t-1) = K_(t-1) / Z_t$ into the definition for $l_t$, we can rewrite the return on capital as:
+
+$
+  r^k_t equiv (1-alpha) (L / hat(K)_(t-1))^(1-alpha) - phi/2 (i_t - tilde(delta))^2 + (q_t - 1) i_t
+$
 
 // === Optimality Conditions
 
@@ -179,7 +192,7 @@ where $cal(hat(Z))_t^F = (hat(K)_t, hat(N)_t, hat(g)_t)$ denotes the state varia
 
 
 === In Units of Net Worth 
-Define $k_t = hat(K)_t / hat(N)_t$ and $b_t = hat(B)_t / hat(N)_t$ as well as $v^F = V^F_t / hat(N)_t$. Then the intermediary's problem can be rewritten as:
+Define $k_t = hat(hat(K))_t / hat(N)_t$ and $b_t = hat(hat(B))_t / hat(N)_t$ as well as $v^F = V^F_t / hat(N)_t$. Then the intermediary's problem can be rewritten as:
 
 $
   hat(N)_t v^F ( cal(Z)_t^F ) = max_(k_t, x_t, b_t) eta hat(N)_t - x_t hat(N)_t + E_t [ hat(M)_(t,t+1) v^F (cal(Z)_(t+1)^F) hat(N)_(t+1) ]
@@ -188,7 +201,7 @@ $
 And net worth can be written as:
 
 $
-  hat(N)_t = exp(-g_t)hat(N)_(t-1) [k_(t-1) (r_t^k + (1-delta)) - b_(t-1)] 
+  hat(N)_(t+1) = exp(-g_(t+1))hat(N)_t [k_t (r_t^k + (1-delta)) - b_t] 
 $
 
 Dividing through by $hat(N)_t$ and defining $n_(t+1) = hat(N)_(t+1) / hat(N)_t$, we get:
@@ -223,23 +236,24 @@ $
 
 == Aggregation and Equilibrium
 
-There is a measure 1 of identical households, so household aggregates are straightforward: $hat(C) = integral hat(c)_t = hat(c)_t$, $hat(A) = integral hat(a)_t = hat(a)_t$, $L = 1$, $hat(B)^H_t = integral hat(b)_t^h = hat(b)_t^h$, and $S_t = integral s_t = s_t$
+There is a measure 1 of identical households, so household aggregates are straightforward: $hat(C) = integral hat(c)_t = hat(c)_t$, $hat(A) = integral hat(a)_t = hat(a)_t$, $L = 1$, $hat(hat(B))^H_t = integral hat(hat(b))_t^h = hat(hat(b))_t^h$, and $S_t = integral s_t = s_t$
 
 The following markets must clear in equilibrium:
 
 + Labor: $l_t hat(K)_(t-1) exp(-g_(t-1))  = L$
-+ Capital: $k_t hat(N)_t = hat(K)_t = (1-delta + i_t) hat(K)_(t-1) $
-+ Bonds: $b_t hat(N)_t = hat(B)^H_t$
++ Capital: $k_t hat(N)_t = hat(hat(K))_t = (1-delta + i_t) hat(K)_(t-1) $
++ Bonds: $b_t hat(N)_t = hat(hat(B))^H_t$
 + Shares: $S_t = 1$
-+ Goods: $hat(C)_t + i_t hat(K)_(t-1) = hat(K)_(t-1)^alpha$
++ Goods: $hat(C)_t + (i_t + phi/2 i_t^2) hat(K)_(t-1) + xi/2 x_t^2 hat(N)_t = hat(K)_(t-1)^alpha L^(1-alpha)$
 
-Since the value of the firm is $hat(V)^F_t$, the value per share is $hat(Q)_t$, and the number of shares is $S_t = 1$, we have that $hat(Q) = hat(V)^F_t$ and $hat(D)_t = (eta + x_t) hat(N)_t$
+Since the value of the firm is $hat(N)_t hat(V)^F_t$, the value per share is $hat(Q)_t$, and the number of shares is $S_t = 1$, we have that $hat(Q) = hat(N)_t hat(V)^F_t$ and $hat(D)_t = hat(N)_t (eta + x_t)$.
 
 == Deterministic Steady State
 
 At steady state, it must be that $hat(c)_t = hat(c)$, $hat(K)_t = hat(K)$ for all $t$. Imposing the constant law of motion for capital yields investment:
 
 $
+  hat(K) = hat(hat(K)) exp(-g) &= (1-delta + i) hat(K) exp(-g) \
   i &= delta + exp(g) - 1 equiv tilde(delta)
 $
 This then implies that $q = 1$ from the investment optimality condition.
@@ -247,10 +261,10 @@ This then implies that $q = 1$ from the investment optimality condition.
 In steady state, as long as the optimal dividend is different from $eta$, intermediaries prefer to lever up to the constraint to avoid equity issuance costs, so it must be that:
 
 $
-  p hat(B) = theta hat(K), quad tilde(hat(lambda)) equiv hat(lambda)/hat(mu) > 0
+  p hat(hat(B)) = theta hat(hat(K)), quad tilde(hat(lambda)) equiv hat(lambda)/hat(mu) > 0
 $
 
-We can then write $hat(B) = (theta / p) hat(K)$, where the household optimality condition for bonds implies that $p = beta exp(-gamma g)$.
+We can then write $hat(hat(B)) = (theta / p) hat(hat(K))$, where the household optimality condition for bonds implies that $p = beta exp(-gamma g)$.
 
 === Equilibrium as a function of equity issuance $x$
 
@@ -261,37 +275,59 @@ The equity FOC and envelope condition give:
 
 $
   hat(mu)(x) &= 1/(1 - xi x) \
-  (v^F/hat(mu))(x) &= (eta - x)(1 - xi x) + (1 - eta - xi/2 x^2)
+  v^F/hat(mu) &= (eta - x)(1 - xi x) + (1 - eta - xi/2 x^2)
 $
+
+Define $cal(v)(x) = (v^F (x))/(hat(mu)(x))$, i.e., the wedge between household and intermediary SDFs as a function of equity issuance. At $x = 0$, $cal(v)(0) = 1$. 
 
 *Step 2: Normalized leverage multiplier $tilde(hat(lambda))(x)$.*
-Define $tilde(hat(lambda)) = hat(lambda)/hat(mu)$ to write the Euler equations in standard asset-pricing form. Dividing the bond Euler equation by $hat(mu)$:
+Define $tilde(hat(lambda)) = hat(lambda)/hat(mu)$ to write the Euler equations in standard asset-pricing form. Dividing the household bond Euler equation by $hat(mu)$:
 
 $
-  tilde(hat(lambda))(x) = 1 - (v^F/hat(mu))(x)
+  p = beta exp(-gamma g)
+$
+
+Plugging in for $beta exp(-gamma g)$ in the intermediary bond Euler equation and rearranging gives:
+
+$
+  tilde(hat(lambda))(x) = p( 1 - cal(v)(x) )
 $
 
 *Step 3: Return on capital $r^k (x)$.*
+
+// $
+//   1 = q = tilde(hat(lambda)) theta + p cal(v)(x) (r^k (x) + 1 - delta)
+// $
+
 Dividing the capital Euler equation by $hat(mu)$ and using $q = 1$:
 
 $
-  1 - tilde(hat(lambda))(x) theta = p dot (v^F/hat(mu))(x) dot (r^k (x) + 1 - delta)
+  1 - tilde(hat(lambda))(x) theta = p cal(v)(x) (r^k (x) + 1 - delta)
 $
 
 Solving for $r^k$:
 
 $
-  r^k (x) = (1 - tilde(hat(lambda))(x) theta) / (p dot (v^F/hat(mu))(x)) - (1 - delta)
+  r^k (x) = (1 - tilde(hat(lambda))(x) theta) / (p cal(v)(x)) - (1 - delta)
 $
 
 *Step 4: Capital-to-net-worth ratio $k(x)$.*
 Setting $n = 1$ in the net worth evolution equation with $b = theta k / p$:
 
 $
-  k(x) = G / (r^k (x) + 1 - delta - theta/p)
+  // 1 &= ( (r^k (x) + 1 - delta) k(x) - theta k(x) / p )/G \
+  // G &= [(r^k (x) + 1 - delta) - theta / p] k(x) \
+  k(x) &= G / (r^k (x) + 1 - delta - theta/p)
 $
 
 === Nonlinear equation for $x$
+
+// The steady-state budget constraint is:
+
+// $
+//   k &= (1 - eta) + x - xi/2 x^2 + p b \
+//   k (1 - theta) &= 1 - eta + x - xi/2 x^2
+// $
 
 Substituting $k(x)$ into the intermediary's budget constraint (with $q = 1$, $p b = theta k$):
 
@@ -307,23 +343,28 @@ $
 
 === Remaining steady-state values
 
-Given $x^*$ solving $f(x^*) = 0$, all remaining objects follow directly. From $r^k = r^k(x^*)$, recall that in the stationarized model with $l = G/hat(K)$ (labor market clearing), the return on capital is:
+Given $x^*$ solving $f(x^*) = 0$, all remaining objects follow directly. From the definition of $r^k$:
 
 $
-  r^k = alpha (G / hat(K))^(1-alpha)
+  r^k = (1-alpha) (L / hat(K))^(1-alpha) - phi/2(i - tilde(delta))^2 + (q-1) i
 $
 
-Solving for $hat(K)$:
+With $i = tilde(delta)$ and $q = 1$, this simplifies to just the MPK portion. At $L = 1$,
 
 $
-  hat(K) = (r^k / (alpha G^(1-alpha)))^(1/(alpha-1))
+  hat(K) = ( (1-alpha) / r^k )^(1/(alpha-1))
 $
 
-Net worth and consumption are then:
+From the capital law of motion, we solve for $hat(hat(K)) = hat(K) G$.
+
+Since $k = hat(hat(K)) / hat(N)$, we can recover net worth:
 
 $
-  hat(N) &= hat(K) / k(x^*) \
-  hat(C) &= (eta - x^*) hat(N) + hat(w) + (theta / p) hat(K) (exp(-g) - p)
+  hat(N) &= hat(hat(K)) / k(x^*) \
 $
 
-where $hat(w) = (1-alpha) hat(K)^alpha$.
+Finally, use $B = theta k / p$ and $hat(w) = (1-alpha) hat(K)^alpha$ to get consumption:
+$
+  hat(C) &= (eta - x^*) hat(N) + (1-alpha) hat(K)^alpha + hat(B) - p hat(hat(B)) \
+  hat(C) &= (eta - x^*) hat(N) + (1-alpha) hat(K)^alpha + theta hat(K) (1 / p - G) \
+$
