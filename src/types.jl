@@ -149,7 +149,7 @@ function Interpolant(ssg::AbstractStateSpaceGrid, returnvals::StructArray)
             throw(ArgumentError("All output vectors must have the same length; got lengths: $all_lengths"))
         end
         Nvals = length(first(first_values))
-        @debug "Output is vector-valued with length $Nvals; constructing SMatrix of size ($Nof, $Nvals) for each grid point."
+        # @debug "Output is vector-valued with length $Nvals; constructing SMatrix of size ($Nof, $Nvals) for each grid point."
         Y = [SMatrix{Nof,Nvals}(reduce(vcat, x)) for x in returnvals]
     else
         Y = [SVector(values(x)) for x in returnvals]
@@ -451,6 +451,41 @@ function Base.isapprox(obj1::ModelSolution, obj2::ModelSolution; kwargs...)
 end
 
 
+
+# Steady state solver modes 
+abstract type SteadyStateMode end
+
+struct AnalyticalSteadyStateMode <: SteadyStateMode end
+
+_exogenv_from_point(pt) = Exogenv(pts = StaticStructArray(SVector(pt)), mtrans = [1.;;], ssidx=1)
+struct FixedPointSteadyStateMode{P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv} <: SteadyStateMode 
+    policies::P
+    transitions::T
+    exogenv::E
+
+    function FixedPointSteadyStateMode(policies::P, 
+        transitions::T, exogenv::E) where {P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv}
+        N = exnpt(exogenv)
+        if N > 1
+            exog_mean = mean(exogenv)
+            exogenv = _exogenv_from_point(exog_mean)
+        end
+        return new{P,T,typeof(exogenv)}(policies, transitions, exogenv)
+    end
+end
+
+function FixedPointSteadyStateMode(policies::NamedTuple, transitions::NamedTuple, exogenv::NamedTuple)
+    return FixedPointSteadyStateMode(policies, transitions, _exogenv_from_point(exogenv))
+end
+
+struct SystemSteadyStateMode{S<:NamedTuple, B<:NamedTuple} <: SteadyStateMode 
+    ssguess::S
+    bounds::B
+end
+function SystemSteadyStateMode(ssguess::NamedTuple) 
+    return SystemSteadyStateMode(ssguess, map(_ -> Unbounded(), ssguess))
+end
+
 abstract type AbstractSteadyState end
 
 @kwdef struct SteadyState{M<:AbstractModel, GNAMES, GTYPES, XNAMES, XTYPES, VNAMES, VTYPES, NNAMES, NTYPES} <: AbstractSteadyState
@@ -628,12 +663,17 @@ end
 struct MethodNotImplementedError <: Exception
     func_name::Symbol
     type_missing::Type
+    msg::String
 end
+function MethodNotImplementedError(func_name::Symbol, type_missing::Type) 
+    MethodNotImplementedError(func_name, type_missing, ".")
+end
+
 
 # 2. Overload showerror for clean REPL output
 function Base.showerror(io::IO, e::MethodNotImplementedError)
     print(io, "MethodNotImplementedError: Solver requires that `", e.func_name, 
-              "` be implemented for `", e.type_missing, "`.")
+              "` be implemented for `", e.type_missing, "`", e.msg)
 end
 
 """
@@ -662,13 +702,6 @@ function define_endog_grids(mdl::AbstractModel, ::AbstractSteadyState)
     throw(MethodNotImplementedError(:define_endog_grids, typeof(mdl)))
 end
 
-# This is only necessary if steadystate is not implemented.
-# In that case, the fallback steadystate will use this to construct next period vals.
-# Users can also use it in their own calc_eqm to create the IterateMode() branch output.
-function vals_from_policy(state, policy, mdl::AbstractModel, args...)
-    throw(MethodNotImplementedError(:vals_from_policy, typeof(mdl)))
-end
-
 # This is only necessary if steady state is not implemented. Must return a tuple (policy_guess, endog_guess, exogenv)
 # of NamedTuples keyed by the policy variable names and endogenous state variable names, respectively.
 # Exogenv should contain the 1-state MC in deterministic steady state.
@@ -677,3 +710,10 @@ function steadystate_guess(mdl::AbstractModel)
     throw(MethodNotImplementedError(:steadystate_guess, typeof(mdl)))
 end
 
+function steadystate(mdl::AbstractModel, ::AnalyticalSteadyStateMode)
+   throw(MethodNotImplementedError(:steadystate, typeof(mdl), " for AnalyticalSteadyStateMode"))
+end
+
+function steadystate_system(::NamedTuple, mdl::AbstractModel, mode::EvaluationMode)
+   throw(MethodNotImplementedError(:steadystate_system, typeof(mdl)))
+end

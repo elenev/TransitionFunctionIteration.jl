@@ -34,7 +34,7 @@ vals_from_policy(_, policy, ::NeoclassicalGrowthModel) = (C = policy.C,)
 steadystate_guess(::NeoclassicalGrowthModel) = (; C = 1.0, K = 3.0)
 
 # Analytic steady state solution for initial guess
-function steadystate(model::NeoclassicalGrowthModel)
+function steadystate(model::NeoclassicalGrowthModel, ::AnalyticalSteadyStateMode)
     (; α, β, δ) = model
     A = 1.0
     K = (α * β * A / (1 - β * (1 - δ)))^(1/(1-α))

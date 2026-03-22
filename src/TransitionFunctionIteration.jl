@@ -8,6 +8,7 @@ using Logging, LinearAlgebra, Random, Statistics, StatsBase, PrettyTables
 export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant, AbstractSteadyState
 export StateSpaceGrid, Interpolant, Exogenv, ModelSolution, SteadyState, NextPeriod
 export EvaluationMode, SolveMode, IterateMode, SimulateMode
+export SteadyStateMode, AnalyticalSteadyStateMode, SystemSteadyStateMode, FixedPointSteadyStateMode
 export points, dims, npt, nof, elsize, varnames, unigrids, singletons
 export coefficients, knots, statespacegrid, name_values
 

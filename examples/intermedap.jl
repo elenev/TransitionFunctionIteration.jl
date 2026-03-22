@@ -2,7 +2,8 @@
 using TransitionFunctionIteration, StaticArrays
 
 # Explicitly import functions that must be overloaded
-import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate_guess, compute_next_period_values, vals_from_policy, bounds
+import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate_system, 
+    compute_next_period_values, vals_from_policy, bounds
 
 # Import some other functions for convenience
 import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime, PositiveBounded, Unbounded
@@ -53,8 +54,9 @@ function bounds(::IntermediaryAssetPricingModel, policies::NamedTuple, transitio
     return policy_bounds, transition_bounds
 end
 
-function steadystate_guess(mdl::IntermediaryAssetPricingModel,x)
+function steadystate_system(g::NamedTuple, mdl::IntermediaryAssetPricingModel, mode::EvaluationMode)
     (; α, β, δ, gbar, γ, ξ, η, θ) = mdl
+    (; x) = g 
 
     G = exp(gbar)
     p = β * exp(-gbar * γ)
@@ -87,7 +89,17 @@ function steadystate_guess(mdl::IntermediaryAssetPricingModel,x)
 
     L = N / (q*K)
 
-    return  resid, (; C, q, p, λ, x, μ), (; K, L), (; G)
+    fx = (resid, )
+    if mode isa SolveMode
+        return fx, nothing
+    elseif mode isa IterateMode
+        policy_sol = (; C, x, μ, q, p, λ) 
+        transition_sol = (; K, L)
+        exog = (; G)
+        vals = vals_from_policy(nothing, policy_sol, mdl)
+        stv = SteadyState(mdl, policy_sol, transition_sol, exog, vals)
+        return fx, stv
+    end
 end
 
 function vals_from_policy(state, policy, model::IntermediaryAssetPricingModel)
@@ -154,7 +166,7 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
     (; RK, Y, i) = calc_production((K=K, q=q), model)
 
     d = η - x
-    Q = d + μ * (1 - ξ/2 * x^2)
+    Q = d + μ * (1 - η - ξ/2 * x^2)
 
     N = L*q*K
     B = RK*K - N
@@ -196,6 +208,18 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
 end
 
 mdl = IntermediaryAssetPricingModel()
+
+# Steady state system 
+xguess = 0.018
+configsys = SystemSteadyStateMode((x=0.018,))
+obj, stv = main_setup(mdl;mode=configsys, check_steadystate=true)
+
+# Steady state fixed point 
+_, stvguess = steadystate_system((x=xguess,), mdl, IterateMode())
+configfp = FixedPointSteadyStateMode(stvguess.guess, stvguess.endog, stvguess.exog)
+obj, stv = main_setup(mdl, mode=configfp)
+
+
 #obj, stv = main_setup(mdl)
 
 function calc_at_guess(mdl, x=0.0056)

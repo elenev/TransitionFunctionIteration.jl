@@ -107,6 +107,7 @@ function _compute_expectations_from_trans(named_trans, prnext, obj::ModelSolutio
 end
 
 _fx_to_svec(fx::NamedTuple) = SVector(values(fx))
+_fx_to_svec(fx::Tuple) = SVector(fx)
 _fx_to_svec(fx::StaticVector) = fx
 
 struct FunctionValuesAtPoint{S, P,V,T}
