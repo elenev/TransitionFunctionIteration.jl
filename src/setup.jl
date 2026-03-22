@@ -7,7 +7,7 @@ function main_setup(model::AbstractModel,
     exogenv = Exogenv(model)
 
     # Calculate steady state
-    stv = steadystate(model)
+    stv, _ = steadystate(model)
 
     # Define endogenous grids
     default_grids = define_endog_grids(model, stv)
@@ -52,7 +52,7 @@ function f_steadystate(x, p)
     np = compute_next_period_values(next_nt, p.model)
     out = calc_eqm(state, policy, p.model, np, IterateMode())
     transerr = map(-, out.trans, endog)
-    return vcat(out.fx, SVector(values(transerr))), out
+    return vcat(_fx_to_svec(out.fx), SVector(values(transerr))), out
 end
 
 # Fall back if no steadystate() method is defined
@@ -73,6 +73,12 @@ end
 
 function steadystate(mdl::AbstractModel)
     policy_guess, transition_guess, exogenv = steadystate_guess(mdl)
+
+    # Get bounds and ensure correct order
+    pfct_bounds, tfct_bounds = bounds(mdl, policy_guess, transition_guess)
+    pfct_bounds = NamedTuple{keys(policy_guess)}(pfct_bounds)
+    tfct_bounds = NamedTuple{keys(transition_guess)}(tfct_bounds)
+    
     if isnothing(exogenv)
         exogenv = Exogenv(mdl)
     end
@@ -84,7 +90,9 @@ function steadystate(mdl::AbstractModel)
         exog = merge( (exst = 1,), first(points(exogenv))), 
         prnext = conditional_distro(exogenv,1))
 
-    x0 = vcat(SVector(values(policy_guess)), SVector(values(transition_guess)))
+    x0p = to_unconstrained.(SVector(values(policy_guess)), values(pfct_bounds))
+    x0t = to_unconstrained.(SVector(values(transition_guess)), values(tfct_bounds))
+    x0 = vcat(x0p, x0t)
     objfun(x, p) = f_steadystate(x, p)[1]
     problem = NonlinearProblem{false}(objfun, x0, payload)
     alg = SimpleTrustRegion()
@@ -100,6 +108,10 @@ end
 # Default is unbounded, but users can define their own bounds by overloading this method for their SteadyState type.
 function bounds(stv::SteadyState)
     return map( _ -> Unbounded(), stv.guess), map( _ -> Unbounded(), stv.endog)
+end
+
+function bounds(::AbstractModel, policies::NamedTuple, transitions::NamedTuple)
+    return map( _ -> Unbounded(), policies), map( _ -> Unbounded(), transitions)
 end
 
 

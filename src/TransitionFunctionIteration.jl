@@ -23,7 +23,7 @@ export COMPLETE, ITERATION, ITERATIONFAILED, FAILEDPOINT
 export ExogenvAR1, ergodic_distro, ssidx, exnpt, nex, transition_matrix, conditional_distro
 
 # Solver
-export main_setup, main_execute!, forecast_next, forecast_at_point, make_point, compute_expectations, TFIMethod, STPFIMethod
+export main_setup, main_execute!, make_point, compute_expectations, TFIMethod, STPFIMethod, fisher_burmeister
 
 # Simulation
 export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize

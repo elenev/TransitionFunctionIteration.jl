@@ -2,24 +2,27 @@
 using TransitionFunctionIteration, StaticArrays
 
 # Explicitly import functions that must be overloaded
-import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate, compute_next_period_values, vals_from_policy, bounds
+import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate_guess, compute_next_period_values, vals_from_policy, bounds
 
 # Import some other functions for convenience
-import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime
+import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime, PositiveBounded, Unbounded
 
 @kwdef struct IntermediaryAssetPricingModel <: AbstractModel
     α::Float64 = 0.33   # capital share (implicit labor endowment of 1)
-    β::Float64 = 0.96   # discount factor
+    β::Float64 = 0.99   # discount factor
     δ::Float64 = 0.10   # depreciation rate
     γ::Float64 = 2.0    # risk aversion (CRRA coefficient)
+    gbar::Float64 = 0.02   # aggregate productivity growth rate
     σ::Float64 = 0.02   # productivity shock volatility
     ρ::Float64 = 0.9    # productivity shock persistence
-    π::Float64 = 0.07   # payout target
+    η::Float64 = 0.07   # payout target
     ξ::Float64 = 0.5    # equity issuance cost
     ϕ::Float64 = 0.5    # capital adjustment cost
     θ::Float64 = 0.8    # leverage constraint
-    N_A::Int   = 5      # number of points in discretized productivity grid
+    N_G::Int   = 5      # number of points in discretized productivity grid
 end
+
+
 
 # Equilibrium conditions
 
@@ -38,3 +41,177 @@ end
 # Objective: Vₜ = π Nₜ - Xₜ - ξ/2 * Xₜ² + E[MIₜ₊₁ * Vₜ₊₁] where Xₜ is equity issuance and Vₜ is the value function
 # Investment adjustment cost: Φₜ = ϕ/2 * (Iₜ/Kₜ - δ)² * K
 # Budget constraint: (1-π) Nₜ + Xₜ + pₜ Bₜ₊₁ = qₜ Kₜ₊₁
+
+function Exogenv(model::IntermediaryAssetPricingModel)
+    (; ρ, σ, gbar) = model
+    return ExogenvAR1(; σ=σ, ρ=ρ, μ=gbar, jensen=true, n=model.N_G, transform=exp, shock_name=:G)
+end
+
+function bounds(::IntermediaryAssetPricingModel, policies::NamedTuple, transitions::NamedTuple) 
+    policy_bounds = (C = PositiveBounded(), q = PositiveBounded(), x = Unbounded(), μ = PositiveBounded(), p = PositiveBounded(), λ = Unbounded())
+    transition_bounds = (K = PositiveBounded(), L = PositiveBounded())
+    return policy_bounds, transition_bounds
+end
+
+function steadystate_guess(mdl::IntermediaryAssetPricingModel)
+    (; α, β, δ, gbar, γ, ξ, η, θ) = mdl
+
+    G = exp(gbar)
+    p = β * exp(-gbar * γ)
+
+    x = 0.0056
+
+    # Step 1: μ, v^F/μ as functions of x
+    μ = 1 / (1 - ξ*x)
+    vF_over_μ = (η - x)*(1 - ξ*x) + (1 - η - ξ/2 * x^2)
+
+    # Step 2: normalized leverage multiplier from bond Euler
+    λ = 1 - vF_over_μ
+
+    # Step 3: gross return on capital from capital Euler
+    RK = (1 - λ*θ) / (p * vF_over_μ)
+
+    # Step 4: capital-to-net-worth ratio from net worth evolution (n=1)
+    k = G / (RK - θ/p)
+
+    # Residual: budget constraint (1-θ)k = 1 - η + x - ξ/2 x²
+    resid = (1 - θ)*k - (1 - η + x - ξ/2 * x^2)
+
+    # Remaining steady-state values given x
+    q = 1.0
+    mpk = RK - (1 - δ)
+    K = (mpk / (α * G^(1-α)))^(1/(α-1))
+    N = K / k
+
+    Y = cobb_douglas(K, 1.0, α)
+    w = cobb_douglas_prime(K, 1.0, α, Y, 2)
+    C = (η - x)*N + (1/G - p)*(θ*K/p) + w
+
+    L = N / (q*K)
+
+    @debug "L" L 
+    @debug "N" N
+
+    return (; C, q, p, λ, x, μ), (; K, L), (G = exp(gbar),)
+end
+
+function vals_from_policy(state, policy, model::IntermediaryAssetPricingModel)
+    (; C, q, x, μ) = policy
+    (; ξ, η) = model
+    Q = η - x + μ * (1-η - ξ/2 * x^2)
+    return (; C, q, Q)
+end
+
+function define_endog_grids(model::IntermediaryAssetPricingModel, stv::SteadyState)
+    K_grid = range(0.5, 5.0, length=20)
+    N_grid = range(0.5, 5.0, length=20)
+    return (; K=K_grid, N=N_grid)
+end
+
+function calc_production(vars, model::IntermediaryAssetPricingModel)
+    (; K, q) = vars 
+    (; δ, gbar, α, ϕ) = model
+    δ_tilde = δ + exp(gbar) - 1
+    #ℓ = G / K
+
+    Y = cobb_douglas(K, 1.0, α)
+    MPK = cobb_douglas_prime(K, 1.0, α, Y, 1)
+    
+    #  q = 1 +  ϕ (i - δ)
+    i = δ_tilde + (1/ϕ) * (q - 1)
+    rK = MPK + (i*(q-1) - ϕ/2 * (i - δ_tilde)^2)
+    RK = rK + 1 - δ
+    return (; RK, Y, MPK, i, rK, δ_tilde)
+end
+
+function compute_next_period_values(next, model::IntermediaryAssetPricingModel)
+    # Household
+    (; γ, gbar, α, ϕ, β) = model
+    (; C, G, Q, K) = next
+    MU = crra.u′(C, γ)    
+    Λ = β * G^(1-γ) * MU
+    BHpayoff = 1/G
+    SHpayoff = Q
+    
+    # Firm
+    (; α, δ, gbar) = model 
+    (; q, K, Q) = next
+
+    (; RK) = calc_production((K=K, q=q), model)
+
+    KIpayoff = RK / G
+    BIpayoff = 1 / G
+
+    # Expectations
+    ΛF = Λ * Q
+    expectations = (KI = ΛF * KIpayoff, 
+                    BI = ΛF * BIpayoff, 
+                    BH = Λ * BHpayoff,
+                    SH = Λ * SHpayoff)
+
+    continuations = (RK = RK, G = G, q=q)
+    return NextPeriod(; expectations, continuations)
+end
+
+function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextPeriod, mode::EvaluationMode=SolveMode())
+    (; K, L) = state
+    (; C, x, μ, q, p, λ) = policy
+    (; α, δ, η, ξ, gbar, ϕ, γ, θ) = model
+
+    (; RK, Y, i) = calc_production((K=K, q=q), model)
+
+    d = η - x
+    Q = d + μ * (1 - ξ/2 * x^2)
+
+    N = L*q*K
+    B = RK*K - N
+    
+    @debug "L" L 
+    @debug "N" N
+
+    D = d * N
+
+    w = cobb_douglas_prime(K, 1.0, α, Y, 2)
+    BH = ( B + D + w - C ) / p
+    
+    K′ = (1 - δ + i) * K
+    BI = (q*K′ - ((1-η) + x - ξ/2 * x^2) * N) / p
+
+    MU = crra.u′(C, γ)
+    
+    Λ = MU 
+    ΛF = Λ * μ
+
+    fx = (EE_BH = p - np.expectations.BH / Λ,
+
+          EE_KI = q - np.expectations.KI / ΛF   - λ*θ,
+          EE_BI = p - np.expectations.BI / ΛF   - λ,
+          EE_XI = 1 - μ*(1 - ξ*x),
+          MC_B  = BH - BI,
+          LC    = fisher_burmeister(λ, θ*q*K′ - p*BI))
+
+    if mode isa SolveMode
+        return fx
+    else
+        N′ = @. (K*np.continuations.RK - BI) / np.continuations.G
+        L  = @. N′ / (np.continuations.q * K)
+        trans = (K=K′/np.continuations.G, L=L)
+        vals = (; C, q, Q)
+        
+        if mode isa IterateMode
+            return (; fx, trans, vals)
+        end
+    end
+
+end
+
+mdl = IntermediaryAssetPricingModel()
+#obj, stv = main_setup(mdl)
+
+function calc_at_guess(mdl, x=0.0056)
+    g,s,e=steadystate_guess(mdl)
+    np = compute_next_period_values((q = 1.0, K=s.K, vals_from_policy(nothing,g,mdl).Q, C = g.C, G = e.G), mdl)
+    out = calc_eqm((K = s.K, L=s.L, G = 1.02, exst=1), (C=g.C, x=g.x, μ=g.μ, q=1.0, p=g.p, λ=g.λ), mdl, np, IterateMode())
+    stateerrs = (K = s.K - out.trans.K, L = s.L - out.trans.L)
+    return merge(out.fx, stateerrs)
+end
