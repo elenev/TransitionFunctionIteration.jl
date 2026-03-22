@@ -151,7 +151,7 @@ $
 Plugging in the wage optimality condition into $r^k_t$, we get:
 
 $
-  r^k_t equiv (1-alpha) l_t^(1-alpha) - phi/2 (i_t - tilde(delta))^2 + (q_t - 1) i_t
+  r^k_t equiv alpha l_t^(1-alpha) - phi/2 (i_t - tilde(delta))^2 + (q_t - 1) i_t
 $
 
 === Stationarized Problem
@@ -177,7 +177,7 @@ where $cal(hat(Z))_t^F = (hat(K)_(t-1), hat(N)_t, hat(g)_t)$ denotes the state v
 Plugging in $hat(K)_(t-1) = K_(t-1) / Z_t$ into the definition for $l_t$, we can rewrite the return on capital as:
 
 $
-  r^k_t equiv (1-alpha) (L / hat(K)_(t-1))^(1-alpha) - phi/2 (i_t - tilde(delta))^2 + (q_t - 1) i_t
+  r^k_t equiv alpha (L / hat(K)_(t-1))^(1-alpha) - phi/2 (i_t - tilde(delta))^2 + (q_t - 1) i_t
 $
 
 // === Optimality Conditions
@@ -346,13 +346,14 @@ $
 Given $x^*$ solving $f(x^*) = 0$, all remaining objects follow directly. From the definition of $r^k$:
 
 $
-  r^k = (1-alpha) (L / hat(K))^(1-alpha) - phi/2(i - tilde(delta))^2 + (q-1) i
+  r^k = alpha (L / hat(K))^(1-alpha) - phi/2(i - tilde(delta))^2 + (q-1) i
 $
 
 With $i = tilde(delta)$ and $q = 1$, this simplifies to just the MPK portion. At $L = 1$,
 
 $
-  hat(K) = ( (1-alpha) / r^k )^(1/(alpha-1))
+  r^k = alpha (L / hat(K))^(1-alpha) \
+  hat(K) = ( r^k / alpha )^(1/(alpha-1))
 $
 
 From the capital law of motion, we solve for $hat(hat(K)) = hat(K) G$.
@@ -360,11 +361,11 @@ From the capital law of motion, we solve for $hat(hat(K)) = hat(K) G$.
 Since $k = hat(hat(K)) / hat(N)$, we can recover net worth:
 
 $
-  hat(N) &= hat(hat(K)) / k(x^*) \
+  hat(N) &= hat(hat(K)) / k(x^*)
 $
 
 Finally, use $B = theta k / p$ and $hat(w) = (1-alpha) hat(K)^alpha$ to get consumption:
 $
-  hat(C) &= (eta - x^*) hat(N) + (1-alpha) hat(K)^alpha + hat(B) - p hat(hat(B)) \
+//  hat(C) &= (eta - x^*) hat(N) + (1-alpha) hat(K)^alpha + hat(B) - p hat(hat(B)) \
   hat(C) &= (eta - x^*) hat(N) + (1-alpha) hat(K)^alpha + theta hat(K) (1 / p - G) \
 $

@@ -59,24 +59,17 @@ function steadystate_guess(mdl::IntermediaryAssetPricingModel,x)
     G = exp(gbar)
     p = β * exp(-gbar * γ)
 
-    #x = 0.0056
-
     # Step 1: μ, v^F/μ as functions of x
     μ = 1 / (1 - ξ*x)
-    vF_over_μ = (η - x)*(1 - ξ*x) + (1 - η - ξ/2 * x^2)
+    𝓋 = (η - x)*(1 - ξ*x) + (1 - η - ξ/2 * x^2)
 
     # Step 2: normalized leverage multiplier from bond Euler
-    λ = p*(1 - vF_over_μ)
+    λ = p*(1 - 𝓋)
 
     # Step 3: gross return on capital from capital Euler
-    RK = (1 - λ*θ) / (p * vF_over_μ)
+    RK = (1 - λ*θ) / (p * 𝓋)
 
     # Step 4: capital-to-net-worth ratio from net worth evolution (n=1)
-    # N' = (RK * K - B)/G
-    # p*B = q*θ*K, so B = q*θ*K/p
-    # N' = (RK - (q*θ/p)) * K / G
-    # 1 = N'/N = (RK - (q*θ/p)) * K / (G*N) = (RK - (q*θ/p)) * k / G
-
     k = G / (RK - θ/p)
 
     # Residual: budget constraint (1-θ)k = 1 - η + x - ξ/2 x²
@@ -84,17 +77,17 @@ function steadystate_guess(mdl::IntermediaryAssetPricingModel,x)
 
     # Remaining steady-state values given x
     q = 1.0
-    mpk = RK - (1 - δ)
-    K = (mpk / (α * G^(1-α)))^(1/(α-1))
-    N = K / k
+    rK = RK - (1 - δ)
+    K = ( rK / α )^(1/(α-1))
+    K′ = G*K
+    N = K′ / k
 
-    Y = cobb_douglas(K, 1.0, α)
-    w = cobb_douglas_prime(K, 1.0, α, Y, 2)
-    C = (η - x)*N + (1/G - p)*(θ*K/p) + w
+    w = (1-α) * K^α
+    C = (η - x)*N + (1/p - G)*θ*K + w
 
     L = N / (q*K)
 
-    return  resid, (; C, q, p, λ, x, μ), (; K = K/G, L), (G = exp(gbar),)
+    return  resid, (; C, q, p, λ, x, μ), (; K, L), (; G)
 end
 
 function vals_from_policy(state, policy, model::IntermediaryAssetPricingModel)
@@ -117,10 +110,10 @@ function calc_production(vars, model::IntermediaryAssetPricingModel)
     #ℓ = G / K
 
     Y = cobb_douglas(K, 1.0, α)
-    MPK = cobb_douglas_prime(K, 1.0, α, Y, 1)
+    MPK = cobb_douglas_prime(K, α, Y)
     
     #  q = 1 +  ϕ (i - δ)
-    i = δ_tilde + (1/ϕ) * (q - 1)
+    i = δ_tilde + (q - 1) / ϕ
     rK = MPK + (i*(q-1) - ϕ/2 * (i - δ_tilde)^2)
     RK = rK + 1 - δ
     return (; RK, Y, MPK, i, rK, δ_tilde)
@@ -128,7 +121,7 @@ end
 
 function compute_next_period_values(next, model::IntermediaryAssetPricingModel)
     # Household
-    (; γ, gbar, α, ϕ, β) = model
+    (; γ, β) = model
     (; C, G, Q, K) = next
     MU = crra.u′(C, γ)    
     Λ = β * G^(1-γ) * MU
@@ -136,9 +129,7 @@ function compute_next_period_values(next, model::IntermediaryAssetPricingModel)
     SHpayoff = Q
     
     # Firm
-    (; α, δ, gbar) = model 
     (; q, K, Q) = next
-
     (; RK) = calc_production((K=K, q=q), model)
 
     KIpayoff = RK / G
@@ -148,8 +139,8 @@ function compute_next_period_values(next, model::IntermediaryAssetPricingModel)
     ΛF = Λ * Q
     expectations = (KI = ΛF * KIpayoff, 
                     BI = ΛF * BIpayoff, 
-                    BH = Λ * BHpayoff,
-                    SH = Λ * SHpayoff)
+                    BH = Λ  * BHpayoff,
+                    SH = Λ  * SHpayoff)
 
     continuations = (RK = RK, G = G, q=q)
     return NextPeriod(; expectations, continuations)
