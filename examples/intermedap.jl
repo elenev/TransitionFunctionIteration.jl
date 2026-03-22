@@ -53,25 +53,30 @@ function bounds(::IntermediaryAssetPricingModel, policies::NamedTuple, transitio
     return policy_bounds, transition_bounds
 end
 
-function steadystate_guess(mdl::IntermediaryAssetPricingModel)
+function steadystate_guess(mdl::IntermediaryAssetPricingModel,x)
     (; α, β, δ, gbar, γ, ξ, η, θ) = mdl
 
     G = exp(gbar)
     p = β * exp(-gbar * γ)
 
-    x = 0.0056
+    #x = 0.0056
 
     # Step 1: μ, v^F/μ as functions of x
     μ = 1 / (1 - ξ*x)
     vF_over_μ = (η - x)*(1 - ξ*x) + (1 - η - ξ/2 * x^2)
 
     # Step 2: normalized leverage multiplier from bond Euler
-    λ = 1 - vF_over_μ
+    λ = p*(1 - vF_over_μ)
 
     # Step 3: gross return on capital from capital Euler
     RK = (1 - λ*θ) / (p * vF_over_μ)
 
     # Step 4: capital-to-net-worth ratio from net worth evolution (n=1)
+    # N' = (RK * K - B)/G
+    # p*B = q*θ*K, so B = q*θ*K/p
+    # N' = (RK - (q*θ/p)) * K / G
+    # 1 = N'/N = (RK - (q*θ/p)) * K / (G*N) = (RK - (q*θ/p)) * k / G
+
     k = G / (RK - θ/p)
 
     # Residual: budget constraint (1-θ)k = 1 - η + x - ξ/2 x²
@@ -89,10 +94,7 @@ function steadystate_guess(mdl::IntermediaryAssetPricingModel)
 
     L = N / (q*K)
 
-    @debug "L" L 
-    @debug "N" N
-
-    return (; C, q, p, λ, x, μ), (; K, L), (G = exp(gbar),)
+    return  resid, (; C, q, p, λ, x, μ), (; K = K/G, L), (G = exp(gbar),)
 end
 
 function vals_from_policy(state, policy, model::IntermediaryAssetPricingModel)
@@ -165,9 +167,6 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
 
     N = L*q*K
     B = RK*K - N
-    
-    @debug "L" L 
-    @debug "N" N
 
     D = d * N
 
@@ -193,7 +192,7 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
     if mode isa SolveMode
         return fx
     else
-        N′ = @. (K*np.continuations.RK - BI) / np.continuations.G
+        N′ = @. (K′*np.continuations.RK - BI) / np.continuations.G
         L  = @. N′ / (np.continuations.q * K)
         trans = (K=K′/np.continuations.G, L=L)
         vals = (; C, q, Q)
@@ -209,7 +208,7 @@ mdl = IntermediaryAssetPricingModel()
 #obj, stv = main_setup(mdl)
 
 function calc_at_guess(mdl, x=0.0056)
-    g,s,e=steadystate_guess(mdl)
+    resid, g,s,e=steadystate_guess(mdl,x)
     np = compute_next_period_values((q = 1.0, K=s.K, vals_from_policy(nothing,g,mdl).Q, C = g.C, G = e.G), mdl)
     out = calc_eqm((K = s.K, L=s.L, G = 1.02, exst=1), (C=g.C, x=g.x, μ=g.μ, q=1.0, p=g.p, λ=g.λ), mdl, np, IterateMode())
     stateerrs = (K = s.K - out.trans.K, L = s.L - out.trans.L)
