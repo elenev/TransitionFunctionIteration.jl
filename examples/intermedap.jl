@@ -15,7 +15,7 @@ import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime, Posi
     γ::Float64 = 2.0    # risk aversion (CRRA coefficient)
     gbar::Float64 = 0.02   # aggregate productivity growth rate
     σ::Float64 = 0.02   # productivity shock volatility
-    ρ::Float64 = 0.9    # productivity shock persistence
+    ρ::Float64 = 0.65    # productivity shock persistence
     η::Float64 = 0.07   # payout target
     ξ::Float64 = 0.5    # equity issuance cost
     ϕ::Float64 = 0.5    # capital adjustment cost
@@ -110,9 +110,9 @@ function vals_from_policy(state, policy, model::IntermediaryAssetPricingModel)
 end
 
 function define_endog_grids(model::IntermediaryAssetPricingModel, stv::SteadyState)
-    K_grid = range(0.5, 5.0, length=20)
-    N_grid = range(0.5, 5.0, length=20)
-    return (; K=K_grid, N=N_grid)
+    K_grid = range(2.5, 6.5, length=10)
+    L_grid = range(0.15, 0.25, length=10)
+    return (; K=K_grid, L=L_grid)
 end
 
 function calc_production(vars, model::IntermediaryAssetPricingModel)
@@ -155,7 +155,14 @@ function compute_next_period_values(next, model::IntermediaryAssetPricingModel)
                     SH = Λ  * SHpayoff)
 
     continuations = (RK = RK, G = G, q=q)
-    return NextPeriod(; expectations, continuations)
+
+    #if mode isa SimulateMode
+        addvars = (; RK, Q, C, q)
+    #else
+    #    addvars = nothing
+    #end
+    
+    return NextPeriod(; expectations, continuations, addvars)
 end
 
 function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextPeriod, mode::EvaluationMode=SolveMode())
@@ -185,7 +192,6 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
     ΛF = Λ * μ
 
     fx = (EE_BH = p - np.expectations.BH / Λ,
-
           EE_KI = q - np.expectations.KI / ΛF   - λ*θ,
           EE_BI = p - np.expectations.BI / ΛF   - λ,
           EE_XI = 1 - μ*(1 - ξ*x),
@@ -196,12 +202,27 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
         return fx
     else
         N′ = @. (K′*np.continuations.RK - BI) / np.continuations.G
-        L  = @. N′ / (np.continuations.q * K)
-        trans = (K=K′/np.continuations.G, L=L)
+        trans = (K = K′ ./ np.continuations.G, 
+                 L = N′ ./ (np.continuations.q .* K))
+        # @debug "K" K
+        # @debug "K′" K′
+        # @debug "trans.K" trans.K
         vals = (; C, q, Q)
         
         if mode isa IterateMode
             return (; fx, trans, vals)
+        elseif mode isa SimulateMode
+            evars = map(x -> E(x,np), components(np.addvars))
+            enames = map(x -> Symbol("E_$x"), keys(components(np.addvars)))
+            evars = NamedTuple{enames}(values(evars))
+
+
+            addvars = (; Y, RK, i, I = i*K, N, BH, BI, D, w, d, x, Q, q,
+                bind = λ > 0,
+                r = 1/p - 1, E_rS = evars.E_Q / (Q - d) - 1)
+            addvars = merge(addvars, evars)
+            
+            return (; fx, trans, addvars)
         end
     end
 

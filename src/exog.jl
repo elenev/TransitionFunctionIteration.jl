@@ -28,7 +28,7 @@ function ExogenvAR1(;
 
 
     # Markov chain constructor from QuantEcon
-    mc = rouwenhorst(n, ρ, σ, μ)
+    mc = rouwenhorst(n, ρ, σ, μ*(1-ρ))
 
     state_values = mc.state_values
     mtrans = mc.p

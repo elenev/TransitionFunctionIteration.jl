@@ -54,7 +54,8 @@ get_next_exst(t, ssidx, exog_run) = t < length(exog_run) ? exog_run[t+1] : ssidx
 merge_error(fx_nt, transerr, next_exst) = merge(fx_nt, map(v -> v[next_exst], transerr))
 
 # Compute simulated results for one period
-function calc_eqm_from_state(state, obj)
+function calc_eqm_from_state(state, obj, mode=SimulateMode())
+    #@debug "Calculating equilibrium for state: $state"
    # Get exogenous state info
     exog = points(obj.exogenv)[state.exst]
     prnext = conditional_distro(obj.exogenv, state.exst)
@@ -64,12 +65,12 @@ function calc_eqm_from_state(state, obj)
     trans = obj.Tfct(state)
     next = forecast_next(trans, obj)
 
-    np = compute_expectations(next, prnext, obj.model, SimulateMode())
+    np = compute_expectations(next, prnext, obj.model, mode)
     
     # Compute equilibrium residuals, next period's transitions and simulated variables
     policies = map( to_constrained, obj.Pfct(state), obj.Pfct_bounds)
     #@debug "Simulated policys at state $state: " policies
-    return calc_eqm(fullstate, policies, obj.model, np, SimulateMode()), trans
+    return calc_eqm(fullstate, policies, obj.model, np, mode), trans
 end
 
 function calc_result(state, obj)
@@ -81,10 +82,11 @@ function calc_result(state, obj)
 
     # Expand transitions and compute errors
     out_trans = expand_transitions(out.trans, obj.exogenv)
+    #out_trans = obj.Tfct(state)
     fx_nt = _fx_to_nt(out.fx)
     transerr = map(-, out_trans, trans)   # NamedTuple of SVectors, one per exog state
 
-    return StructArray(out_trans), merge(state, exog, out.addvars), fx_nt, transerr
+    return StructArray(trans), merge(state, exog, out.addvars), fx_nt, transerr
 end
 
 """

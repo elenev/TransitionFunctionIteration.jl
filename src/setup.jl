@@ -35,11 +35,8 @@ function main_setup(model::AbstractModel,
         Pfct = Interpolant(ssg, unconstrained_guess)
         Vfct = Interpolant(ssg, stv.values)
 
-        exog_ones = ones(exnpt(exogenv))
-        endog = StructArray(
-            map(p -> p * exog_ones, Base.structdiff(pt, (exst = nothing,)) ) 
-            for pt in points(ssg)
-        )
+        vectorize_pt(pt) = NamedTuple{keys(stv.endog)}(expand_transitions(pt, exogenv))
+        endog = StructArray(vectorize_pt(pt) for pt in points(ssg))
         #@debug "Checking endog" typeof(endog) endog
         Tfct = Interpolant(ssg, endog)
     else

@@ -149,8 +149,11 @@ function Interpolant(ssg::AbstractStateSpaceGrid, returnvals::StructArray)
             throw(ArgumentError("All output vectors must have the same length; got lengths: $all_lengths"))
         end
         Nvals = length(first(first_values))
-        # @debug "Output is vector-valued with length $Nvals; constructing SMatrix of size ($Nof, $Nvals) for each grid point."
-        Y = [SMatrix{Nof,Nvals}(reduce(vcat, x)) for x in returnvals]
+        #@debug "Output is vector-valued with length $Nvals; constructing SMatrix of size ($Nof, $Nvals) for each grid point."
+        #@debug "Returnvals: " typeof(returnvals) size(returnvals)
+        f_stack(x) = vcat(ntuple(i -> x[i]', Val(Nof))...)
+        Y = [f_stack(x) for x in returnvals]
+        #@debug "Y[1...]" Y[1]
     else
         Y = [SVector(values(x)) for x in returnvals]
     end
@@ -344,7 +347,7 @@ end
     prnext::V  = SVector{1}(1.0)
 end
 
-E(x, np::NextPeriod) = dot(np.prnext, x)
+@inline E(x, np::NextPeriod) = dot(np.prnext, x)
 
 
 

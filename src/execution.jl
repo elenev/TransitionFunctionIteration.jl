@@ -88,13 +88,19 @@ end
 value(x::AbstractFloat) = x 
 value(x::ForwardDiff.Dual) = x.value  # Extract value from Dual numbers
 
+# function expand_transitions(trans, exogenv::AbstractExogenv)
+#     N = Val(exnpt(exogenv))
+#     expand_deterministic_transitions(t::Real) = SVector(ntuple(_ -> t, N))
+#     expand_deterministic_transitions(t::AbstractVector) = t
+#     return map(expand_deterministic_transitions, trans)
+# end
+
 function expand_transitions(trans, exogenv::AbstractExogenv)
-    N = Val(exnpt(exogenv))
-    expand_deterministic_transitions(t::Real) = SVector(ntuple(_ -> t, N))
-    expand_deterministic_transitions(t::AbstractVector) = t
+    T = SVector{exnpt(exogenv)}
+    expand_deterministic_transitions(t::Real) = fill(t, T)
+    expand_deterministic_transitions(v::AbstractVector) = v
     return map(expand_deterministic_transitions, trans)
 end
-
 
 function _compute_expectations_from_trans(trans::AbstractMatrix, prnext, obj::ModelSolution)
     named_trans = name_values(trans, obj.Tfct)
@@ -137,6 +143,7 @@ function (sys::TFISystem)(u,p::EvaluationMode)
         return _fx_to_svec(calc_eqm(fullstate, named_policy, sys.obj.model, sys.np, SolveMode()))
     else
         out = calc_eqm(fullstate, named_policy, sys.obj.model, sys.np, p)
+        @debug "out.trans: $(out.trans)"
         out_trans = expand_transitions(out.trans, sys.obj.exogenv)
         return FunctionValuesAtPoint(sys.state, u, SVector(values(out.vals)), hcat(out_trans...)')
     end
