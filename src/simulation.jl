@@ -143,7 +143,8 @@ function simulate(obj::ModelSolution, stv=nothing;
     BLAS.set_num_threads(original_threads)  # Restore
 
     t_range = (burn+1):(N_periods-1)
-    return StructArray(simseries[:, t_range]), StructArray(errs[:, t_range])
+    return SimulationPanel(StructArray(simseries[:, t_range]), propertynames(endog_start)), 
+            SimulationErrorPanel(StructArray(errs[:, t_range]))
 
 end
 
@@ -155,7 +156,7 @@ Summarize absolute equation and transition errors from a simulation.
 Returns a `MomentArray` with error names as rows and stat names (`:mean`, `:p50`, …)
 as columns. Access entries with `getmoment(out, :euler, :mean)` etc.
 """
-function calc_error_stats(errs::StructArray; percentiles=[50, 75, 90, 95, 99, 100])
+function calc_error_stats(errs::SimulationErrorPanel; percentiles=[50, 75, 90, 95, 99, 100])
 
     ntprct = (; (Symbol("p$p") => x -> quantile(x, p/100) for p in percentiles)...)
     statfcns = merge((mean = mean,), ntprct)
@@ -163,7 +164,7 @@ function calc_error_stats(errs::StructArray; percentiles=[50, 75, 90, 95, 99, 10
     row_names = propertynames(errs)
     col_names = keys(statfcns)
 
-    errvecs = map(c -> vec(abs.(c)), StructArrays.components(errs))
+    errvecs = map(c -> vec(abs.(c)), components(errs.data))
     data = [f(v) for v in errvecs, f in values(statfcns)]
 
     return MomentArray(data, row_names, col_names)
@@ -200,17 +201,17 @@ const default_stats = merge( (; mean, std, minimum),
 
 
 
-function describe(simvector::StructArray{T,1} where T, stat_functions)
+function _describe(simvector, stat_functions)
     varnames = propertynames(simvector)
     F = promote_type(fieldtypes(eltype(simvector))...)
     return [F(f(getproperty(simvector, var))) for var in varnames, f in values(stat_functions)]
 end
 
 
-function describe(simseries::StructArray{T,2} where T, stat_functions = default_stats)
-    first_run, runs_iterator = Iterators.peel(eachrow(simseries))
+function describe(simseries::SimulationPanel, stat_functions = default_stats)
+    first_run, runs_iterator = Iterators.peel(eachrow(simseries.data))
 
-    run_stats = describe(first_run, stat_functions)
+    run_stats = _describe(first_run, stat_functions)
 
     mean_stats = deepcopy(run_stats)
     new_mean_stats = similar(run_stats)
@@ -219,7 +220,7 @@ function describe(simseries::StructArray{T,2} where T, stat_functions = default_
     fill!(stderr_stats, 0.0)
 
     for (n, simvector) in enumerate(runs_iterator)
-        run_stats .= describe(simvector, stat_functions)
+        run_stats .= _describe(simvector, stat_functions)
         new_mean_stats .= mean_stats + (run_stats - mean_stats) / n
         stderr_stats .+= (run_stats - mean_stats) .* (run_stats .- new_mean_stats)
     end

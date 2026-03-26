@@ -151,7 +151,9 @@ function Interpolant(ssg::AbstractStateSpaceGrid, returnvals::StructArray)
         Nvals = length(first(first_values))
         #@debug "Output is vector-valued with length $Nvals; constructing SMatrix of size ($Nof, $Nvals) for each grid point."
         #@debug "Returnvals: " typeof(returnvals) size(returnvals)
-        f_stack(x) = vcat(ntuple(i -> x[i]', Val(Nof))...)
+        #@debug "First values: " first_values[1]
+        #typed_reshape(v) = similar_type(v, Size(1, length(v)))(v)
+        f_stack(x) = mapreduce(permutedims, vcat, x)
         Y = [f_stack(x) for x in returnvals]
         #@debug "Y[1...]" Y[1]
     else
@@ -660,6 +662,52 @@ end
 end
 
 (m::MomentArray)(vars,stats) = getmoment(m, vars, stats)
+
+
+## Equation Errors
+struct SimulationErrorPanel{T, A<:StructArray{T, 2}} <: AbstractMatrix{T}
+    data::A
+end
+
+# --- AbstractMatrix Interface ---
+Base.size(sp::SimulationErrorPanel) = size(sp.data)
+Base.getindex(sp::SimulationErrorPanel, I::Int...) = getindex(sp.data, I...)
+Base.IndexStyle(::Type{<:SimulationErrorPanel}) = IndexLinear()
+
+# --- Property Access Delegation ---
+Base.propertynames(sp::SimulationErrorPanel) = propertynames(getfield(sp, :data))
+Base.getproperty(sp::SimulationErrorPanel, s::Symbol) = (s === :data) ? getfield(sp, :data) : getproperty(getfield(sp, :data), s)
+
+# --- REPL Visualization ---
+function Base.summary(io::IO, sp::SimulationErrorPanel{T}) where T
+    print(io, join(size(sp), "x"), " SimulationErrorPanel{$T} with fields: (", join(propertynames(sp), ", "), ")")
+end
+
+
+### Simulated output
+struct SimulationPanel{T, NAMES, A<:StructArray{T, 2}} <: AbstractMatrix{T}
+    data::A
+end
+SimulationPanel(data::A, endog_names) where {T, A<:StructArray{T, 2}} = SimulationPanel{T, Tuple(endog_names), A}(data)
+
+# --- AbstractMatrix Interface ---
+Base.size(sp::SimulationPanel) = size(sp.data)
+Base.getindex(sp::SimulationPanel, I::Int...) = getindex(sp.data, I...)
+Base.IndexStyle(::Type{<:SimulationPanel}) = IndexLinear()
+
+# --- Property Access Delegation ---
+Base.propertynames(sp::SimulationPanel) = propertynames(getfield(sp, :data))
+Base.getproperty(sp::SimulationPanel, s::Symbol) = (s === :data) ? getfield(sp, :data) : getproperty(getfield(sp, :data), s)
+
+# --- REPL Visualization ---
+function Base.summary(io::IO, sp::SimulationPanel{T}) where T
+    print(io, join(size(sp), "x"), " SimulationPanel{$T} with fields: (", join(propertynames(sp), ", "), ")")
+end
+
+endog_states(::SimulationPanel{T, NAMES, A}) where {T, NAMES, A} = NAMES
+states(sp::SimulationPanel) = (:exst, endog_states(sp)...)
+
+
 ## Stubs
 
 # 1. Define the custom exception type
