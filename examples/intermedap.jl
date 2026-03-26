@@ -274,21 +274,25 @@ function plot_errs(errs::SimulationErrorPanel, sim::SimulationPanel;
         _get_exst = exst -> sim.exst .== exst
     end
 
-    # Global error limits across all selected errnames and exogstates
-    err_lims = let vals = [getproperty(errs.data[_get_exst(exst)], en)
-                           for exst in exogstates, en in errnames]
-        (minimum(minimum.(vals)), maximum(maximum.(vals)))
-    end
-
+    # Global error limits; for 2D, color by absolute error magnitude.
+    # Use extrema(f, v) to find each panel's range in one pass without allocating.
+    _efn = n_endog == 2 ? abs : identity
+    err_lims = mapreduce(
+        t -> extrema(_efn, getproperty(errs.data[_get_exst(t[1])], t[2])),
+        (a, b) -> (min(a[1], b[1]), max(a[2], b[2])),
+        Iterators.product(exogstates, errnames)
+    )
     function _plot_err_1D(mask, errname, statename; kw...)
         scatter(getproperty(sim.data[mask], statename), getproperty(errs.data[mask], errname);
             ylims=err_lims, markerstrokewidth=0, markerstrokecolor=:transparent, kw...)
     end
 
     function _plot_err_2D(mask, errname, statename1, statename2; kw...)
+        abs_errs = abs.(getproperty(errs.data[mask], errname))
+        t = (abs_errs .- err_lims[1]) ./ max(err_lims[2] - err_lims[1], eps())
         scatter(getproperty(sim.data[mask], statename1), getproperty(sim.data[mask], statename2);
-            zcolor=getproperty(errs.data[mask], errname), clims=err_lims,
-            colorbar=false, markerstrokewidth=0, markerstrokecolor=:transparent, kw...)
+            markercolor=jet_rgb.(t),
+            markerstrokewidth=0, markerstrokecolor=:transparent, kw...)
     end
 
     if n_endog == 1
@@ -317,10 +321,10 @@ function plot_errs(errs::SimulationErrorPanel, sim::SimulationPanel;
 
     if n_endog == 2
         # Invisible scatter panel: no visible body, colorbar strip only
-        cbar_plot = scatter([0], [0]; zcolor=[mean(err_lims)], clims=err_lims,
-                            ms=0, markerstrokewidth=0, colorbar=true,
-                            axis=false, ticks=false, border=:none, label="")
-        l = @layout [grid(N, M) a{0.06w}]
+        cbar_plot = scatter([0.5], [0.5]; zcolor=[mean(err_lims)], clims=err_lims,
+                            color=:jet, ms=0, markerstrokewidth=0, colorbar=true,
+                            framestyle=:none, xlims=(0,1), ylims=(0,1), label="")
+        l = @layout [grid(N, M) a{0.1w}]
         plot(plots..., cbar_plot, layout=l, size=(total_size[1] + 80, total_size[2]))
     else
         plot(plots..., layout=(N, M), size=total_size)
