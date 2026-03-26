@@ -45,7 +45,7 @@ function steadystate(model::NeoclassicalGrowthModel, ::AnalyticalSteadyStateMode
     guess = (; C,)
     endog = (; K)
 
-    return SteadyState(; model, exog, endog, values, guess)
+    return SteadyState(; model, exog, endog, values, guess), true
 end
 
 # If solver is guessing quantities whose domain is constrained, it's best to specify
@@ -58,14 +58,14 @@ end
     
 
 # Grids for endogenous variables
-function define_endog_grids(model::NeoclassicalGrowthModel, ::AbstractSteadyState)
+function define_endog_grids(model::NeoclassicalGrowthModel, stv::AbstractSteadyState)
     # Maximum attainable K is given by the solution to the equation 
     # A * K^α - δ * K = 0, which defines the point where all output is invested and there is no consumption. 
     # We can use this to set a reasonable range for the capital grid around the steady state value.
     # Set A = 1. Then,
     # (; α, δ) = model    
     # Kmax = (δ)^(1/(α-1))
-    K_grid = range(0.8, 1.2, length=20) * steadystate(model).endog.K
+    K_grid = range(0.8, 1.2, length=20) * stv.endog.K
     return (; K = K_grid)
 end
 
