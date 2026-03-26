@@ -259,42 +259,70 @@ function calc_at_guess(mdl, x=0.0056)
 end
 
 
-function plot_errs(errs::SimulationErrorPanel, sim::SimulationPanel; 
+function plot_errs(errs::SimulationErrorPanel, sim::SimulationPanel;
                     errnames=propertynames(errs),
                     exogstates=sort(unique(sim.exst)),
                     endogstates=endog_states(sim)[1:2])
 
-    function _plot_err_1D(mask, errname, statename)
-        scatter(getproperty(sim.data[mask],statename), getproperty(errs.data[mask],errname), 
-            xlabel=statename, title=errname)
-    end
-
-    function _plot_err_2D(mask, errname, statename1, statename2)
-        scatter(getproperty(sim.data[mask],statename1), getproperty(sim.data[mask],statename2), 
-            zcolor = getproperty(errs.data[mask],errname), xlabel=statename1, ylabel=statename2, title=simname)
-    end
+    N = length(exogstates)
+    M = length(errnames)
+    n_endog = length(endogstates)
 
     if exogstates == :all
-        _get_exst = _ -> true 
+        _get_exst = _ -> trues(length(sim.exst))
     else
         _get_exst = exst -> sim.exst .== exst
     end
 
-    if length(endogstates) == 1
-        _plot = (mask, errname) -> _plot_err_1D(mask, errname, endogstates[1])
-    elseif length(endogstates) == 2
-        _plot = (mask, errname) -> _plot_err_2D(mask, errname, endogstates[1], endogstates[2])
+    # Global error limits across all selected errnames and exogstates
+    err_lims = let vals = [getproperty(errs.data[_get_exst(exst)], en)
+                           for exst in exogstates, en in errnames]
+        (minimum(minimum.(vals)), maximum(maximum.(vals)))
+    end
+
+    function _plot_err_1D(mask, errname, statename; kw...)
+        scatter(getproperty(sim.data[mask], statename), getproperty(errs.data[mask], errname);
+            ylims=err_lims, markerstrokewidth=0, markerstrokecolor=:transparent, kw...)
+    end
+
+    function _plot_err_2D(mask, errname, statename1, statename2; kw...)
+        scatter(getproperty(sim.data[mask], statename1), getproperty(sim.data[mask], statename2);
+            zcolor=getproperty(errs.data[mask], errname), clims=err_lims,
+            colorbar=false, markerstrokewidth=0, markerstrokecolor=:transparent, kw...)
+    end
+
+    if n_endog == 1
+        _plot = (mask, errname; kw...) -> _plot_err_1D(mask, errname, endogstates[1]; kw...)
+    elseif n_endog == 2
+        _plot = (mask, errname; kw...) -> _plot_err_2D(mask, errname, endogstates[1], endogstates[2]; kw...)
     else
         error("Plotting only implemented for 1 or 2 endog states")
     end
 
-    plots = [_plot(_get_exst(exst), errname) for exst in exogstates, errname in errnames]
+    # Build as a 1D vector in row-major order so Plots.jl places them correctly:
+    # row r = exogstates[r], col c = errnames[c]; title on top row, xlabel on bottom, ylabel on left
+    plots = [_plot(_get_exst(exogstates[r]), errnames[c];
+                   title      = r == 1 ? string(errnames[c]) : "",
+                   xlabel     = r == N ? string(endogstates[1]) : "",
+                   ylabel     = c == 1 && n_endog == 2 ? string(endogstates[2]) : "",
+                   xformatter = r == N ? :auto : _ -> "",
+                   yformatter = c == 1 ? :auto : _ -> "",
+                   colorbar   = false,
+                   legend     = false)
+             for r in 1:N for c in 1:M]
 
     min_width = 200
     min_height = 200
-    N = length(exogstates)
-    M = length(errnames)
-    total_size = (M * min_height, N * min_width)
+    total_size = (M * min_width, N * min_height)
 
-    plot(plots..., layout=(N, M), size=total_size)
+    if n_endog == 2
+        # Invisible scatter panel: no visible body, colorbar strip only
+        cbar_plot = scatter([0], [0]; zcolor=[mean(err_lims)], clims=err_lims,
+                            ms=0, markerstrokewidth=0, colorbar=true,
+                            axis=false, ticks=false, border=:none, label="")
+        l = @layout [grid(N, M) a{0.06w}]
+        plot(plots..., cbar_plot, layout=l, size=(total_size[1] + 80, total_size[2]))
+    else
+        plot(plots..., layout=(N, M), size=total_size)
+    end
 end
