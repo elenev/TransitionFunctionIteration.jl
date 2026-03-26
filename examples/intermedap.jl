@@ -1,5 +1,5 @@
 # Neoclassical Growth Model 
-using TransitionFunctionIteration, StaticArrays
+using TransitionFunctionIteration, StaticArrays, StructArrays
 
 # Explicitly import functions that must be overloaded
 import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate_system, 
@@ -19,7 +19,7 @@ import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime, Posi
     η::Float64 = 0.07   # payout target
     ξ::Float64 = 0.5    # equity issuance cost
     ϕ::Float64 = 0.5    # capital adjustment cost
-    θ::Float64 = 0.8    # leverage constraint
+    θ::Float64 = 0.9    # leverage constraint
     N_G::Int   = 5      # number of points in discretized productivity grid
 end
 
@@ -93,7 +93,7 @@ function steadystate_system(g::NamedTuple, mdl::IntermediaryAssetPricingModel, m
     if mode isa SolveMode
         return fx, nothing
     elseif mode isa IterateMode
-        policy_sol = (; C, x, μ, q, p, λ) 
+        policy_sol = (; C, x, q, p, λ) 
         transition_sol = (; K, L)
         exog = (; G)
         vals = vals_from_policy(nothing, policy_sol, mdl)
@@ -103,15 +103,16 @@ function steadystate_system(g::NamedTuple, mdl::IntermediaryAssetPricingModel, m
 end
 
 function vals_from_policy(state, policy, model::IntermediaryAssetPricingModel)
-    (; C, q, x, μ) = policy
+    (; C, q, x) = policy
     (; ξ, η) = model
+    μ = 1 / (1 - ξ*x)
     Q = η - x + μ * (1-η - ξ/2 * x^2)
     return (; C, q, Q)
 end
 
 function define_endog_grids(model::IntermediaryAssetPricingModel, stv::SteadyState)
-    K_grid = range(2.5, 6.5, length=10)
-    L_grid = range(0.15, 0.25, length=10)
+    K_grid = range(0.7, 1.8, length=11) * stv.endog.K
+    L_grid = range(0.10, 0.125, length=9)
     return (; K=K_grid, L=L_grid)
 end
 
@@ -167,12 +168,14 @@ end
 
 function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextPeriod, mode::EvaluationMode=SolveMode())
     (; K, L) = state
-    (; C, x, μ, q, p, λ) = policy
+    (; C, x, q, p, λ) = policy
     (; α, δ, η, ξ, gbar, ϕ, γ, θ) = model
 
     (; RK, Y, i) = calc_production((K=K, q=q), model)
 
     d = η - x
+    μ = 1 / (1 - ξ*x)
+
     Q = d + μ * (1 - η - ξ/2 * x^2)
 
     N = L*q*K
@@ -194,16 +197,15 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
     fx = (EE_BH = p - np.expectations.BH / Λ,
           EE_KI = q - np.expectations.KI / ΛF   - λ*θ,
           EE_BI = p - np.expectations.BI / ΛF   - λ,
-          EE_XI = 1 - μ*(1 - ξ*x),
           MC_B  = BH - BI,
           LC    = fisher_burmeister(λ, θ*q*K′ - p*BI))
 
     if mode isa SolveMode
         return fx
     else
-        N′ = @. (K′*np.continuations.RK - BI) / np.continuations.G
+        N′ = @. K′*np.continuations.RK - BI
         trans = (K = K′ ./ np.continuations.G, 
-                 L = N′ ./ (np.continuations.q .* K))
+                 L = N′ ./ (q.*K′))
         # @debug "K" K
         # @debug "K′" K′
         # @debug "trans.K" trans.K
@@ -235,10 +237,15 @@ xguess = 0.018
 configsys = SystemSteadyStateMode((x=0.018,))
 obj, stv = main_setup(mdl;mode=configsys, check_steadystate=true)
 
+main_execute!(obj; maxiter=1000)
+simseries, errs = simseries, errs = simulate(obj, stv)
+stats, _ = describe(simseries)
+errstats = calc_error_stats(errs)
+
 # Steady state fixed point 
-_, stvguess = steadystate_system((x=xguess,), mdl, IterateMode())
-configfp = FixedPointSteadyStateMode(stvguess.guess, stvguess.endog, stvguess.exog)
-obj, stv = main_setup(mdl, mode=configfp)
+# _, stvguess = steadystate_system((x=xguess,), mdl, IterateMode())
+# configfp = FixedPointSteadyStateMode(stvguess.guess, stvguess.endog, stvguess.exog)
+# obj, stv = main_setup(mdl, mode=configfp)
 
 
 #obj, stv = main_setup(mdl)
