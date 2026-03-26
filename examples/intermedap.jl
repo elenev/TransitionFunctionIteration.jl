@@ -257,3 +257,44 @@ function calc_at_guess(mdl, x=0.0056)
     stateerrs = (K = s.K - out.trans.K, L = s.L - out.trans.L)
     return merge(out.fx, stateerrs)
 end
+
+
+function plot_errs(errs::SimulationErrorPanel, sim::SimulationPanel; 
+                    errnames=propertynames(errs),
+                    exogstates=sort(unique(sim.exst)),
+                    endogstates=endog_states(sim)[1:2])
+
+    function _plot_err_1D(mask, errname, statename)
+        scatter(getproperty(sim.data[mask],statename), getproperty(errs.data[mask],errname), 
+            xlabel=statename, title=errname)
+    end
+
+    function _plot_err_2D(mask, errname, statename1, statename2)
+        scatter(getproperty(sim.data[mask],statename1), getproperty(sim.data[mask],statename2), 
+            zcolor = getproperty(errs.data[mask],errname), xlabel=statename1, ylabel=statename2, title=simname)
+    end
+
+    if exogstates == :all
+        _get_exst = _ -> true 
+    else
+        _get_exst = exst -> sim.exst .== exst
+    end
+
+    if length(endogstates) == 1
+        _plot = (mask, errname) -> _plot_err_1D(mask, errname, endogstates[1])
+    elseif length(endogstates) == 2
+        _plot = (mask, errname) -> _plot_err_2D(mask, errname, endogstates[1], endogstates[2])
+    else
+        error("Plotting only implemented for 1 or 2 endog states")
+    end
+
+    plots = [_plot(_get_exst(exst), errname) for exst in exogstates, errname in errnames]
+
+    min_width = 200
+    min_height = 200
+    N = length(exogstates)
+    M = length(errnames)
+    total_size = (M * min_height, N * min_width)
+
+    plot(plots..., layout=(N, M), size=total_size)
+end
