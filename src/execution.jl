@@ -143,7 +143,7 @@ function (sys::TFISystem)(u,p::EvaluationMode)
         return _fx_to_svec(calc_eqm(fullstate, named_policy, sys.obj.model, sys.np, SolveMode()))
     else
         out = calc_eqm(fullstate, named_policy, sys.obj.model, sys.np, p)
-        @debug "out.trans: $(out.trans)"
+        #@debug "out.trans: $(out.trans)"
         out_trans = expand_transitions(out.trans, sys.obj.exogenv)
         return FunctionValuesAtPoint(sys.state, u, SVector(values(out.vals)), hcat(out_trans...)')
     end

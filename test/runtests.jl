@@ -53,11 +53,11 @@ vfct = Interpolant(ssg_ex, (v = 2.0,))
 tfct = Interpolant(ssg_ex, (x = SVector(0.9, 1.0, 1.1),))
 obj = ModelSolution(model = DummyModel(), exogenv = e3, Pfct = pfct, Vfct = vfct, Tfct = tfct, ssg = ssg_ex)
 
-function prep_testing_objects(obj; stpfi=false)
-    state = first(points(obj.Tfct.ssg))
-    pol = first(coefficients(obj.Pfct))
-    val = first(coefficients(obj.Vfct))
-    trans = first(coefficients(obj.Tfct))
+function prep_testing_objects(obj; idx=1, stpfi=false)
+    state = obj.ssg[idx...]
+    pol = coefficients(obj.Pfct)[idx...]
+    val = coefficients(obj.Vfct)[idx...]
+    trans = coefficients(obj.Tfct)[idx...]
     guess = deepcopy(pol)
     inittrans = deepcopy(trans)
 
