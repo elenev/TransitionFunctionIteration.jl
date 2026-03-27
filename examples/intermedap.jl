@@ -247,9 +247,7 @@ errstats = calc_error_stats(errs)
 # configfp = FixedPointSteadyStateMode(stvguess.guess, stvguess.endog, stvguess.exog)
 # obj, stv = main_setup(mdl, mode=configfp)
 
-
-#obj, stv = main_setup(mdl)
-
+using Plots
 function calc_at_guess(mdl, x=0.0056)
     resid, g,s,e=steadystate_guess(mdl,x)
     np = compute_next_period_values((q = 1.0, K=s.K, vals_from_policy(nothing,g,mdl).Q, C = g.C, G = e.G), mdl)
@@ -289,9 +287,8 @@ function plot_errs(errs::SimulationErrorPanel, sim::SimulationPanel;
 
     function _plot_err_2D(mask, errname, statename1, statename2; kw...)
         abs_errs = abs.(getproperty(errs.data[mask], errname))
-        t = (abs_errs .- err_lims[1]) ./ max(err_lims[2] - err_lims[1], eps())
         scatter(getproperty(sim.data[mask], statename1), getproperty(sim.data[mask], statename2);
-            markercolor=jet_rgb.(t),
+            zcolor=abs_errs, colormap=:jet, clims=err_lims, colorbar=false,
             markerstrokewidth=0, markerstrokecolor=:transparent, kw...)
     end
 
@@ -324,7 +321,7 @@ function plot_errs(errs::SimulationErrorPanel, sim::SimulationPanel;
         cbar_plot = scatter([0.5], [0.5]; zcolor=[mean(err_lims)], clims=err_lims,
                             color=:jet, ms=0, markerstrokewidth=0, colorbar=true,
                             framestyle=:none, xlims=(0,1), ylims=(0,1), label="")
-        l = @layout [grid(N, M) a{0.1w}]
+        l = @layout [grid(N, M) a{0.12w}]
         plot(plots..., cbar_plot, layout=l, size=(total_size[1] + 80, total_size[2]))
     else
         plot(plots..., layout=(N, M), size=total_size)
