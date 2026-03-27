@@ -109,11 +109,13 @@ function simulate(obj::ModelSolution, stv=nothing;
                                 burn=500,
                                 exog_start=ssidx(obj.exogenv),
                                 endog_start=stv.endog,
-                                shocks=sample_shocks(sz, seed, burn)
+                                shocks=sample_shocks(sz, seed, burn),
+                                exog_states = simulate_markov_chain(obj.exogenv, exog_start, shocks)[1]
                     )
-
-    exog_states, _ = simulate_markov_chain(obj.exogenv, exog_start, shocks)
     start = make_point(exog_start, endog_start)
+
+    # Add another period so that transition errors can be computed
+    exog_states = hcat(exog_states, fill(ssidx(obj.exogenv), size(exog_states, 1)))
 
     # Simulation size
     N_runs, N_periods = size(exog_states)
@@ -193,7 +195,7 @@ function check_bounds(simseries, obj)
 end
 
 
-const default_percentiles = (1, 5, 25, 50, 75, 95, 99);
+const default_percentiles = (5, 25, 50, 75, 95);
 
 const default_stats = merge( (; mean, std, minimum), 
     (; (Symbol("p$k") => x -> quantile(x,k/100) for k in default_percentiles)...),
@@ -201,26 +203,52 @@ const default_stats = merge( (; mean, std, minimum),
 
 
 
-function _describe(simvector, stat_functions)
+function _describe(simvector, stat_functions, cor_functions)
     varnames = propertynames(simvector)
     F = promote_type(fieldtypes(eltype(simvector))...)
-    return [F(f(getproperty(simvector, var))) for var in varnames, f in values(stat_functions)]
+    stats = [F(f(getproperty(simvector, var))) for var in varnames, f in values(stat_functions)]
+    cor_stats = [F(f(getproperty(simvector, var), simvector)) for var in varnames, f in values(cor_functions)]
+    #@debug "cor_stats: " cor_stats
+    return hcat(stats, cor_stats)
 end
 
 
-function describe(simseries::SimulationPanel, stat_functions = default_stats)
-    first_run, runs_iterator = Iterators.peel(eachrow(simseries.data))
+function describe(simseries::SimulationPanel, 
+    stat_functions = default_stats;
+    additional_stats = (;),
+    correlation_vars = collect(endog_states(simseries))
+    )
+    
+    if correlation_vars isa Vector{Symbol}
+        correlation_vars = [var => 0 for var in correlation_vars]
+    end
 
-    run_stats = _describe(first_run, stat_functions)
+    stat_functions = merge(stat_functions, additional_stats)
+    
+    function _cor(v, s, n) 
+        if n != 0
+            v = view(v, n+1:length(v))
+            s = view(s, 1:length(s)-n)
+        end
+        return cor(v, s)
+    end
+    
+    _corname(s,n) = Symbol("cor_$(s)_lag$(n)")
+    cor_functions = (; ( 
+        _corname(s,n) => (v,sim) -> _cor(v, getproperty(sim, s), n) 
+        for (s,n) in correlation_vars)...)
 
+    first_run, runs_iterator = Iterators.peel(eachrow(simseries))
+    run_stats = _describe(first_run, stat_functions, cor_functions)
+    
     mean_stats = deepcopy(run_stats)
     new_mean_stats = similar(run_stats)
-    stderr_stats = similar(run_stats)
+    stderr_stats = similar(run_stats) 
 
     fill!(stderr_stats, 0.0)
 
     for (n, simvector) in enumerate(runs_iterator)
-        run_stats .= _describe(simvector, stat_functions)
+        run_stats .= _describe(simvector, stat_functions, cor_functions)
         new_mean_stats .= mean_stats + (run_stats - mean_stats) / n
         stderr_stats .+= (run_stats - mean_stats) .* (run_stats .- new_mean_stats)
     end
@@ -228,8 +256,10 @@ function describe(simseries::SimulationPanel, stat_functions = default_stats)
     N = size(simseries, 1)
     stderr_stats .= sqrt.( stderr_stats / (N - 1) ) / sqrt(N)
 
-    return MomentArray(mean_stats,propertynames(simseries), keys(stat_functions)),
-              MomentArray(stderr_stats, propertynames(simseries), keys(stat_functions))
+    stat_names = (keys(stat_functions)..., keys(cor_functions)...)
+
+    return MomentArray(mean_stats,propertynames(simseries), stat_names),
+              MomentArray(stderr_stats, propertynames(simseries), stat_names)
 end
 
 

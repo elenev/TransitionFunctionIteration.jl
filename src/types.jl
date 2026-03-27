@@ -665,13 +665,15 @@ end
 
 
 ## Equation Errors
-struct SimulationErrorPanel{T, A<:StructArray{T, 2}} <: AbstractMatrix{T}
+struct SimulationErrorPanel{T, N, A<:StructArray{T, N}} <: AbstractArray{T,N}
     data::A
 end
 
 # --- AbstractMatrix Interface ---
 Base.size(sp::SimulationErrorPanel) = size(sp.data)
 Base.getindex(sp::SimulationErrorPanel, I::Int...) = getindex(sp.data, I...)
+Base.getindex(sp::SimulationErrorPanel, I...) = SimulationErrorPanel(sp.data[I...])
+Base.view(sp::SimulationErrorPanel, I...) = SimulationErrorPanel(view(sp.data, I...))
 Base.IndexStyle(::Type{<:SimulationErrorPanel}) = IndexLinear()
 
 # --- Property Access Delegation ---
@@ -679,20 +681,25 @@ Base.propertynames(sp::SimulationErrorPanel) = propertynames(getfield(sp, :data)
 Base.getproperty(sp::SimulationErrorPanel, s::Symbol) = (s === :data) ? getfield(sp, :data) : getproperty(getfield(sp, :data), s)
 
 # --- REPL Visualization ---
-function Base.summary(io::IO, sp::SimulationErrorPanel{T}) where T
-    print(io, join(size(sp), "x"), " SimulationErrorPanel{$T} with fields: (", join(propertynames(sp), ", "), ")")
+function Base.summary(io::IO, sp::SimulationErrorPanel{T,N}) where {T,N}
+    print(io, join(size(sp), "x"), " SimulationErrorPanel{$T,$N} with fields: (", join(propertynames(sp), ", "), ")")
 end
 
 
 ### Simulated output
-struct SimulationPanel{T, NAMES, A<:StructArray{T, 2}} <: AbstractMatrix{T}
+struct SimulationPanel{T, N, NAMES, A<:StructArray{T, N}} <: AbstractArray{T,N}
     data::A
 end
-SimulationPanel(data::A, endog_names) where {T, A<:StructArray{T, 2}} = SimulationPanel{T, Tuple(endog_names), A}(data)
+SimulationPanel(data::A, endog_names) where {T, N, A<:StructArray{T, N}} = SimulationPanel{T, N, Tuple(endog_names), A}(data)
 
 # --- AbstractMatrix Interface ---
 Base.size(sp::SimulationPanel) = size(sp.data)
 Base.getindex(sp::SimulationPanel, I::Int...) = getindex(sp.data, I...)
+# Slice indexing: delegate to StructArray (returns StructArray) then rewrap
+Base.getindex(sp::SimulationPanel{T,N,NAMES}, I...) where {T,N,NAMES} =
+    SimulationPanel(sp.data[I...], NAMES)
+Base.view(sp::SimulationPanel{T,N,NAMES}, I...) where {T,N,NAMES} =
+    SimulationPanel(view(sp.data, I...), NAMES)
 Base.IndexStyle(::Type{<:SimulationPanel}) = IndexLinear()
 
 # --- Property Access Delegation ---
@@ -700,11 +707,11 @@ Base.propertynames(sp::SimulationPanel) = propertynames(getfield(sp, :data))
 Base.getproperty(sp::SimulationPanel, s::Symbol) = (s === :data) ? getfield(sp, :data) : getproperty(getfield(sp, :data), s)
 
 # --- REPL Visualization ---
-function Base.summary(io::IO, sp::SimulationPanel{T}) where T
-    print(io, join(size(sp), "x"), " SimulationPanel{$T} with fields: (", join(propertynames(sp), ", "), ")")
+function Base.summary(io::IO, sp::SimulationPanel{T,N}) where {T,N}
+    print(io, join(size(sp), "x"), " SimulationPanel{$T,$N} with fields: (", join(propertynames(sp), ", "), ")")
 end
 
-endog_states(::SimulationPanel{T, NAMES, A}) where {T, NAMES, A} = NAMES
+endog_states(::SimulationPanel{T, N, NAMES, A}) where {T, N, NAMES, A} = NAMES
 states(sp::SimulationPanel) = (:exst, endog_states(sp)...)
 
 
