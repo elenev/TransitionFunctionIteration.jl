@@ -242,6 +242,8 @@ simseries, errs = simseries, errs = simulate(obj, stv)
 stats, _ = describe(simseries)
 errstats = calc_error_stats(errs)
 
+irf = simulate_irf(obj, simseries);
+
 # Steady state fixed point 
 # _, stvguess = steadystate_system((x=xguess,), mdl, IterateMode())
 # configfp = FixedPointSteadyStateMode(stvguess.guess, stvguess.endog, stvguess.exog)

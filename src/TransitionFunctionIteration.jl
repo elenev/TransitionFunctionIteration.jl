@@ -30,6 +30,9 @@ export main_setup, main_execute!, make_point, compute_expectations, TFIMethod, S
 export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, E
 export SimulationPanel, SimulationErrorPanel, endog_states, states
 
+# IRFs
+export IRFResult, Transformations, ReportedVariable, IRFPage, simulate_irf
+
 # MomentArray
 export MomentArray, row_names, col_names
 
@@ -43,5 +46,8 @@ include("setup.jl")
 include("execution.jl")
 include("simulation.jl")
 include("economics.jl")
+
+include("irf.jl")
+include("irfplotting.jl")
 
 end
