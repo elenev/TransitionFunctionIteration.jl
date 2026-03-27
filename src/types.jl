@@ -349,8 +349,9 @@ end
     prnext::V  = SVector{1}(1.0)
 end
 
-@inline E(x, np::NextPeriod) = dot(np.prnext, x)
-
+_mean(f, x, w) = mapreduce((wi, xi) -> wi * f(xi), +, w, x)
+@inline Statistics.mean(x, np::NextPeriod) = dot(np.prnext, x)
+@inline Statistics.mean(f::Function, x, np::NextPeriod) = _mean(f, x, np.prnext)
 
 
 ### Transformations Into the Real Line 

@@ -213,7 +213,7 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
         if mode isa IterateMode
             return (; fx, trans, vals)
         elseif mode isa SimulateMode
-            evars = map(x -> E(x,np), components(np.addvars))
+            evars = map(x -> mean(x,np), components(np.addvars))
             enames = map(x -> Symbol("E_$x"), keys(components(np.addvars)))
             evars = NamedTuple{enames}(values(evars))
 
