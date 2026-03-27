@@ -232,17 +232,12 @@ end
 
 mdl = IntermediaryAssetPricingModel()
 
-# Steady state system 
+# Configuration
 xguess = 0.018
-configsys = SystemSteadyStateMode((x=0.018,))
-obj, stv = main_setup(mdl;mode=configsys, check_steadystate=true)
+setup_opts = (mode = SystemSteadyStateMode((x=xguess,)), check_steadystate=true)
+exec_opts = (; maxiter=1000, logging=COMPLETE)
+out = solve_and_simulate(mdl; setup_kwargs=setup_opts, execute_kwargs=exec_opts)
 
-main_execute!(obj; maxiter=1000)
-simseries, errs = simseries, errs = simulate(obj, stv)
-stats, _ = describe(simseries)
-errstats = calc_error_stats(errs)
-
-irf = simulate_irf(obj, simseries);
 
 # Steady state fixed point 
 # _, stvguess = steadystate_system((x=xguess,), mdl, IterateMode())

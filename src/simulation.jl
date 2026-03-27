@@ -110,7 +110,8 @@ function simulate(obj::ModelSolution, stv=nothing;
                                 exog_start=ssidx(obj.exogenv),
                                 endog_start=stv.endog,
                                 shocks=sample_shocks(sz, seed, burn),
-                                exog_states = simulate_markov_chain(obj.exogenv, exog_start, shocks)[1]
+                                exog_states = simulate_markov_chain(obj.exogenv, exog_start, shocks)[1],
+                                report_bounds=true,
                     )
     start = make_point(exog_start, endog_start)
 
@@ -149,7 +150,10 @@ function simulate(obj::ModelSolution, stv=nothing;
     simseries = SimulationPanel(StructArray(simseries[:, t_range]), propertynames(endog_start))
     errs = SimulationErrorPanel(StructArray(errs[:, t_range]))
     
-    check_bounds(simseries, obj)
+    if report_bounds
+        check_bounds(simseries, obj)
+    end
+    
     return simseries, errs
 
 end
