@@ -110,7 +110,7 @@ function vals_from_policy(state, policy, model::IntermediaryAssetPricingModel)
 end
 
 function define_endog_grids(model::IntermediaryAssetPricingModel, stv::SteadyState)
-    K_grid = range(0.7, 1.8, length=11) * stv.endog.K
+    K_grid = range(0.6, 2.5, length=15) * stv.endog.K
     L_grid = range(0.10, 0.125, length=9)
     return (; K=K_grid, L=L_grid)
 end
