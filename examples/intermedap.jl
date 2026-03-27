@@ -3,7 +3,7 @@ using TransitionFunctionIteration, StaticArrays, StructArrays
 
 # Explicitly import functions that must be overloaded
 import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate_system, 
-    compute_next_period_values, vals_from_policy, bounds
+    compute_next_period_values, vals_from_policy, bounds, normalize_fx_errors
 
 # Import some other functions for convenience
 import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime, PositiveBounded, Unbounded
@@ -110,7 +110,7 @@ function vals_from_policy(state, policy, model::IntermediaryAssetPricingModel)
 end
 
 function define_endog_grids(model::IntermediaryAssetPricingModel, stv::SteadyState)
-    K_grid = range(0.6, 2.5, length=15) * stv.endog.K
+    K_grid = range(0.5, 2.5, length=15) * stv.endog.K
     L_grid = range(0.10, 0.125, length=9)
     return (; K=K_grid, L=L_grid)
 end
@@ -213,9 +213,10 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
         if mode isa IterateMode
             return (; fx, trans, vals)
         elseif mode isa SimulateMode
-            evars = map(x -> E(x,np), components(np.addvars))
-            enames = map(x -> Symbol("E_$x"), keys(components(np.addvars)))
-            evars = NamedTuple{enames}(values(evars))
+            #evars = map(x -> E(x,np), components(np.addvars))
+            #enames = map(x -> Symbol("E_$x"), keys(components(np.addvars)))
+            #evars = NamedTuple{enames}(values(evars))
+            evars = (E_Q = E(np.addvars.Q, np),)
 
             r = 1/p - 1
             E_rS = evars.E_Q / (Q - d) - 1
@@ -228,6 +229,14 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
         end
     end
 
+end
+
+function normalize_fx_errors(::IntermediaryAssetPricingModel, fx_nt, addvars)
+    return (; EE_BH = fx_nt.EE_BH / addvars.p, 
+              EE_KI = fx_nt.EE_KI / addvars.q, 
+              EE_BI = fx_nt.EE_BI / addvars.p, 
+              MC_B  = fx_nt.MC_B  / addvars.BH, 
+              LC    = fx_nt.LC    / addvars.BH)
 end
 
 mdl = IntermediaryAssetPricingModel()
