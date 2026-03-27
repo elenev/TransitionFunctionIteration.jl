@@ -53,6 +53,10 @@ get_next_exst(t, ssidx, exog_run) = t < length(exog_run) ? exog_run[t+1] : ssidx
 # Merge scalar fx errors with transition errors selected for the realized next exog state.
 merge_error(fx_nt, transerr, next_exst) = merge(fx_nt, map(v -> v[next_exst], transerr))
 
+function normalize_fx_errors(::AbstractModel, fx_nt, addvars)
+    return fx_nt
+end
+
 # Compute simulated results for one period
 function calc_eqm_from_state(state, obj, mode=SimulateMode())
     #@debug "Calculating equilibrium for state: $state"
@@ -104,7 +108,7 @@ Returns `(simseries, errs)`:
 `sz = N_runs => N_periods`. Burn-in periods are simulated but excluded from output.
 """
 function simulate(obj::ModelSolution, stv=nothing;
-                                sz::Pair=12=>1000,
+                                sz::Pair=12=>10_000,
                                 seed=100,
                                 burn=500,
                                 exog_start=ssidx(obj.exogenv),
@@ -147,13 +151,13 @@ function simulate(obj::ModelSolution, stv=nothing;
 
     t_range = (burn+1):(N_periods-1)
 
-    simseries = SimulationPanel(StructArray(simseries[:, t_range]), propertynames(endog_start))
-    errs = SimulationErrorPanel(StructArray(errs[:, t_range]))
+    simseries = SimulationPanel(StructArray(@view simseries[:, t_range]), propertynames(endog_start))
+    errs = SimulationErrorPanel(StructArray(@view errs[:, t_range]))
     
     if report_bounds
         check_bounds(simseries, obj)
     end
-    
+
     return simseries, errs
 
 end
