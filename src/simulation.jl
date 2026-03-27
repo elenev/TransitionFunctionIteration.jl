@@ -197,10 +197,9 @@ end
 
 const default_percentiles = (5, 25, 50, 75, 95);
 
-const default_stats = merge( (; mean, std, minimum), 
+const default_stats = merge( (; mean, std, minimum),
     (; (Symbol("p$k") => x -> quantile(x,k/100) for k in default_percentiles)...),
     (; max = maximum, ac = x -> autocor(x,[1])[1]) )
-
 
 
 function _describe(simvector, stat_functions, cor_functions)
@@ -208,57 +207,54 @@ function _describe(simvector, stat_functions, cor_functions)
     F = promote_type(fieldtypes(eltype(simvector))...)
     stats = [F(f(getproperty(simvector, var))) for var in varnames, f in values(stat_functions)]
     cor_stats = [F(f(getproperty(simvector, var), simvector)) for var in varnames, f in values(cor_functions)]
-    #@debug "cor_stats: " cor_stats
     return hcat(stats, cor_stats)
 end
 
 
-function describe(simseries::SimulationPanel, 
+function describe(simseries::SimulationPanel,
     stat_functions = default_stats;
     additional_stats = (;),
     correlation_vars = collect(endog_states(simseries))
     )
-    
+
     if correlation_vars isa Vector{Symbol}
         correlation_vars = [var => 0 for var in correlation_vars]
     end
 
     stat_functions = merge(stat_functions, additional_stats)
-    
-    function _cor(v, s, n) 
+
+    function _cor(v, s, n)
         if n != 0
             v = view(v, n+1:length(v))
             s = view(s, 1:length(s)-n)
         end
         return cor(v, s)
     end
-    
+
     _corname(s,n) = Symbol("cor_$(s)_lag$(n)")
-    cor_functions = (; ( 
-        _corname(s,n) => (v,sim) -> _cor(v, getproperty(sim, s), n) 
+    cor_functions = (; (
+        _corname(s,n) => (v,sim) -> _cor(v, getproperty(sim, s), n)
         for (s,n) in correlation_vars)...)
 
+    N_runs = size(simseries, 1)
     first_run, runs_iterator = Iterators.peel(eachrow(simseries))
-    run_stats = _describe(first_run, stat_functions, cor_functions)
-    
-    mean_stats = deepcopy(run_stats)
-    new_mean_stats = similar(run_stats)
-    stderr_stats = similar(run_stats) 
-
-    fill!(stderr_stats, 0.0)
+    run_stats    = _describe(first_run, stat_functions, cor_functions)
+    mean_stats   = copy(run_stats)
+    new_mean     = similar(run_stats)
+    stderr_stats = zeros(eltype(run_stats), size(run_stats)...)
 
     for (n, simvector) in enumerate(runs_iterator)
-        run_stats .= _describe(simvector, stat_functions, cor_functions)
-        new_mean_stats .= mean_stats + (run_stats - mean_stats) / n
-        stderr_stats .+= (run_stats - mean_stats) .* (run_stats .- new_mean_stats)
+        run_stats  .= _describe(simvector, stat_functions, cor_functions)
+        new_mean   .= mean_stats .+ (run_stats .- mean_stats) ./ (n + 1)
+        stderr_stats .+= (run_stats .- mean_stats) .* (run_stats .- new_mean)
+        mean_stats .= new_mean
     end
 
-    N = size(simseries, 1)
-    stderr_stats .= sqrt.( stderr_stats / (N - 1) ) / sqrt(N)
+    N_runs > 1 && (stderr_stats .= sqrt.(stderr_stats ./ (N_runs - 1)) ./ sqrt(N_runs))
 
     stat_names = (keys(stat_functions)..., keys(cor_functions)...)
 
-    return MomentArray(mean_stats,propertynames(simseries), stat_names),
+    return MomentArray(mean_stats, propertynames(simseries), stat_names),
               MomentArray(stderr_stats, propertynames(simseries), stat_names)
 end
 
