@@ -18,11 +18,10 @@ import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime, Posi
     ρ::Float64 = 0.65    # productivity shock persistence
     η::Float64 = 0.07   # payout target
     ξ::Float64 = 0.5    # equity issuance cost
-    ϕ::Float64 = 0.5    # capital adjustment cost
+    ϕ::Float64 = 2.5    # capital adjustment cost
     θ::Float64 = 0.9    # leverage constraint
     N_G::Int   = 5      # number of points in discretized productivity grid
 end
-
 
 
 # Equilibrium conditions
@@ -218,10 +217,11 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
             enames = map(x -> Symbol("E_$x"), keys(components(np.addvars)))
             evars = NamedTuple{enames}(values(evars))
 
-
-            addvars = (; Y, RK, i, I = i*K, N, BH, BI, D, w, d, x, Q, q,
-                bind = λ > 0,
-                r = 1/p - 1, E_rS = evars.E_Q / (Q - d) - 1)
+            r = 1/p - 1
+            E_rS = evars.E_Q / (Q - d) - 1
+            E_xrS = E_rS - r
+            addvars = (; Y, RK, i, I = i*K, N, C, BH, BI, D, w, d, x, Q, q,
+                bind = λ > 0, r, E_rS, E_xrS)  
             addvars = merge(addvars, evars)
             
             return (; fx, trans, addvars)
