@@ -145,8 +145,12 @@ function simulate(obj::ModelSolution, stv=nothing;
     BLAS.set_num_threads(original_threads)  # Restore
 
     t_range = (burn+1):(N_periods-1)
-    return SimulationPanel(StructArray(simseries[:, t_range]), propertynames(endog_start)), 
-            SimulationErrorPanel(StructArray(errs[:, t_range]))
+
+    simseries = SimulationPanel(StructArray(simseries[:, t_range]), propertynames(endog_start))
+    errs = SimulationErrorPanel(StructArray(errs[:, t_range]))
+    
+    check_bounds(simseries, obj)
+    return simseries, errs
 
 end
 
@@ -253,6 +257,7 @@ function describe(simseries::SimulationPanel,
     N_runs > 1 && (stderr_stats .= sqrt.(stderr_stats ./ (N_runs - 1)) ./ sqrt(N_runs))
 
     stat_names = (keys(stat_functions)..., keys(cor_functions)...)
+
 
     return MomentArray(mean_stats, propertynames(simseries), stat_names),
               MomentArray(stderr_stats, propertynames(simseries), stat_names)
