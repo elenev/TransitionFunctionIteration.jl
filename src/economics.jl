@@ -26,8 +26,8 @@ const powerutility_strict = (u = _powerutility_strict, u′ = _crra_prime)
 
 ## CES
 "CES aggregator over vector `x` with weights vector `w` and elasticity of substitution `ε`."
-function ces(x, w, ε::Real)
-    if ε == 1.0
+function ces(x::AbstractArray{<:Real}, w::AbstractArray{<:Real}, ε::Real)
+    if ε ≈ 1.0
         return cobb_douglas(x, w)
     else
         return ces_strict(x, w, ε)
@@ -54,7 +54,7 @@ end
 
 "CES aggregator over two inputs `x₁`, `x₂` with weight `w` on `x₁` and `1-w` on `x₂` and elasticity of substitution `ε`."
 @inline function ces(x₁::Real, x₂::Real, w::Real, ε::Real)
-    ε == 1.0 ? cobb_douglas(x₁, x₂, w) : ces_strict(x₁, x₂, w, ε)
+    ε ≈ 1.0 ? cobb_douglas(x₁, x₂, w) : ces_strict(x₁, x₂, w, ε)
 end
 @inline function ces_strict(x₁::Real, x₂::Real, w::Real, ε::Real)
     a = (ε - 1) / ε
@@ -141,3 +141,27 @@ end
     Y = cobb_douglas(x, w)
     return cobb_douglas_prime(x, w, Y::Real)
 end
+
+"Epstein-Zin Certainty Equivalent"
+@inline function epstein_zin_ce(x::AbstractVector{<:Real}, p::AbstractVector{<:Real}, γ::Real)
+    E(f,x) = _mean(f, x, p)
+    return epstein_zin_ce(x, E, γ)
+end
+
+@inline function epstein_zin_ce(x::AbstractVector{<:Real}, E::Function, γ::Real)
+    if γ ≈ 1.0
+        return exp(E(log,x))
+    else
+        return E(xi -> xi^(1-γ), x)^(1/(1-γ))
+    end
+end
+
+@inline epstein_zin_ce(x::Real, p, γ::Real) = x
+
+
+# Asset returns
+@inline return_on_ex_price(p::Real, p′::Real, d′::Real = 0.0, G=1.0) = 
+    (p′ + d′) / p        * G - 1
+
+ @inline return_on_cum_price(p::Real,  p′::Real, d::Real = 0.0, G=1.0) = 
+    p′        / (p-d)    * G - 1
