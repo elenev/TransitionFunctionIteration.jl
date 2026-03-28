@@ -3,19 +3,21 @@ using TransitionFunctionIteration, StaticArrays, StructArrays
 
 # Explicitly import functions that must be overloaded
 import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate_system, 
-    compute_next_period_values, vals_from_policy, bounds
+    compute_next_period_values, vals_from_policy, bounds, normalize_next_period_values
 
 # Import some other functions for convenience
-import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime, PositiveBounded, Unbounded
+import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime, ces, epstein_zin_ce,
+    PositiveBounded, Unbounded
 
 @kwdef struct IntermediaryAssetPricingModel <: AbstractModel
     α::Float64 = 0.33   # capital share (implicit labor endowment of 1)
     β::Float64 = 0.99   # discount factor
     δ::Float64 = 0.10   # depreciation rate
-    γ::Float64 = 2.0    # risk aversion (CRRA coefficient)
+    γ::Float64 = 2.0    # risk aversion 
+    ψ::Float64 = 0.5    # elasticity of intertemporal substitution
     gbar::Float64 = 0.02   # aggregate productivity growth rate
     σ::Float64 = 0.02   # productivity shock volatility
-    ρ::Float64 = 0.65    # productivity shock persistence
+    ρ::Float64 = 0.65   # productivity shock persistence
     η::Float64 = 0.07   # payout target
     ξ::Float64 = 0.5    # equity issuance cost
     ϕ::Float64 = 2.5    # capital adjustment cost
@@ -54,14 +56,13 @@ function bounds(::IntermediaryAssetPricingModel, policies::NamedTuple, transitio
 end
 
 function steadystate_system(g::NamedTuple, mdl::IntermediaryAssetPricingModel, mode::EvaluationMode)
-    (; α, β, δ, gbar, γ, ξ, η, θ) = mdl
+    (; α, β, δ, gbar, ψ, ξ, η, θ) = mdl
     (; x) = g 
 
     G = exp(gbar)
-    p = β * exp(-gbar * γ)
+    p = β * exp(-gbar / ψ)
 
-    # Step 1: μ, v^F/μ as functions of x
-    μ = 1 / (1 - ξ*x)
+    # Step 1: 𝓋 = v^F/μ as functions of x
     𝓋 = (η - x)*(1 - ξ*x) + (1 - η - ξ/2 * x^2)
 
     # Step 2: normalized leverage multiplier from bond Euler
@@ -103,10 +104,20 @@ end
 
 function vals_from_policy(state, policy, model::IntermediaryAssetPricingModel)
     (; C, q, x) = policy
-    (; ξ, η) = model
+    (; ξ, η, β, ψ, gbar) = model
     μ = 1 / (1 - ξ*x)
     Q = η - x + μ * (1-η - ξ/2 * x^2)
-    return (; C, q, Q)
+    
+    if ψ ≈ 1.0
+        statadj = exp( gbar * β/(1-β) )
+    else
+        SDF_hat = β * exp(gbar*(1-1/ψ))
+        statadj = ( (1-β)/(1-SDF_hat) )^(1/(1-1/ψ))
+    end
+
+    V = C * statadj
+
+    return (; C, q, Q, V)
 end
 
 function define_endog_grids(model::IntermediaryAssetPricingModel, stv::SteadyState)
@@ -131,12 +142,14 @@ function calc_production(vars, model::IntermediaryAssetPricingModel)
     return (; RK, Y, MPK, i, rK, δ_tilde)
 end
 
-function compute_next_period_values(next, model::IntermediaryAssetPricingModel)
+function compute_next_period_values(next, model::IntermediaryAssetPricingModel, mode::EvaluationMode)
+    (; γ, β, ψ) = model
+    (; C, G, Q, K, V) = next
     # Household
-    (; γ, β) = model
-    (; C, G, Q, K) = next
-    MU = crra.u′(C, γ)    
-    Λ = β * G^(1-γ) * MU
+
+    # The stochastic part of Epstein Zin SDF
+    MU = crra.u′(C, 1/ψ)
+    Λ = β * G^(1-γ) * MU * V^(1/ψ - γ)   
     BHpayoff = 1/G
     SHpayoff = Q
     
@@ -145,30 +158,57 @@ function compute_next_period_values(next, model::IntermediaryAssetPricingModel)
     (; RK) = calc_production((K=K, q=q), model)
 
     KIpayoff = RK / G
-    BIpayoff = 1 / G
+    BIpayoff = 1  / G
+
+    #
 
     # Expectations
     ΛF = Λ * Q
-    expectations = (KI = ΛF * KIpayoff, 
+    expectations = (
+                    KI = ΛF * KIpayoff, 
                     BI = ΛF * BIpayoff, 
                     BH = Λ  * BHpayoff,
-                    SH = Λ  * SHpayoff)
+                    SH = Λ  * SHpayoff,
 
-    continuations = (RK = RK, G = G, q=q)
+                    CE = (G*V)^(1-γ)
+                    )
 
-    #if mode isa SimulateMode
+    continuations = (; RK, G, q, V)
+
+    if mode isa SimulateMode
         addvars = (; RK, Q, C, q)
-    #else
-    #    addvars = nothing
-    #end
+    else
+        addvars = nothing
+    end
     
     return NextPeriod(; expectations, continuations, addvars)
+end
+
+function normalize_next_period_values(np, mdl::IntermediaryAssetPricingModel, mode::EvaluationMode)
+    (; γ, ψ) = mdl
+    #@debug "np.continuations.V: $(np.continuations.V)"
+    #@debug "exp(g) np.continuations.V: $( exp(mdl.gbar) * np.continuations.V )"
+    CE = np.expectations.CE^(1/(1-γ))
+    #@debug "CE: $CE"
+    CEterm = CE^(γ - 1/ψ)
+    #@debug "CEterm: $CEterm"
+
+    expectations = (
+                    KI = np.expectations.KI * CEterm, 
+                    BI = np.expectations.BI * CEterm, 
+                    BH = np.expectations.BH * CEterm,
+                    SH = np.expectations.SH * CEterm,
+
+                    CE = CE
+                    )
+    return NextPeriod(expectations = expectations, continuations = np.continuations, 
+            prnext = np.prnext, addvars = np.addvars)
 end
 
 function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextPeriod, mode::EvaluationMode=SolveMode())
     (; K, L) = state
     (; C, x, q, p, λ) = policy
-    (; α, δ, η, ξ, gbar, ϕ, γ, θ) = model
+    (; α, δ, η, ξ, gbar, ϕ, ψ, β, θ) = model
 
     (; RK, Y, i) = calc_production((K=K, q=q), model)
 
@@ -188,7 +228,7 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
     K′ = (1 - δ + i) * K
     BI = (q*K′ - ((1-η) + x - ξ/2 * x^2) * N) / p
 
-    MU = crra.u′(C, γ)
+    MU = crra.u′(C, 1/ψ)
     
     Λ = MU 
     ΛF = Λ * μ
@@ -205,10 +245,8 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
         N′ = @. K′*np.continuations.RK - BI
         trans = (K = K′ ./ np.continuations.G, 
                  L = N′ ./ (q.*K′))
-        # @debug "K" K
-        # @debug "K′" K′
-        # @debug "trans.K" trans.K
-        vals = (; C, q, Q)
+        V = ces(C, np.expectations.CE, 1-β, ψ)
+        vals = (; C, q, Q, V)
         
         if mode isa IterateMode
             return (; fx, trans, vals)
@@ -220,9 +258,9 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
             r = 1/p - 1
             E_rS = evars.E_Q / (Q - d) - 1
             E_xrS = E_rS - r
-            addvars = (; Y, RK, i, I = i*K, N, C, BH, BI, D, w, d, x, Q, q,
+            addvars = (; Y, RK, i, I = i*K, N, BH, BI, D, w, d, x,
                 bind = λ > 0, r, E_rS, E_xrS)  
-            addvars = merge(addvars, evars)
+            addvars = merge(vals, addvars, evars)
             
             return (; fx, trans, addvars)
         end
