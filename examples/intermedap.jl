@@ -244,8 +244,9 @@ mdl = IntermediaryAssetPricingModel()
 # Configuration
 xguess = 0.018
 setup_opts = (mode = SystemSteadyStateMode((x=xguess,)), check_steadystate=true)
-exec_opts = (; maxiter=1000, logging=COMPLETE)
-out = solve_and_simulate(mdl; setup_kwargs=setup_opts, execute_kwargs=exec_opts)
+exec_opts  = (; maxiter=1000, logging=COMPLETE)
+irf_opts   = (; path_vars=(:C, :K),)
+out = solve_and_simulate(mdl; setup_kwargs=setup_opts, execute_kwargs=exec_opts, irf_kwargs=irf_opts)
 
 
 # Steady state fixed point 

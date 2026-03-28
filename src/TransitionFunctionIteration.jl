@@ -83,9 +83,9 @@ function solve_and_simulate(model::AbstractModel;
 
     # IRF
     @info "Running IRFs..."
-    irf_result = simulate_irf(obj, simseries; irf_kwargs...)
+    irf = simulate_irf(obj, simseries; irf_kwargs...)
 
-    return (; obj, stv, simseries, errs, stats, errstats, irf_result)
+    return (; obj, stv, simseries, errs, stats, errstats, irf)
 end
 
 end
