@@ -47,6 +47,11 @@ function stack_nextperiod_addvars(v::AbstractArray{T}) where {T<:NamedTuple}
     end
 end
 
+function normalize_next_period_values(np, mdl::AbstractModel, mode::EvaluationMode)
+    # Placeholder for any normalization logic needed for expectations, continuations, or addvars
+    # For now, we just return them as-is
+    return np
+end
 
 function compute_expectations(next::StructArray, prnext, mdl::AbstractModel, mode::EvaluationMode)
     # Ensure probabilities are a statically sized SVector
@@ -54,7 +59,7 @@ function compute_expectations(next::StructArray, prnext, mdl::AbstractModel, mod
     prnext = SVector{N}(prnext)
 
     # Returns an SVector of Tuples: Tuple(expectations_nt, continuations_nt)
-    results = SVector(ntuple(i -> compute_next_period_values(next[i], mdl), N))
+    results = SVector(ntuple(i -> compute_next_period_values(next[i], mdl, mode), N))
     
     # Accumulate Expectations via Functional Fold
     # Initialize with the first element
@@ -75,13 +80,15 @@ function compute_expectations(next::StructArray, prnext, mdl::AbstractModel, mod
     else
         addvars = (;)
     end
-    
-    return NextPeriod(
+
+    np = NextPeriod(
         expectations = expectations, 
         continuations = merge_structarrays(next, continuations),
         prnext = prnext,
         addvars = addvars
     )
+
+    return normalize_next_period_values(np, mdl, mode)
 end
 
 

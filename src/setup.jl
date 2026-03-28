@@ -92,8 +92,10 @@ end
 function f_steadystate(policy::NamedTuple, endog::NamedTuple, p)
     state = merge(p.exog, endog)
     next_nt = merge(p.exog, endog, vals_from_policy(state, policy, p.model))
-    np = compute_next_period_values(next_nt, p.model)
-    out = calc_eqm(state, policy, p.model, np, IterateMode())
+    mode = IterateMode()
+    np = compute_next_period_values(next_nt, p.model, mode)
+    np = normalize_next_period_values(np, p.model, mode)
+    out = calc_eqm(state, policy, p.model, np, mode)
     transerr = map(-, out.trans, endog)
     return vcat(_fx_to_svec(out.fx), SVector(values(transerr))), out
 end

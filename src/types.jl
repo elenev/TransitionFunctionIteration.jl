@@ -749,7 +749,7 @@ function calc_eqm(state, policy, mdl::AbstractModel, np::NextPeriod, mode::Evalu
     throw(MethodNotImplementedError(:calc_eqm, typeof(mdl)))
 end
 
-function compute_next_period_values(next, mdl::AbstractModel)::NextPeriod
+function compute_next_period_values(next, mdl::AbstractModel, mode::EvaluationMode)::NextPeriod
     throw(MethodNotImplementedError(:compute_next_period_values, typeof(mdl)))
 end
 
