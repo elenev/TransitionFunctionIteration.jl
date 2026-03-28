@@ -3,7 +3,8 @@ using TransitionFunctionIteration, StaticArrays, StructArrays
 
 # Explicitly import functions that must be overloaded
 import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate_system, 
-    compute_next_period_values, vals_from_policy, bounds, normalize_next_period_values
+    compute_next_period_values, vals_from_policy, bounds, 
+    normalize_next_period_values, normalize_fx_errors
 
 # Import some other functions for convenience
 import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime, ces, epstein_zin_ce,
@@ -121,7 +122,7 @@ function vals_from_policy(state, policy, model::IntermediaryAssetPricingModel)
 end
 
 function define_endog_grids(model::IntermediaryAssetPricingModel, stv::SteadyState)
-    K_grid = range(0.6, 2.5, length=15) * stv.endog.K
+    K_grid = range(0.5, 2.5, length=15) * stv.endog.K
     L_grid = range(0.10, 0.125, length=9)
     return (; K=K_grid, L=L_grid)
 end
@@ -251,9 +252,7 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
         if mode isa IterateMode
             return (; fx, trans, vals)
         elseif mode isa SimulateMode
-            evars = map(x -> mean(x,np), components(np.addvars))
-            enames = map(x -> Symbol("E_$x"), keys(components(np.addvars)))
-            evars = NamedTuple{enames}(values(evars))
+            evars = (E_Q = E(np.addvars.Q, np),)
 
             r = 1/p - 1
             E_rS = evars.E_Q / (Q - d) - 1
@@ -268,19 +267,23 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
 
 end
 
+function normalize_fx_errors(::IntermediaryAssetPricingModel, fx_nt, addvars)
+    return (; EE_BH = fx_nt.EE_BH / addvars.p, 
+              EE_KI = fx_nt.EE_KI / addvars.q, 
+              EE_BI = fx_nt.EE_BI / addvars.p, 
+              MC_B  = fx_nt.MC_B  / addvars.BH, 
+              LC    = fx_nt.LC    / addvars.BH)
+end
+
 mdl = IntermediaryAssetPricingModel()
 
-# Steady state system 
+# Configuration
 xguess = 0.018
-configsys = SystemSteadyStateMode((x=0.018,))
-obj, stv = main_setup(mdl;mode=configsys, check_steadystate=true)
+setup_opts = (mode = SystemSteadyStateMode((x=xguess,)), check_steadystate=true)
+exec_opts  = (; maxiter=1000, logging=COMPLETE)
+irf_opts   = (; path_vars=(:C, :K),)
+out = solve_and_simulate(mdl; setup_kwargs=setup_opts, execute_kwargs=exec_opts, irf_kwargs=irf_opts)
 
-main_execute!(obj; maxiter=1000)
-simseries, errs = simseries, errs = simulate(obj, stv)
-stats, _ = describe(simseries)
-errstats = calc_error_stats(errs)
-
-irf = simulate_irf(obj, simseries);
 
 # Steady state fixed point 
 # _, stvguess = steadystate_system((x=xguess,), mdl, IterateMode())

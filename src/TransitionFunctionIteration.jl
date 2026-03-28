@@ -36,6 +36,9 @@ export IRFResult, Transformations, ReportedVariable, IRFPage, simulate_irf
 # MomentArray
 export MomentArray, row_names, col_names
 
+# Main interface 
+export solve_and_simulate
+
 include("types.jl")
 include("exog.jl")
 include("utils.jl")
@@ -49,5 +52,40 @@ include("economics.jl")
 
 include("irf.jl")
 include("irfplotting.jl")
+
+
+function solve_and_simulate(model::AbstractModel;
+    setup_kwargs=(;), execute_kwargs=(;), simulate_kwargs=(;), irf_kwargs=(;),
+    run_simulate=true, run_irf=true)
+
+    # Setup
+    @info "Setting up the model..."
+    obj, stv = main_setup(model; setup_kwargs...)
+
+    # Execute
+    @info "Solving..."
+    main_execute!(obj; execute_kwargs...)
+
+    if !run_simulate
+        return obj, stv
+    end
+
+    # Simulate
+    @info "Simulating to produce ergodic moments..."
+    simseries, errs = simulate(obj, stv; simulate_kwargs...)
+
+    stats, _ = describe(simseries)
+    errstats = calc_error_stats(errs)
+
+    if !run_irf
+        return obj, stv, simseries, errs
+    end
+
+    # IRF
+    @info "Running IRFs..."
+    irf = simulate_irf(obj, simseries; irf_kwargs...)
+
+    return (; obj, stv, simseries, errs, stats, errstats, irf)
+end
 
 end
