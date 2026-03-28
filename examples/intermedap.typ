@@ -369,3 +369,186 @@ $
 //  hat(C) &= (eta - x^*) hat(N) + (1-alpha) hat(K)^alpha + hat(B) - p hat(hat(B)) \
   hat(C) &= (eta - x^*) hat(N) + (1-alpha) hat(K)^alpha + theta hat(K) (1 / p - G) \
 $
+
+== With Epstein-Zin Preferences
+
+Now, let's let household preferences be given by:
+
+$
+  V_t = [ (1-beta) c_t^(1-1/psi) + beta ( E_t V_(t+1)^(1-gamma) )^((1-1/psi)/(1-gamma)) ]^(1/(1-1/psi))
+$
+
+where $psi$ is the intertemporal elasticity of substitution and $gamma$ is the coefficient of relative risk aversion.
+
+The household problem is now written as:
+
+$
+  V^H (a_t, cal(Z)_t^H ) = max_(c_t, s_t, b_t^h) [ (1-beta) c_t^(1-1/psi) + beta E_t [ ( V^H (a_(t+1),cal(Z)_(t+1)^H))^(1-gamma)]^((1-1/psi)/(1-gamma)) ]^(1/(1-1/psi))
+$
+s.t.
+$
+  c_t + s_t Q_t + p_t b_t^h &= a_t + w_t \
+  a_t &= (Q_t + D_t) s_(t-1) + b_(t-1)^h
+$
+
+The stationarized value function then is:
+
+$
+  Z_t hat(V)^H (hat(a)_t, cal(hat(Z))_t^H ) = max_(hat(c)_t, s_t, b_t^h) [ (1-beta) Z_t^(1-1/psi) hat(c)_t^(1-1/psi) + beta ( E_t [Z_(t+1)^(1-gamma) ( V^H (a_(t+1),cal(Z)_(t+1)^H))^(1-gamma)] )^((1-1/psi)/(1-gamma)) ]^(1/(1-1/psi))
+$
+
+Writing $Z_(t+1) = exp(g_(t+1)) Z_t$ and pulling $Z_t$ out of the expectation, we can rewrite the stationarized problem as:
+
+$
+ hat(V)^H (hat(a)_t, cal(hat(Z))_t^H ) = max_(hat(c)_t, s_t, b_t^h) [ (1-beta) hat(c)_t^(1-1/psi) + beta ( E_t [exp((1-gamma) g_(t+1))) ( V^H (a_(t+1),cal(Z)_(t+1)^H))^(1-gamma))] )^((1-1/psi)/(1-gamma)) ]^(1/(1-1/psi))
+$
+
+#let CE = math.op(math.italic("CE"))
+Let $hat(CE)_t (hat(X)_(t+1)) = E_t [exp((1-gamma) g_(t+1))) hat(X)_(t+1)^(1-gamma)]^(1/(1-gamma))$ denote the certainty equivalent over stationarized next-period quantities.
+
+Then the stationarized problem can be rewritten as:
+
+$
+  hat(V)^H (hat(a)_t, cal(hat(Z))_t^H ) = max_(hat(c)_t, s_t, b_t^h) [ (1-beta) hat(c)_t^(1-1/psi) + beta hat(CE)_t ( 
+   V^H (a_(t+1),cal(Z)_(t+1)^H))^(1-1/psi) ]^(1/(1-1/psi))
+$
+s.t.
+$
+  hat(c)_t + s_t hat(Q)_t + p_t hat(hat(b))_t^h &= hat(a)_t + hat(w)_t \
+  hat(a)_t  &= (hat(Q)_t + hat(D)_t) s_(t-1) + exp(-g_t) hat(hat(b))_(t-1)^h
+$
+
+To faciliate the FOC derivations, recall that for the CES aggregator
+
+$
+  A(x,y) = (a x^rho + b y^rho)^(1/rho)
+$
+we have that 
+
+$
+(partial A) / (partial x) &= a (a x^rho + b y^rho)^(1/rho - 1) x^(rho - 1) = a rho A^(1-rho) x^(rho - 1) \
+(partial A) / (partial y) &= b A^(1-rho) y^(rho - 1)
+$ 
+
+Let $hat(theta.alt_t)$ denote the multiplier on the time $t$ budget constraint. The FOCs are:
+
+$
+  hat(theta.alt_t) &= (1-beta) hat(V)_t^(1/psi) hat(c)_t^(-1/psi) \
+  hat(theta.alt_t) p_t (x) &= E_t [ 
+  (partial V^H_t)/(partial CE_t) 
+  (partial CE_t)/(partial V^H_(t+1)) 
+  (partial V^H_(t+1))/(partial hat(a)_(t+1)) 
+  (partial hat(a)_(t+1))/(partial x) 
+  ] \
+$
+where the second expression is a generic first order condition for asset $x$ with a price $p_t (x)$ and payoff $(partial hat(a)_(t+1) ) / (partial x)$.
+
+The partial derivative of the value function with respect to the certainty equivalent is given by:
+$
+  (partial V^H_t)/(partial CE_t)  = beta hat(V)_t^(1/psi) hat(CE)_t^(-1/psi)
+$
+
+The envelope condition states that
+$
+  (partial hat(V)^H_(t+1)) / (partial hat(a)_(t+1)) = hat(theta.alt)_(t+1) = (1-beta) hat(V)_(t+1)^(-1/psi) hat(c)_(t+1)^(-1/psi) 
+$
+
+From the definition of the certainty equivalent, we get that:
+$
+  (partial CE_t)/(partial V^H_(t+1)) = exp((1-gamma) g_(t+1)) CE_t^(gamma) ( hat(V)^H_(t+1))^(-gamma)
+$
+
+Dividing the two asset FOCs by the consumption FOCs yields Euler Equation:
+
+$
+  p_t (x) = (
+  E_t [ 
+  beta hat(V)_t^(1/psi) hat(CE)_t^(-1/psi)
+
+  (1-beta) hat(V)_(t+1)^(-1/psi) hat(c)_(t+1)^(-1/psi) 
+   
+  exp((1-gamma) g_(t+1)) CE_t^(gamma) ( hat(V)^H_(t+1))^(-gamma) 
+  
+  (partial hat(a)_(t+1))/(partial x) 
+  ] ) / 
+  ( (1-beta) hat(V)_t^(1/psi) hat(c)_t^(-1/psi) )
+$
+
+Collecting terms,
+
+$
+  p_t (x) =
+  E_t [ 
+  beta exp((1-gamma) g_(t+1))
+  ( hat(c)_(t+1) / hat(c)_t )^(-1/psi)
+  ( ( hat(CE)_t ) / ( hat(V)_(t+1)^H ) )^(gamma-1/psi)
+
+  (partial hat(a)_(t+1))/(partial x) 
+  ] 
+$
+
+This equation defines the stationarized SDF as:
+$
+  hat(M)_(t,t+1) = beta exp((1-gamma) g_(t+1))
+  ( hat(c)_(t+1) / hat(c)_t )^(-1/psi)
+  ( ( hat(CE)_t ) / ( hat(V)_(t+1)^H ) )^(gamma-1/psi)
+$
+
+As expected, at $gamma = 1/psi$, the SDF collapses to the standard power utility form.
+
+The Euler Equations for bonds and stocks are then given by plugging in the appropriate payoffs for $partial hat(a)_(t+1) / partial x$.
+
+$
+  p_t &= E_t [ hat(M)_(t,t+1) exp(-g_(t+1)) ] \
+  hat(Q)_t &= E_t [ hat(M)_(t,t+1) (hat(Q)_(t+1) + hat(D)_(t+1)) ]
+$
+
+=== Steady State SDF
+
+In deterministic steady state, $hat(c)_t = hat(c)_{t+1}$ and 
+$
+hat(CE)_t (hat(V)^H) = [ exp((1-gamma) g) (hat(V)^H)^(1-gamma)]^(1/(1-gamma))
+=
+exp(g) hat(V)^H
+$. The SDF then is:
+
+$
+  hat(M) = beta exp((1-gamma) g) exp(g (gamma - 1/psi) ) = beta exp((1-1/psi) g) 
+$
+
+The Euler equations for bonds are then:
+
+$
+  p = beta exp((1-1/psi) g) exp(-g) = beta exp(-g/psi)
+$
+
+The steady-state value function is:
+
+$
+  hat(V)^H = [ (1-beta) hat(c)^(1-1/psi) + beta exp((1-1/psi) g) (hat(V)^H)^(1-1/psi) ]^(1/(1-1/psi))
+$
+Solving for $hat(V)^H$:
+$
+  // ( hat(V)^H) ^(1-1/psi) = (1-beta) hat(c)^(1-1/psi) + beta exp((1-1/psi) g) (hat(V)^H)^(1-1/psi) \
+
+  // (hat(V)^H)^(1-1/psi) (1 - beta exp((1-1/psi) g)) = (1-beta) hat(c)^(1-1/psi) \
+
+  // (hat(V)^H)^(1-1/psi) 
+  // = ( (1-beta) hat(c)^(1-1/psi) ) /
+  // (1 - beta exp((1-1/psi) g))  \
+
+  hat(V)^H
+  = [ ( 1-beta ) /
+  (1 - beta exp((1-1/psi) g)) ]^(1/(1-1/psi)) hat(c) \
+$
+
+In the case of $psi = 1$, the value function becomes Cobb-Douglas, which in steady state is:
+$
+  hat(V)^H = hat(c)^(1-beta) hat(CE)^(beta) \
+$
+Plugging in the certainty equivalent and re-arranging,
+$
+  hat(V)^H &= hat(c)^(1-beta) (exp(g) hat(V)^H)^(beta) \
+
+  (hat(V)^H) &=  exp(beta/(1-beta) g) hat(c)
+$
