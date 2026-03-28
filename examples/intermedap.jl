@@ -252,7 +252,7 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
         if mode isa IterateMode
             return (; fx, trans, vals)
         elseif mode isa SimulateMode
-            evars = (E_Q = E(np.addvars.Q, np),)
+            evars = (E_Q = mean(np.addvars.Q, np),)
 
             r = 1/p - 1
             E_rS = evars.E_Q / (Q - d) - 1
