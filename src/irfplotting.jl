@@ -165,7 +165,7 @@ end
     kw_init  = isnothing(init)  ? (;) : (; init  = getproperty(data, init)[1])
     kw = merge(kw_basis, kw_trend, kw_init)
 
-    y = rv.transformation.(x; kw...)[_pers .+ 1]
+    y = rv.transformation(x; kw...)[_pers .+ 1]
 
     title     --> rv.label
     yguide    --> Transformations.label(typeof(rv.transformation))

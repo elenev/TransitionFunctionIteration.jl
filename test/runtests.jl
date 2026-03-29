@@ -80,6 +80,7 @@ end
     include("test_simulation.jl")
     include("test_plotting.jl")
     include("test_performance.jl")
+    include("test_irfplotting.jl")
     include("test_ngm.jl")       # must come first: brings obj, stv, simseries into global scope
     include("test_linearize.jl") # uses those fixtures
 end
