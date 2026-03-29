@@ -229,7 +229,7 @@ function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
     if SciMLBase.successful_retcode(sol)
         solution = sol.u
     else
-        @failedpoint ("Solver did not converge: $(sol.retcode) at state $state")
+        @failedpoint fp_state=string(state) fp_retcode=string(sol.retcode)
         solution = x0 # Revert to original guess if not solved
     end
 
@@ -245,7 +245,7 @@ function find_neighbors_with_diagonals(i, R, n=1)
     return setdiff(range,[I])
 end
 
-function perform_iteration!(obj, diag, damp, npasses, solmethod)
+function perform_iteration!(obj, diag, damp, npasses, solmethod, iter)
 
     #states = collect(points(obj.ssg))
     Pfct_coeffs = coefficients(obj.Pfct)
@@ -313,14 +313,9 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod)
         total_still_unsolved = sum(!s for s in success)
         solved_this_pass = total_unsolved - total_still_unsolved
         if pass==1 && total_still_unsolved>0
-            if npasses > 1
-                extramsg = " Revisiting..."
-            else
-                extramsg = ""
-            end
-            @iterationfailed "Solver failed at $total_still_unsolved points out of $(length(success)) points. $extramsg"
+            @iterationfailed iter=iter pass=pass n_failed=total_still_unsolved n_total=length(success)
         elseif pass>1
-            @iterationfailed "Pass $pass: Revisiting solved $(solved_this_pass) points. $total_still_unsolved unsolved points remaining."
+            @iterationfailed iter=iter pass=pass n_solved=solved_this_pass n_unsolved=total_still_unsolved
         end
 
         if all(success)
@@ -395,55 +390,78 @@ function IterationDiagnostics(obj)
 end
 
 """
-    main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, logging=ITERATIONFAILED)
+    main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, logging=ITERATIONFAILED,
+                  track_history=nothing)
 
 Iterate policy and value functions of `obj` to convergence.
 
-Solves equilibrium conditions at every grid point (threaded), damps the value function
-update, and repeats until `log₁₀(max_distance) < tol` or `maxiter` is reached.
+Solves equilibrium conditions at every grid point, damps the value function update, and
+repeats until `log₁₀(max_distance) < tol` or `maxiter` is reached.
 
 - `tol`: convergence threshold as log₁₀ distance (`-5` means 1e-5)
 - `damp`: value function damping in [0,1] (1 = full update, 0 = no update)
 - `npasses`: revisit passes for grid points where the solver failed on the first pass
 - `logging`: minimum `LogLevel` to display (`COMPLETE` suppresses iteration logs)
+- `track_history`: `nothing` (default) or `(fct_sym, var_names)` where `fct_sym` is `:Vfct`
+  or `:Tfct` and `var_names` is a tuple of variable name Symbols. When set, returns a
+  StructVector of per-iteration snapshots, one entry per iteration, each a NamedTuple of
+  full-grid arrays for the requested variables.
+
+Returns a NamedTuple with convergence info and, when `track_history` is set, a `history`
+StructVector field.
 """
-function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=TFIMethod(), logging=ITERATIONFAILED)
+function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=TFIMethod(),
+                        logging=ITERATIONFAILED, track_history=nothing)
 
     iter = 1
     original_threads = BLAS.get_num_threads()
     BLAS.set_num_threads(1)  # To avoid thread oversubscription
 
     diag = IterationDiagnostics(obj)
-
     exec = (; maxiter, tol, damp, npasses, solmethod)
+    history_list = isnothing(track_history) ? nothing : []
 
     with_logger(ExecutionLogger(logging)) do
+        while true
 
-        while true 
-
-            perform_iteration!(obj, diag, damp, npasses, solmethod)
+            perform_iteration!(obj, diag, damp, npasses, solmethod, iter)
 
             distV, worst_varV, worst_pointV = summarize_distances(diag.value_distances, obj.Vfct)
             distT, worst_varT, worst_pointT, worst_exst = summarize_distances(diag.transition_distances, obj.Tfct)
 
-            @iteration "$iter: max V distance = $distV at point $worst_pointV in variable $worst_varV"
-            @iteration "$iter: max T distance = $distT at point $worst_pointT in variable $worst_varT for exog. state $worst_exst"
+            @iteration iter=iter max_vdist=distV max_tdist=distT worst_vvar=worst_varV worst_tvar=worst_varT worst_vpoint=string(worst_pointV) worst_tpoint=string(worst_pointT) worst_texst=string(worst_exst)
+
+            # Capture per-iteration snapshot if requested
+            if !isnothing(track_history)
+                fct_name, var_names = track_history
+                fct = getfield(obj, fct_name)
+                vnames_all = varnames(fct)
+                coefs = coefficients(fct)
+                snap = NamedTuple{var_names}(Tuple(
+                    [coefs[i][findfirst(==(v), vnames_all)] for i in eachindex(coefs)]
+                    for v in var_names
+                ))
+                push!(history_list, snap)
+            end
+
+            exec_update = (; iter, distV, worst_varV, worst_pointV, distT, worst_varT, worst_pointT, worst_exst)
 
             if iter >= maxiter
-                @complete "Maximum iterations reached without convergence."
-                exec = merge(exec, (; iter, distV, worst_varV, worst_pointV, distT, worst_varT, worst_pointT, worst_exst))
-                return
+                @complete iter=iter max_vdist=distV max_tdist=distT worst_vvar=worst_varV worst_tvar=worst_varT worst_vpoint=string(worst_pointV) worst_tpoint=string(worst_pointT) worst_texst=string(worst_exst) msg="Maximum iterations reached without convergence."
+                exec = merge(exec, exec_update)
+                break
             elseif distV < tol && distT < tol
-                @complete "Converged."
-                exec = merge(exec, (; iter, distV, worst_varV, worst_pointV, distT, worst_varT, worst_pointT, worst_exst))
-                return
+                @complete iter=iter max_vdist=distV max_tdist=distT worst_vvar=worst_varV worst_tvar=worst_varT worst_vpoint=string(worst_pointV) worst_tpoint=string(worst_pointT) worst_texst=string(worst_exst) msg="Converged."
+                exec = merge(exec, exec_update)
+                break
             end
             iter += 1
         end
-
     end
+
     BLAS.set_num_threads(original_threads)  # Restore
 
-    return exec
+    history = isnothing(history_list) ? nothing : StructArray(history_list)
+    return (; exec..., history)
 
 end

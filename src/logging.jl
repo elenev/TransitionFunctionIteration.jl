@@ -1,4 +1,5 @@
 using Logging
+using Printf
 
 # Custom log levels for solver progress
 """Log level: solver converged or iteration limit reached."""
@@ -15,102 +16,138 @@ const FAILEDPOINT = LogLevel(-100)
 
 # Mappings
 const DEFAULT_PREFIX_MAP = Dict(
-    COMPLETE => "✅ COMPLETE",
-    ITERATION => "▶️ ITERATION",
-    ITERATIONFAILED => "▶️ FAILED POINTS",
-    FAILEDPOINT => "❌ FAILED POINT"
+    COMPLETE         => "✅ COMPLETE",
+    ITERATION        => "▶️  ITERATION",
+    ITERATIONFAILED  => "⚠️  FAILED POINTS",
+    FAILEDPOINT      => "❌ FAILED POINT"
 )
 
 const DEFAULT_COLOR_MAP = Dict(
-    ITERATION => :cyan,
-    FAILEDPOINT => :red,
-    ITERATIONFAILED => :yellow,
-    COMPLETE => :green,
+    ITERATION        => :cyan,
+    FAILEDPOINT      => :red,
+    ITERATIONFAILED  => :yellow,
+    COMPLETE         => :green,
 )
 
-"""
-    ExecutionLogger(min_level::LogLevel)
+# --- CSV column schema (fixed-width rows; missing fields left blank) ---
+const CSV_COLUMNS = (:level, :iter, :max_vdist, :max_tdist,
+                     :worst_vvar, :worst_tvar, :worst_vpoint, :worst_tpoint, :worst_texst,
+                     :n_failed, :n_total, :pass, :n_solved, :n_unsolved,
+                     :fp_state, :fp_retcode, :msg)
+const CSV_HEADER = join(CSV_COLUMNS, ",")
 
-Colored, prefixed logger for solver progress. Messages below `min_level` are suppressed.
-Use with `Logging.with_logger(ExecutionLogger(ITERATION)) do ... end`.
+"""
+    ExecutionLogger(min_level; [io=stderr])
+    ExecutionLogger(filename::AbstractString; [min_level=ITERATION])
+
+Colored, prefixed logger for solver progress. In the first form, logs to `io`
+(default `stderr`) with ANSI color. In the second form, opens `filename` and
+writes comma-separated rows for machine parsing (no color).
+
+Use inside `Logging.with_logger(ExecutionLogger(...)) do ... end` or pass via
+the `logging` keyword of `main_execute!`.
+
+Note: the current implementation logs to `stderr` (not `stdout`) for the colored
+mode, matching Julia's Logging convention.
 """
 struct ExecutionLogger <: AbstractLogger
     min_level::LogLevel
+    io::IO
+    csv_mode::Bool
+    csv_header_written::Ref{Bool}
     prefix_map::Dict{LogLevel, String}
     color_map::Dict{LogLevel, Symbol}
 end
-ExecutionLogger(min_level::LogLevel) = ExecutionLogger(min_level, DEFAULT_PREFIX_MAP, DEFAULT_COLOR_MAP)
+
+function ExecutionLogger(min_level::LogLevel = ITERATION;
+        io::IO = stderr,
+        prefix_map = DEFAULT_PREFIX_MAP,
+        color_map  = DEFAULT_COLOR_MAP)
+    ExecutionLogger(min_level, io, false, Ref(false), prefix_map, color_map)
+end
+
+function ExecutionLogger(filename::AbstractString;
+        min_level::LogLevel = ITERATION,
+        prefix_map = DEFAULT_PREFIX_MAP,
+        color_map  = DEFAULT_COLOR_MAP)
+    io = open(filename, "w")
+    ExecutionLogger(min_level, io, true, Ref(false), prefix_map, color_map)
+end
+
+Base.close(logger::ExecutionLogger) = logger.csv_mode ? close(logger.io) : nothing
+
 Logging.min_enabled_level(logger::ExecutionLogger) = logger.min_level
 
-# It checks if a message should be logged based on its level.
 function Logging.shouldlog(logger::ExecutionLogger, level, _module, group, id)
     return level >= logger.min_level
 end
 
-# --- 3. Implement the message handling function ---
-# This function defines what happens when a log message is sent.
-# We ignore all the other arguments (file, line, module) to keep the output clean.
-function Logging.handle_message(
-    logger::ExecutionLogger,
-    level,
-    message,
-    _module,
-    group,
-    id,
-    file,
-    line;
-    kwargs...
-)
-    # Check if the message's level is at or above the logger's minimum level
-    if level >= logger.min_level
-        # Get the prefix and color from the maps, or use defaults
+# Format a single value: floats get 4 significant figures, others are shown as-is
+_fmt_val(v::AbstractFloat) = @sprintf("%.4g", v)
+_fmt_val(v) = string(v)
+
+function Logging.handle_message(logger::ExecutionLogger, level, message,
+        _module, group, id, file, line; kwargs...)
+
+    level < logger.min_level && return nothing
+    kw = pairs(kwargs)
+
+    if logger.csv_mode
+        # --- CSV mode ---
+        if !logger.csv_header_written[]
+            println(logger.io, CSV_HEADER)
+            logger.csv_header_written[] = true
+        end
+        # Build a dict for fast lookup of provided kwargs
+        kw_dict = Dict(string(k) => _fmt_val(v) for (k, v) in kw)
+        level_str = get(Dict(
+            ITERATION       => "ITERATION",
+            ITERATIONFAILED => "ITERATIONFAILED",
+            FAILEDPOINT     => "FAILEDPOINT",
+            COMPLETE        => "COMPLETE",
+        ), level, string(level))
+        kw_dict["level"] = level_str
+        if !isempty(message)
+            kw_dict["msg"] = message
+        end
+        row = join((get(kw_dict, string(col), "") for col in CSV_COLUMNS), ",")
+        println(logger.io, row)
+        flush(logger.io)
+    else
+        # --- Colored terminal mode (stderr) ---
         prefix = get(logger.prefix_map, level, "[$(string(level))]")
-        color = get(logger.color_map, level, :normal)
-        
-        # Use printstyled to apply the color
-        # This will print the prefix and message in a single line
-        printstyled(stderr, "$prefix: $message\n"; color=color)
+        color  = get(logger.color_map,  level, :normal)
+
+        if isempty(kw)
+            # Fall back to raw message string
+            printstyled(logger.io, "$prefix: $message\n"; color)
+        else
+            # Format kwargs as "key=value" pairs, floats rounded to 4 sig figs
+            parts = ["$k=$(_fmt_val(v))" for (k, v) in kw]
+            printstyled(logger.io, "$prefix: $(join(parts, "  "))\n"; color)
+        end
     end
-    nothing
+    return nothing
 end
 
-# Custom macros for each log level
-"Log a message at the `COMPLETE` level."
-macro complete(ex)
-    @nospecialize
-    level = COMPLETE
-    _module = __module__
-    :($Logging.with_logger($Logging.current_logger()) do
-        $Logging.@logmsg($level, $(esc(ex)))
-    end)
+# Custom macros for each log level.
+# Accept Julia @logmsg-style keyword arguments; message is optional.
+"Log structured data at the `COMPLETE` level."
+macro complete(exs...)
+    :($Logging.@logmsg($COMPLETE, ""; $(map(esc, exs)...)))
 end
 
-"Log a message at the `ITERATION` level."
-macro iteration(ex)
-    @nospecialize
-    level = ITERATION
-    _module = __module__
-    :($Logging.with_logger($Logging.current_logger()) do
-        $Logging.@logmsg($level, $(esc(ex)))
-    end)
+"Log structured data at the `ITERATION` level."
+macro iteration(exs...)
+    :($Logging.@logmsg($ITERATION, ""; $(map(esc, exs)...)))
 end
 
-"Log a message at the `ITERATIONFAILED` level."
-macro iterationfailed(ex)
-    @nospecialize
-    level = ITERATIONFAILED
-    _module = __module__
-    :($Logging.with_logger($Logging.current_logger()) do
-        $Logging.@logmsg($level, $(esc(ex)))
-    end)
+"Log structured data at the `ITERATIONFAILED` level."
+macro iterationfailed(exs...)
+    :($Logging.@logmsg($ITERATIONFAILED, ""; $(map(esc, exs)...)))
 end
 
-"Log a message at the `FAILEDPOINT` level."
-macro failedpoint(ex)
-    @nospecialize
-    level = FAILEDPOINT
-    _module = __module__
-    :($Logging.with_logger($Logging.current_logger()) do
-        $Logging.@logmsg($level, $(esc(ex)))
-    end)
+"Log structured data at the `FAILEDPOINT` level."
+macro failedpoint(exs...)
+    :($Logging.@logmsg($FAILEDPOINT, ""; $(map(esc, exs)...)))
 end
