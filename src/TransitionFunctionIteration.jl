@@ -3,6 +3,7 @@ module TransitionFunctionIteration
 using Interpolations, NonlinearSolve, ForwardDiff, StaticArrays, StructArrays
 using RecipesBase
 using Logging, LinearAlgebra, Random, Statistics, StatsBase, PrettyTables
+using Polyester: @batch
 
 # Types
 export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant, AbstractSteadyState

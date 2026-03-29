@@ -181,3 +181,31 @@ struct TFIMethod <: SolutionMethod end
 
 "Solution method: Simultaneous Transition and Policy Function Iteration (STPFI) of Cao, Luo, and Nie."
 struct STPFIMethod <: SolutionMethod end
+
+
+# Interface stubs requiring NextPeriod, Exogenv, or SteadyStateMode types
+
+"""
+    calc_eqm(state, policy, mdl, np, mode)
+
+Compute equilibrium conditions at `state` given `policy`. Interface stub --
+model packages must add methods dispatching on their `AbstractModel` subtype.
+
+Expected return: a NamedTuple with fields `fx` (residuals), `trans` (next-period
+transient state), and `vals` (value outputs and extra simulation variables in SimulateMode).
+"""
+function calc_eqm(state, policy, mdl::AbstractModel, np::NextPeriod, mode::EvaluationMode)
+    throw(MethodNotImplementedError(:calc_eqm, typeof(mdl)))
+end
+
+function compute_next_period_values(next, mdl::AbstractModel, mode::EvaluationMode)::NextPeriod
+    throw(MethodNotImplementedError(:compute_next_period_values, typeof(mdl)))
+end
+
+function Exogenv(mdl::AbstractModel)
+    throw(MethodNotImplementedError(:Exogenv, typeof(mdl)))
+end
+
+function steadystate(mdl::AbstractModel, ::AnalyticalSteadyStateMode)
+    throw(MethodNotImplementedError(:steadystate, typeof(mdl), " for AnalyticalSteadyStateMode"))
+end

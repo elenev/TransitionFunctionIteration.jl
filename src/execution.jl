@@ -245,7 +245,9 @@ function find_neighbors_with_diagonals(i, R, n=1)
     return setdiff(range,[I])
 end
 
-function perform_iteration!(obj, diag, damp, npasses, solmethod, iter)
+const THREAD_THRESHOLD = 500  # parallelize when n_points * n_equations exceeds this
+
+function perform_iteration!(obj, diag, damp, npasses, solmethod, iter, use_threads::Bool)
 
     #states = collect(points(obj.ssg))
     Pfct_coeffs = coefficients(obj.Pfct)
@@ -272,15 +274,13 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, iter)
         total_unsolved = length(unsolved_state_indices)
         
 
-        #Threads.@threads :dynamic 
-        for idx in eachindex(unsolved_state_indices)
+        _solve_loop!(idx) = begin
             i = unsolved_state_indices[idx]
             state = obj.ssg[i]
             guess_indices = guess_selector(i)
-            #guess = Pfct_coeffs[i]
             values = Vfct_coeffs[i]
             trans = Tfct_coeffs[i]
-            
+
             local new
             for guess_idx in guess_indices
                 if solmethod isa TFIMethod
@@ -288,22 +288,26 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, iter)
                 elseif solmethod isa STPFIMethod
                     oldguess = (Pfct_coeffs[guess_idx], Tfct_coeffs[i])
                 end
-
-                # Build initial value object
                 old = FunctionValuesAtPoint(state, oldguess, values, trans)
-
                 new, success[i] = solve_at_point(old, obj, solmethod)
                 if success[i] break end
             end
 
             new_Pfct[i] = new.pfct
-
             distances[i] .= new.vfct - values
             new_Vfct[i] = @. damp * values + (1-damp) * new.vfct
-
             distancesT[i] .= new.tfct - trans
             new_Tfct[i] = @. damp * trans + (1-damp) * new.tfct
+        end
 
+        if use_threads
+            @batch per=thread for idx in eachindex(unsolved_state_indices)
+                _solve_loop!(idx)
+            end
+        else
+            for idx in eachindex(unsolved_state_indices)
+                _solve_loop!(idx)
+            end
         end
 
         Pfct_coeffs .= new_Pfct
@@ -411,7 +415,7 @@ Returns a NamedTuple with convergence info and, when `track_history` is set, a `
 StructVector field.
 """
 function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=TFIMethod(),
-                        logging=ITERATIONFAILED, track_history=nothing)
+                        logging=ITERATIONFAILED, track_history=nothing, multithreaded=nothing)
 
     iter = 1
     original_threads = BLAS.get_num_threads()
@@ -421,10 +425,17 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
     exec = (; maxiter, tol, damp, npasses, solmethod)
     history_list = isnothing(track_history) ? nothing : []
 
+    # Threading heuristic: parallelize when problem is large enough and threads are available
+    n_points = npt(obj.Vfct)
+    n_eqs    = nof(obj.Pfct)
+    use_threads = multithreaded === nothing ?
+        (Threads.nthreads() > 1) && (n_points * n_eqs > THREAD_THRESHOLD) :
+        multithreaded::Bool
+
     with_logger(ExecutionLogger(logging)) do
         while true
 
-            perform_iteration!(obj, diag, damp, npasses, solmethod, iter)
+            perform_iteration!(obj, diag, damp, npasses, solmethod, iter, use_threads)
 
             distV, worst_varV, worst_pointV = summarize_distances(diag.value_distances, obj.Vfct)
             distT, worst_varT, worst_pointT, worst_exst = summarize_distances(diag.transition_distances, obj.Tfct)

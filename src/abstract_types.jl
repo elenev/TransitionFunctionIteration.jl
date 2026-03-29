@@ -44,28 +44,6 @@ function Base.showerror(io::IO, e::MethodNotImplementedError)
               "` be implemented for `", e.type_missing, "`", e.msg)
 end
 
-"""
-    calc_eqm(state, policy, obj; mode=SolveMode())
-
-Compute equilibrium conditions at `state` given `policy`. Interface stub —
-model packages must add methods dispatching on `ModelSolution{<:MyModel}`.
-
-Expected return: a NamedTuple with fields `fx` (residuals), `trans` (next-period
-transient state), and `vals` (value outputs and extra simulation variables in SimulateMode).
-"""
-function calc_eqm(state, policy, mdl::AbstractModel, np::NextPeriod, mode::EvaluationMode)
-    # Not Implemented Error
-    throw(MethodNotImplementedError(:calc_eqm, typeof(mdl)))
-end
-
-function compute_next_period_values(next, mdl::AbstractModel, mode::EvaluationMode)::NextPeriod
-    throw(MethodNotImplementedError(:compute_next_period_values, typeof(mdl)))
-end
-
-function Exogenv(mdl::AbstractModel)::Exogenv
-    throw(MethodNotImplementedError(:Exogenv, typeof(mdl)))
-end
-
 function define_endog_grids(mdl::AbstractModel, ::AbstractSteadyState)
     throw(MethodNotImplementedError(:define_endog_grids, typeof(mdl)))
 end
@@ -76,10 +54,6 @@ end
 # It can also be nothing, in which case the default Exogenv(mdl) will be used to construct a constant MC at the ergodic mean.
 function steadystate_guess(mdl::AbstractModel)
     throw(MethodNotImplementedError(:steadystate_guess, typeof(mdl)))
-end
-
-function steadystate(mdl::AbstractModel, ::AnalyticalSteadyStateMode)
-   throw(MethodNotImplementedError(:steadystate, typeof(mdl), " for AnalyticalSteadyStateMode"))
 end
 
 function steadystate_system(::NamedTuple, mdl::AbstractModel, mode::EvaluationMode)
