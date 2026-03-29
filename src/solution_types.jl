@@ -36,6 +36,15 @@ to_unconstrained(y, b::UpperBounded) = log(b.upper - y)
 to_unconstrained(y, b::IntervalBounded) = log((y - b.lower) / (b.upper - y))
 
 
+"""
+    NextPeriod(; expectations, continuations, prnext=SVector{1}(1.0))
+
+Container for next-period information returned by `compute_next_period_values`.
+
+- `expectations`: probability-weighted averages (e.g., `E[β u′(C′)]`); scalar per exogenous state
+- `continuations`: per-exogenous-state raw values (e.g., capital payoff each state); stacked by `compute_expectations`
+- `prnext`: transition probability vector (default `[1.0]` for a single state, overridden by `Exogenv`)
+"""
 @kwdef struct NextPeriod{E,C,V<:AbstractVector}
     expectations::E
     continuations::C
@@ -106,9 +115,11 @@ end
 
 # Steady state solver modes
 
+"Dispatch tag: steady state is computed by an analytic formula in `steadystate(model, ::AnalyticalSteadyStateMode)`."
 struct AnalyticalSteadyStateMode <: SteadyStateMode end
 
 _exogenv_from_point(pt) = Exogenv(pts = StaticStructArray(SVector(pt)), mtrans = [1.;;], ssidx=1)
+"Dispatch tag: steady state is found by iterating policy and transition functions from a starting guess."
 struct FixedPointSteadyStateMode{P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv} <: SteadyStateMode
     policies::P
     transitions::T
@@ -129,6 +140,7 @@ function FixedPointSteadyStateMode(policies::NamedTuple, transitions::NamedTuple
     return FixedPointSteadyStateMode(policies, transitions, _exogenv_from_point(exogenv))
 end
 
+"Dispatch tag: steady state is found by solving a nonlinear system (e.g., system of equilibrium conditions)."
 struct SystemSteadyStateMode{S<:NamedTuple, B<:NamedTuple} <: SteadyStateMode
     ssguess::S
     bounds::B
@@ -137,6 +149,18 @@ function SystemSteadyStateMode(ssguess::NamedTuple)
     return SystemSteadyStateMode(ssguess, map(_ -> Unbounded(), ssguess))
 end
 
+"""
+    SteadyState(; model, exog, endog, values, guess)
+
+Steady-state description returned by `steadystate`. Holds model-specific values at the non-stochastic
+steady state and serves as the starting point for `main_setup`.
+
+- `model`: the `AbstractModel` instance
+- `exog`: exogenous state at the steady state (e.g., `(A=1.0,)`)
+- `endog`: endogenous state at the steady state (e.g., `(K=3.2,)`)
+- `values`: additional reported values (e.g., `(C=0.8,)`)
+- `guess`: initial policy guess for the solver
+"""
 @kwdef struct SteadyState{M<:AbstractModel, GNAMES, GTYPES, XNAMES, XTYPES, VNAMES, VTYPES, NNAMES, NTYPES} <: AbstractSteadyState
     model::M
     guess::NamedTuple{GNAMES,GTYPES}
@@ -198,6 +222,16 @@ function calc_eqm(state, policy, mdl::AbstractModel, np::NextPeriod, mode::Evalu
     throw(MethodNotImplementedError(:calc_eqm, typeof(mdl)))
 end
 
+"""
+    compute_next_period_values(next, model, mode) -> NextPeriod
+
+Compute next-period auxiliary quantities given next-period state `next`. Interface stub --
+model packages must add methods dispatching on their `AbstractModel` subtype.
+
+Return a `NextPeriod(; expectations, continuations)` where:
+- `expectations`: probability-weighted scalars (averaged by `compute_expectations`)
+- `continuations`: per-state raw values (stacked into an `SVector` across exogenous states)
+"""
 function compute_next_period_values(next, mdl::AbstractModel, mode::EvaluationMode)::NextPeriod
     throw(MethodNotImplementedError(:compute_next_period_values, typeof(mdl)))
 end
@@ -206,6 +240,14 @@ function Exogenv(mdl::AbstractModel)
     throw(MethodNotImplementedError(:Exogenv, typeof(mdl)))
 end
 
+"""
+    steadystate(model, mode) -> (SteadyState, Bool)
+
+Compute the steady state for `model` using the given `mode` (e.g., `AnalyticalSteadyStateMode()`).
+Interface stub -- model packages must add methods dispatching on their subtype.
+
+Returns `(stv, converged)` where `stv::SteadyState` and `converged::Bool` indicates success.
+"""
 function steadystate(mdl::AbstractModel, ::AnalyticalSteadyStateMode)
     throw(MethodNotImplementedError(:steadystate, typeof(mdl), " for AnalyticalSteadyStateMode"))
 end

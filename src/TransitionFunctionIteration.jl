@@ -28,7 +28,7 @@ export ExogenvAR1, ergodic_distro, ssidx, exnpt, nex, transition_matrix, conditi
 export main_setup, main_execute!, make_point, compute_expectations, TFIMethod, STPFIMethod, fisher_burmeister
 
 # Simulation
-export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, E, augment_simulation
+export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, augment_simulation
 export ReportedMoment, compare_economies
 export SimulationPanel, SimulationErrorPanel, endog_states, states
 
@@ -59,6 +59,15 @@ include("irf.jl")
 include("irfplotting.jl")
 
 
+"""
+    solve_and_simulate(model; setup_kwargs=(;), execute_kwargs=(;), simulate_kwargs=(;),
+                       irf_kwargs=(;), run_simulate=true, run_irf=true)
+
+Convenience wrapper: calls `main_setup`, `main_execute!`, `simulate`, and `simulate_irf`
+in sequence. Returns a NamedTuple `(; obj, stv, simseries, errs, stats, errstats, irf)`.
+
+Set `run_simulate=false` to stop after solving; `run_irf=false` to skip IRF computation.
+"""
 function solve_and_simulate(model::AbstractModel;
     setup_kwargs=(;), execute_kwargs=(;), simulate_kwargs=(;), irf_kwargs=(;),
     run_simulate=true, run_irf=true)

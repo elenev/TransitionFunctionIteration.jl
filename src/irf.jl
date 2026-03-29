@@ -1,4 +1,17 @@
 # Impulse Responses
+
+"""
+    IRFResult
+
+Container for impulse-response function results returned by `simulate_irf`.
+
+- `means`: `NamedTuple` of `StructArray`s (one per shock) of per-period mean paths
+- `stdevs`: same structure, per-period standard deviations across simulation draws
+- `other_stats`: additional user-requested statistics (see `other_stats` kwarg of `simulate_irf`)
+- `paths`: per-draw raw simulation paths (non-empty only when `path_vars` is set)
+
+Access individual shock paths with `irf.means.shock_name.varname`.
+"""
 struct IRFResult{M,D,S,P}
     means::M
     stdevs::D
@@ -28,6 +41,21 @@ function IRFResult(result)
 end
 
 
+"""
+    simulate_irf(obj, endogstart; shocks=(;), T=20, N=5_000, seed=100, ...)
+
+Simulate impulse response functions (IRFs) from a solved model `obj`.
+
+- `endogstart`: initial endogenous state, either a `NamedTuple` of values or a `SimulationPanel`
+  (in which case the ergodic mean is used)
+- `shocks`: `NamedTuple` of named shock specifications `(shock_name = (exst_index, exog_override), ...)`
+- `T`: IRF horizon (periods)
+- `N`: number of Monte Carlo draws for expectation/fan charts
+- `seed`: random seed for reproducibility
+
+Returns an `IRFResult` with mean and standard-deviation paths for each shock and for the
+unconditional (`:uncond`) baseline.
+"""
 function simulate_irf(obj::ModelSolution, endogstart;
     exog_start = obj.exogenv.ssidx,
     shocks = (;), 

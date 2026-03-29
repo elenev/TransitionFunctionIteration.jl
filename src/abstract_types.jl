@@ -16,6 +16,7 @@ abstract type AbstractModel end
 "Abstract base for assembled solution objects."
 abstract type AbstractModelSolution end
 
+"Abstract base for steady-state descriptions returned by `steadystate`."
 abstract type AbstractSteadyState end
 
 "Abstract dispatch tag for evaluation context."
@@ -44,6 +45,13 @@ function Base.showerror(io::IO, e::MethodNotImplementedError)
               "` be implemented for `", e.type_missing, "`", e.msg)
 end
 
+"""
+    define_endog_grids(model, stv) -> NamedTuple
+
+Return a `NamedTuple` of endogenous grid vectors (e.g., `(K = range(0.5, 10.0, 50),)`).
+Called by `main_setup` to build the `StateSpaceGrid`. Interface stub -- implement for your
+`AbstractModel` subtype when the default steady-state-proportional grid is not appropriate.
+"""
 function define_endog_grids(mdl::AbstractModel, ::AbstractSteadyState)
     throw(MethodNotImplementedError(:define_endog_grids, typeof(mdl)))
 end

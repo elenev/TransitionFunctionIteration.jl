@@ -1,4 +1,14 @@
-# Main setup 
+"""
+    main_setup(model; mode=AnalyticalSteadyStateMode(), grids=nothing, check_steadystate=true)
+    main_setup(model, initobj; ...)
+
+Assemble a `ModelSolution` for `model`, computing the steady state, building grids, and
+constructing initial interpolants. Returns `(obj, stv)` where `obj::ModelSolution` is
+passed to `main_execute!` and `stv::SteadyState` holds the steady-state description.
+
+Pass `initobj` to warm-start from a previously solved solution (e.g., when re-solving after
+a parameter change).
+"""
 function main_setup(model::AbstractModel, 
     initobj::Union{Nothing,AbstractModelSolution}=nothing; 
     mode::SteadyStateMode=AnalyticalSteadyStateMode(),

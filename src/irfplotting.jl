@@ -105,6 +105,14 @@ end
 
 using .Transformations
 
+"""
+    ReportedVariable(varname; id=varname, label=string(varname), transformation=Level())
+
+Specification for one panel in an IRF plot. Wraps `varname` with an optional display `label`
+and a `Transformations` transformation (e.g., `DiffLevel()`, `RatioPct()`).
+
+The `id` type parameter is used as the dispatch key when looking up the variable in recipes.
+"""
 struct ReportedVariable{ID, T<:Transformations.AbstractTransformation}
     varname::Symbol
     label::String
@@ -120,6 +128,14 @@ end
 ReportedVariable(rv::ReportedVariable) = rv
 id(rv::ReportedVariable{ID}) where ID = ID
 
+"""
+    IRFPage(vars)
+
+An `AbstractArray` of `ReportedVariable`s that defines one page (subplot group) in an IRF figure.
+Construct from a vector or matrix of `ReportedVariable` specs; each element becomes one subplot.
+
+    page = IRFPage([ReportedVariable(:C), ReportedVariable(:K; transformation=DiffLevel())])
+"""
 struct IRFPage{T<:ReportedVariable,N,A<:AbstractVecOrMat{T}} <: AbstractArray{T,N}
     data::A
 end

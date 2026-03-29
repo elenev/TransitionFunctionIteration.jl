@@ -15,7 +15,11 @@
       "Bash(julia --project=. -e \"using Pkg; Pkg.status\\(\"\"Polyester\"\"\\)\")",
       "Bash(\"c:\\\\Users\\\\elene\\\\Documents\\\\Repositories\\\\juliadev\\\\TransitionFunctionIteration.jl\\\\test\\\\test_simulation.jl\":*)",
       "Bash(\"c:\\\\Users\\\\elene\\\\Documents\\\\Repositories\\\\juliadev\\\\TransitionFunctionIteration.jl\\\\test\\\\test_momentarray.jl\":*)",
-      "Bash(julia --project -e \"using Pkg; Pkg.test\\(\\)\")"
+      "Bash(julia --project -e \"using Pkg; Pkg.test\\(\\)\")",
+      "Bash(for name:*)",
+      "Bash(do echo:*)",
+      "Bash(done)",
+      "Read",  "Glob", "Grep", "LS"
     ]
   }
 }

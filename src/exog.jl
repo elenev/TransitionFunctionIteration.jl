@@ -2,7 +2,20 @@
 
 import QuantEcon.rouwenhorst
 
-# Discretize AR(1) using Rouwenhorst method
+"""
+    ExogenvAR1(; ρ=0.0, σ=1.0, μ=0.0, n=3, jensen=false, transform=identity, shock_name=:z)
+
+Construct an `Exogenv` for a discretized AR(1) process using the Rouwenhorst method.
+
+- `ρ`: persistence
+- `σ`: innovation standard deviation
+- `μ`: unconditional mean (in levels before transform)
+- `n`: number of grid points
+- `jensen`: if `true`, uses `transform=exp` and applies Jensen correction so that the
+  unconditional mean of the transformed process equals `exp(μ)`
+- `transform`: applied element-wise to the grid (default `identity`; use `exp` for log-normal)
+- `shock_name`: name of the exogenous variable in the state NamedTuple
+"""
 function ExogenvAR1(;
     ρ::Real = 0.0,
     σ::Real = 1.0,

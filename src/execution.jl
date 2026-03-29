@@ -35,6 +35,13 @@ function forecast_next(trans, obj)
     return  StaticStructArray( SVector(forecast_tuple) )
 end
 
+"""
+    fisher_burmeister(a, b) -> Real
+
+Fischer-Burmeister complementarity function: `a + b - sqrt(a² + b²)`.
+Returns 0 iff `a ≥ 0`, `b ≥ 0`, and `a * b = 0` (complementarity conditions).
+Used for inequality constraints in `calc_eqm`.
+"""
 function fisher_burmeister(a::Real, b::Real)
     return a + b - sqrt(a^2 + b^2)
 end
@@ -45,6 +52,13 @@ function normalize_next_period_values(np, mdl::AbstractModel, mode::EvaluationMo
     return np
 end
 
+"""
+    compute_expectations(next, prnext, model, mode) -> NextPeriod
+
+Aggregate next-period state values into expectations and continuations by calling
+`compute_next_period_values` for each exogenous state and probability-weighting the results.
+Returns a `NextPeriod` with weighted `expectations` and stacked `continuations`.
+"""
 function compute_expectations(next::StructArray, prnext, mdl::AbstractModel, mode::EvaluationMode)
     # Ensure probabilities are a statically sized SVector
     N = length(prnext)

@@ -23,7 +23,9 @@ end
 MomentArray(data, rownames, colnames) = MomentArray{tuple(rownames...), tuple(colnames...)}(data)
 
 # Names are free: extracted directly from type parameters
+"Return the row names (variable names) of a `MomentArray` as a tuple of Symbols."
 @inline row_names(::MomentArray{ROWS}) where {ROWS} = ROWS
+"Return the column names (statistic names) of a `MomentArray` as a tuple of Symbols."
 @inline col_names(::MomentArray{ROWS, COLS}) where {ROWS, COLS} = COLS
 
 # --- AbstractArray Interface ---
@@ -113,6 +115,13 @@ end
 
 
 ## Equation Errors
+"""
+    SimulationErrorPanel(data::StructArray)
+
+Thin wrapper around a 2-D `StructArray` (runs × periods) of equation residuals produced by
+`simulate`. Each named field is one residual series (e.g., `:euler`). Passed to
+`calc_error_stats` for summary statistics.
+"""
 struct SimulationErrorPanel{T, N, A<:StructArray{T, N}} <: AbstractArray{T,N}
     data::A
 end
@@ -135,6 +144,13 @@ end
 
 
 ### Simulated output
+"""
+    SimulationPanel(data::StructArray, endog_names)
+
+Thin wrapper around a 2-D `StructArray` (runs × periods) of simulated variables. The
+`NAMES` type parameter records which fields are endogenous states (used by `linearize` and
+`endog_states`). All fields are accessible via `panel.varname`.
+"""
 struct SimulationPanel{T, N, NAMES, A<:StructArray{T, N}} <: AbstractArray{T,N}
     data::A
 end
@@ -159,5 +175,7 @@ function Base.summary(io::IO, sp::SimulationPanel{T,N}) where {T,N}
     print(io, join(size(sp), "x"), " SimulationPanel{$T,$N} with fields: (", join(propertynames(sp), ", "), ")")
 end
 
+"Return the tuple of endogenous state variable names encoded in the `SimulationPanel` type."
 endog_states(::SimulationPanel{T, N, NAMES, A}) where {T, N, NAMES, A} = NAMES
+"Return `(:exst, endog_states(sp)...)` -- all state variable names including the exogenous index."
 states(sp::SimulationPanel) = (:exst, endog_states(sp)...)

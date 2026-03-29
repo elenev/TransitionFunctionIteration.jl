@@ -409,6 +409,18 @@ function linearize(obj::ModelSolution, stv::SteadyState; loglin=true)
 end
 
 
+"""
+    linearize(obj::ModelSolution, stv::SteadyState; loglin=true) -> (MomentArray, MomentArray)
+    linearize(simseries, stv::SteadyState; loglin=true)         -> (MomentArray, MomentArray)
+
+Compute linear approximations to the value and transition functions around the steady state `stv`.
+
+The first form linearizes the solution object `obj` at each grid point; the second form runs an
+OLS regression over the simulation panel. Returns `(vcoefs, tcoefs)` where each is a `MomentArray`
+with rows = variable names and columns = `(constant, state vars...)`.
+
+Set `loglin=false` for level deviations instead of log deviations.
+"""
 linearize(simseries::SimulationPanel, stv::SteadyState; kwargs...) =
     linearize(simseries.data, stv; kwargs...)
 
