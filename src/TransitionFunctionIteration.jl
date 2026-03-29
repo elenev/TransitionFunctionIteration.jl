@@ -28,6 +28,7 @@ export main_setup, main_execute!, make_point, compute_expectations, TFIMethod, S
 
 # Simulation
 export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, E, augment_simulation
+export ReportedMoment, compare_economies
 export SimulationPanel, SimulationErrorPanel, endog_states, states
 
 # IRFs

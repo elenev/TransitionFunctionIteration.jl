@@ -440,3 +440,41 @@ function linearize(simseries::StructArray{T,2} where T, stv::SteadyState; loglin
 
     return vcoefs, tcoefs
 end
+
+## Moment comparison across economies
+
+"""
+    ReportedMoment(; var, sample=:uncond, stat=:mean)
+
+Specification for a single entry in a `compare_economies` table.
+
+- `var`: variable name (Symbol) in the `MomentArray`
+- `sample`: filter name used in `describe()` (default `:uncond`)
+- `stat`: statistic name (default `:mean`)
+"""
+@kwdef struct ReportedMoment
+    var::Symbol
+    sample::Symbol = :uncond
+    stat::Symbol   = :mean
+end
+
+"""
+    compare_economies(moment_defs, economies) -> MomentArray
+
+Build a labeled table of moments across multiple economies.
+
+- `moment_defs`: NamedTuple of `ReportedMoment`s (rows of the output table)
+- `economies`: NamedTuple of `describe()` outputs (columns of the output table)
+
+Returns a `MomentArray` with moment names as rows and economy names as columns.
+Each cell is `economies[econ].moments[moment.sample][moment.var, moment.stat]`.
+"""
+function compare_economies(moment_defs::NamedTuple, economies::NamedTuple)
+    moment_names = keys(moment_defs)
+    econ_names   = keys(economies)
+
+    data = [getmoment(economies[econ].moments[moment.sample], moment.var, moment.stat)
+            for moment in values(moment_defs), econ in econ_names]
+
+    return MomentArray(data, moment_names, econ_names)
+end
