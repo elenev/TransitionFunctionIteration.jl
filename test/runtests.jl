@@ -31,7 +31,7 @@ e3 = ExogenvAR1(n=3)
 # Dummy model 
 struct DummyModel <: AbstractModel end
 
-function TransitionFunctionIteration.compute_next_period_values(next, ::DummyModel)
+function TransitionFunctionIteration.compute_next_period_values(next, ::DummyModel, ::EvaluationMode)
     expectations = (e = next.v,)
     continuations = (; c = next.x)
     NextPeriod(; expectations, continuations)
@@ -78,9 +78,11 @@ end
     include("test_momentarray.jl")
     include("test_economics.jl")
     include("test_simulation.jl")
+    include("test_logging.jl")
     include("test_plotting.jl")
     include("test_performance.jl")
     include("test_irfplotting.jl")
+    include("test_execution.jl")
     include("test_ngm.jl")       # must come first: brings obj, stv, simseries into global scope
     include("test_linearize.jl") # uses those fixtures
 end

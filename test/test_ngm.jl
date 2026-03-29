@@ -44,7 +44,7 @@ end
 # ── Analytic linearization for the NGM ────────────────────────────────────────
 
 function solve_linearized(model::NeoclassicalGrowthModel)
-    stv  = steadystate(model)
+    stv, _ = steadystate(model, AnalyticalSteadyStateMode())
     Kbar = stv.endog.K;  Cbar = stv.values.C;  Abar = 1.0
     (; α, β, γ, ρ) = model
 

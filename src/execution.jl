@@ -472,7 +472,11 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
 
     BLAS.set_num_threads(original_threads)  # Restore
 
-    history = isnothing(history_list) ? nothing : StructArray(history_list)
+    history = if isnothing(history_list) || isempty(history_list)
+        nothing
+    else
+        StructArray(convert(Vector{typeof(history_list[1])}, history_list))
+    end
     return (; exec..., history)
 
 end

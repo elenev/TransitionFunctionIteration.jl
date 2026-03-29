@@ -68,10 +68,10 @@ end
 (t::DiffAnnPct)(x, basis, trend, basistrend, init) = (x - basis) * ANN * PCT
 (t::DiffAnnInvPct)(x, basis, trend, basistrend, init) = (x - basis) / ANN * PCT
 (t::DiffAnnQuadPct)(x, basis, trend, basistrend, init) = (x - basis)  * sqrt(ANN) * PCT
-(t::RatioPct)(x, basis, trend, basistrend, init) = (x / basis - 1) * PCT
-(t::RatioAnnPct)(x, basis, trend, basistrend, init) = (x / basis - 1) * PCT
-(t::DiffInitLevel)(x, basis, trend, basistrend, init) = x - init
-(t::DiffInitPct)(x, basis, trend, basistrend, init) = (x - init) / init * PCT
+(t::RatioPct)(x, basis, trend, basistrend, init) = (x ./ basis .- 1) .* PCT
+(t::RatioAnnPct)(x, basis, trend, basistrend, init) = (x ./ basis .- 1) .* PCT
+(t::DiffInitLevel)(x, basis, trend, basistrend, init) = x .- init
+(t::DiffInitPct)(x, basis, trend, basistrend, init) = (x .- init) ./ init .* PCT
 
 const ANNLABEL = "Annual"
 const PCTLABEL = "%"

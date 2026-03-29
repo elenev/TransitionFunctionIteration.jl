@@ -409,6 +409,9 @@ function linearize(obj::ModelSolution, stv::SteadyState; loglin=true)
 end
 
 
+linearize(simseries::SimulationPanel, stv::SteadyState; kwargs...) =
+    linearize(simseries.data, stv; kwargs...)
+
 function linearize(simseries::StructArray{T,2} where T, stv::SteadyState; loglin=true)
     _demean_logs(x,xss) = @. log(x) - log(xss)
     _demean_levels(x,xss) = @. x - xss

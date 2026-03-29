@@ -19,7 +19,7 @@ export calc_eqm, compute_next_period_values, steadystate, define_endog_grids
 # Logging
 export ExecutionLogger
 export COMPLETE, ITERATION, ITERATIONFAILED, FAILEDPOINT
-#export @complete, @iteration, @iterationfailed, @failedpoint
+export @complete, @iteration, @iterationfailed, @failedpoint
 
 # Exogenous environment tools
 export ExogenvAR1, ergodic_distro, ssidx, exnpt, nex, transition_matrix, conditional_distro

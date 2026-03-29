@@ -76,7 +76,7 @@ function Exogenv(mdl::NeoclassicalGrowthModel)
 end
 
 # Compute next period values
-function compute_next_period_values(next, mdl::NeoclassicalGrowthModel)
+function compute_next_period_values(next, mdl::NeoclassicalGrowthModel, ::EvaluationMode=SolveMode())
     (; A, K, C) = next
     (; α, β, δ, γ) = mdl
     MPK = A * cobb_douglas_prime(K, 1.0, α, 1)  # Marginal Product of Capital at next period's state

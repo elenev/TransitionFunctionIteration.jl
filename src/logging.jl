@@ -134,20 +134,20 @@ end
 # Accept Julia @logmsg-style keyword arguments; message is optional.
 "Log structured data at the `COMPLETE` level."
 macro complete(exs...)
-    :($Logging.@logmsg($COMPLETE, "", $(map(esc, exs)...)))
+    :($Logging.@logmsg($COMPLETE, "", $(exs...)))
 end
 
 "Log structured data at the `ITERATION` level."
 macro iteration(exs...)
-    :($Logging.@logmsg($ITERATION, "", $(map(esc, exs)...)))
+    :($Logging.@logmsg($ITERATION, "", $(exs...)))
 end
 
 "Log structured data at the `ITERATIONFAILED` level."
 macro iterationfailed(exs...)
-    :($Logging.@logmsg($ITERATIONFAILED, "", $(map(esc, exs)...)))
+    :($Logging.@logmsg($ITERATIONFAILED, "", $(exs...)))
 end
 
 "Log structured data at the `FAILEDPOINT` level."
 macro failedpoint(exs...)
-    :($Logging.@logmsg($FAILEDPOINT, "", $(map(esc, exs)...)))
+    :($Logging.@logmsg($FAILEDPOINT, "", $(exs...)))
 end

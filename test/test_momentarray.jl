@@ -68,3 +68,47 @@ end
     @test m(:b, :p50)  == m(:b, :p50)
 
 end
+
+@testset "ReportedMoment defaults" begin
+    rm = ReportedMoment(var=:C)
+    @test rm.var    == :C
+    @test rm.sample == :uncond
+    @test rm.stat   == :mean
+end
+
+@testset "compare_economies" begin
+
+    # Build two minimal describe() outputs using synthetic data
+    N_runs, N_periods = 3, 15
+    Random.seed!(1)
+
+    function _make_panel(scale)
+        data = StructArray([(C = scale * (1 + 0.1*randn()), K = scale * (2 + 0.1*randn()))
+                             for _ in 1:N_runs, _ in 1:N_periods])
+        SimulationPanel(data, (:K,))
+    end
+
+    p1 = _make_panel(1.0)
+    p2 = _make_panel(2.0)
+
+    d1 = describe(p1)
+    d2 = describe(p2)
+
+    moment_defs = (
+        mean_C = ReportedMoment(var=:C),
+        mean_K = ReportedMoment(var=:K, stat=:mean),
+    )
+    economies = (baseline = d1, scaled = d2)
+
+    table = compare_economies(moment_defs, economies)
+
+    @test table isa TFI.MomentArray
+    @test size(table) == (2, 2)              # 2 moments × 2 economies
+    @test row_names(table) == (:mean_C, :mean_K)
+    @test col_names(table) == (:baseline, :scaled)
+
+    # Scaled economy has ~2× larger moments
+    @test table(:mean_C, :scaled) > table(:mean_C, :baseline)
+    @test table(:mean_K, :scaled) > table(:mean_K, :baseline)
+
+end

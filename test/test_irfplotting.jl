@@ -4,6 +4,10 @@
     using StructArrays
     using TransitionFunctionIteration: Transformations, IRFResult, ReportedVariable, IRFPage
 
+    # RecipesBase.is_key_supported has no methods outside a plotting backend;
+    # define a stub so apply_recipe can be called in isolation.
+    RecipesBase.is_key_supported(::Symbol) = true
+
     T = 5
     # Unconditional baseline: C rises slowly
     uncond_C = [1.0, 1.05, 1.1, 1.15, 1.2]
