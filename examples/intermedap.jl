@@ -165,16 +165,27 @@ function compute_next_period_values(next, model::IntermediaryAssetPricingModel, 
 
     # Expectations
     ΛF = Λ * Q
-    expectations = (
-                    KI = ΛF * KIpayoff, 
-                    BI = ΛF * BIpayoff, 
-                    BH = Λ  * BHpayoff,
-                    SH = Λ  * SHpayoff,
+    if mode isa SimulateMode
+        # QG = equity multiplier × trend growth, needed for expected equity return calculation
+        expectations = (
+                        KI = ΛF * KIpayoff,
+                        BI = ΛF * BIpayoff,
+                        BH = Λ  * BHpayoff,
+                        SH = Λ  * SHpayoff,
+                        CE = (G*V)^(1-γ),
+                        QG = Q * G,
+                        )
+    else
+        expectations = (
+                        KI = ΛF * KIpayoff,
+                        BI = ΛF * BIpayoff,
+                        BH = Λ  * BHpayoff,
+                        SH = Λ  * SHpayoff,
+                        CE = (G*V)^(1-γ),
+                        )
+    end
 
-                    CE = (G*V)^(1-γ)
-                    )
-
-    # Q and C added to continuations only in SimulateMode -- not needed in solve/iterate hot loops
+    # C added to continuations only in SimulateMode -- not needed in solve/iterate hot loops
     if mode isa SimulateMode
         continuations = (; RK, G, q, V, Q, C)
     else
@@ -186,21 +197,20 @@ end
 
 function normalize_next_period_values(np, mdl::IntermediaryAssetPricingModel, mode::EvaluationMode)
     (; γ, ψ) = mdl
-    #@debug "np.continuations.V: $(np.continuations.V)"
-    #@debug "exp(g) np.continuations.V: $( exp(mdl.gbar) * np.continuations.V )"
-    CE = np.expectations.CE^(1/(1-γ))
-    #@debug "CE: $CE"
+    CE     = np.expectations.CE^(1/(1-γ))
     CEterm = CE^(γ - 1/ψ)
-    #@debug "CEterm: $CEterm"
 
-    expectations = (
-                    KI = np.expectations.KI * CEterm, 
-                    BI = np.expectations.BI * CEterm, 
-                    BH = np.expectations.BH * CEterm,
-                    SH = np.expectations.SH * CEterm,
+    base_exp = (
+        KI = np.expectations.KI * CEterm,
+        BI = np.expectations.BI * CEterm,
+        BH = np.expectations.BH * CEterm,
+        SH = np.expectations.SH * CEterm,
+        CE = CE,
+    )
+    # QG is the physical-measure E[Q*G]; it is not SDF-weighted so CEterm does not apply
+    expectations = mode isa SimulateMode ?
+        merge(base_exp, (; QG = np.expectations.QG)) : base_exp
 
-                    CE = CE
-                    )
     return NextPeriod(expectations = expectations, continuations = np.continuations,
             prnext = np.prnext)
 end
@@ -251,14 +261,13 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
         if mode isa IterateMode
             return (; fx, trans, vals)
         elseif mode isa SimulateMode
-            # np.continuations.Q: equity multiplier from next period (stacked per exog state)
-            E_Q = mean(np.continuations.Q, np)
-
-            r = 1/p - 1
-            E_rS  = E_Q / (Q - d) - 1
+            # np.expectations.QG = E[Q_next * G_next] under physical measure;
+            # dividing by (Q - d) gives expected gross equity return controlling for trend growth
+            r     = 1/p - 1
+            E_rS  = np.expectations.QG / (Q - d) - 1
             E_xrS = E_rS - r
             simvars = (; Y, RK, i, I = i*K, N, BH, BI, D, w, d, x,
-                bind = λ > 0, r, E_rS, E_xrS, E_Q)
+                bind = λ > 0, r, E_rS, E_xrS)
             simvals = merge(vals, simvars)
 
             return (; fx, trans, vals = simvals)
