@@ -114,8 +114,7 @@ function calc_eqm(state, policy, mdl::NeoclassicalGrowthModel, np::NextPeriod, m
         if mode isa IterateMode
             return (; fx, trans, vals)
         elseif mode isa SimulateMode
-            addvars = (; Y, I, C)
-            return (; fx, trans, addvars)
+            return (; fx, trans, vals = (; Y, I, C))
         end
 
     end

@@ -342,10 +342,9 @@ end
 end
 
 
-@kwdef struct NextPeriod{E,C,A,V<:AbstractVector}
+@kwdef struct NextPeriod{E,C,V<:AbstractVector}
     expectations::E
     continuations::C
-    addvars::A = (;)
     prnext::V  = SVector{1}(1.0)
 end
 
@@ -741,8 +740,8 @@ end
 Compute equilibrium conditions at `state` given `policy`. Interface stub —
 model packages must add methods dispatching on `ModelSolution{<:MyModel}`.
 
-Expected return: a NamedTuple with fields `vals` (value outputs), `fx` (residuals),
-`trans` (next-period transient state), and `addvars` (extra simulation variables).
+Expected return: a NamedTuple with fields `fx` (residuals), `trans` (next-period
+transient state), and `vals` (value outputs and extra simulation variables in SimulateMode).
 """
 function calc_eqm(state, policy, mdl::AbstractModel, np::NextPeriod, mode::EvaluationMode) 
     # Not Implemented Error 

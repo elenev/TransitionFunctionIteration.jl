@@ -39,14 +39,6 @@ function fisher_burmeister(a::Real, b::Real)
     return a + b - sqrt(a^2 + b^2)
 end
 
-function stack_nextperiod_addvars(v::AbstractArray{T}) where {T<:NamedTuple} 
-    if fieldcount(T) == 0
-        return (;)
-    else
-        return StaticStructArray(v)
-    end
-end
-
 function normalize_next_period_values(np, mdl::AbstractModel, mode::EvaluationMode)
     # Placeholder for any normalization logic needed for expectations, continuations, or addvars
     # For now, we just return them as-is
@@ -71,21 +63,14 @@ function compute_expectations(next::StructArray, prnext, mdl::AbstractModel, mod
         map((a, x) -> muladd(prnext[i], x, a), acc, results[i].expectations)
     end
 
-    # Stack Continuations 
+    # Stack Continuations
     # Extract just the continuations into an SVector of NamedTuples and make a StructArray
     continuations = StaticStructArray(map(res -> res.continuations, results))
 
-    if mode isa SimulateMode
-        addvars = stack_nextperiod_addvars(map(res -> res.addvars, results))
-    else
-        addvars = (;)
-    end
-
     np = NextPeriod(
-        expectations = expectations, 
+        expectations = expectations,
         continuations = merge_structarrays(next, continuations),
         prnext = prnext,
-        addvars = addvars
     )
 
     return normalize_next_period_values(np, mdl, mode)

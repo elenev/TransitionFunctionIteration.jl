@@ -90,7 +90,7 @@ function calc_result(state, obj)
     fx_nt = _fx_to_nt(out.fx)
     transerr = map(-, out_trans, trans)   # NamedTuple of SVectors, one per exog state
 
-    return StructArray(trans), merge(state, exog, out.addvars), fx_nt, transerr
+    return StructArray(trans), merge(state, exog, out.vals), fx_nt, transerr
 end
 
 """
