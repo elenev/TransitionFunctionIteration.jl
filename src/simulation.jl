@@ -57,6 +57,43 @@ function normalize_fx_errors(::AbstractModel, fx_nt, addvars)
     return fx_nt
 end
 
+"""
+    augment_simulation(panel, model) -> (static_nt, dynamic_nt)
+
+Compute extra variables to append to the simulation panel after `simulate()` finishes.
+
+Return a 2-tuple `(static_nt, dynamic_nt)` where:
+- `static_nt`: `NamedTuple` of `N_runs × N_periods` arrays (same shape as `panel`), or `(;)`
+- `dynamic_nt`: `NamedTuple` of `N_runs × (N_periods-1)` arrays (e.g., one-period returns),
+  or `(;)` if no dynamic variables are needed
+
+Extend this function for a specific model type to add derived variables. The default returns
+empty NamedTuples (no augmentation).
+"""
+augment_simulation(::SimulationPanel, ::AbstractModel) = ((;), (;))
+
+function _merge_augmentation(simseries::SimulationPanel{T,N,NAMES}, extra_static, extra_dynamic, dynamic_align) where {T,N,NAMES}
+    # Merge static extra variables (same length as panel)
+    if !isempty(extra_static)
+        merged = StructArray(merge(components(simseries.data), extra_static))
+        simseries = SimulationPanel(merged, NAMES)
+    end
+
+    # Merge dynamic extra variables (one period shorter)
+    isempty(extra_dynamic) && return simseries
+
+    if dynamic_align === :nan
+        padded = map(arr -> hcat(fill(eltype(arr)(NaN), size(arr, 1), 1), arr), extra_dynamic)
+    elseif dynamic_align === :drop
+        simseries = simseries[:, 2:end]
+        padded = extra_dynamic
+    else
+        throw(ArgumentError("dynamic_align must be :nan or :drop, got $dynamic_align"))
+    end
+    merged = StructArray(merge(components(simseries.data), padded))
+    return SimulationPanel(merged, NAMES)
+end
+
 # Compute simulated results for one period
 function calc_eqm_from_state(state, obj, mode=SimulateMode())
     #@debug "Calculating equilibrium for state: $state"
@@ -116,6 +153,7 @@ function simulate(obj::ModelSolution, stv=nothing;
                                 shocks=sample_shocks(sz, seed, burn),
                                 exog_states = simulate_markov_chain(obj.exogenv, exog_start, shocks)[1],
                                 report_bounds=true,
+                                dynamic_align=:nan,
                     )
     start = make_point(exog_start, endog_start)
 
@@ -157,6 +195,9 @@ function simulate(obj::ModelSolution, stv=nothing;
     if report_bounds
         check_bounds(simseries, obj)
     end
+
+    extra_static, extra_dynamic = augment_simulation(simseries, obj.model)
+    simseries = _merge_augmentation(simseries, extra_static, extra_dynamic, dynamic_align)
 
     return simseries, errs
 
