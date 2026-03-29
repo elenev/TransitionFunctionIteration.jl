@@ -125,6 +125,6 @@ ngm = NeoclassicalGrowthModel()
 obj, stv = main_setup(ngm)
 main_execute!(obj, maxiter=1000)
 simseries, errs = simulate(obj, stv)
-stats, _ = describe(simseries)
+stats = describe(simseries).moments.uncond
 errstats = calc_error_stats(errs)
 

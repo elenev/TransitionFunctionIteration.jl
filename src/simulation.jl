@@ -264,8 +264,23 @@ function _describe(simvector, stat_functions, cor_functions)
 end
 
 
+"""
+    describe(simseries; filters=(uncond=Returns(true),), ...) -> (; moments, ses)
+
+Compute per-variable summary statistics for the simulation panel.
+
+`filters` is a NamedTuple of callables, each taking one time-period element of the panel
+(a NamedTuple of variable values) and returning a `Bool`. Statistics are computed on the
+subsample of periods where the filter returns `true`. The default `Returns(true)` passes
+every period (unconditional moments).
+
+Returns `(; moments, ses)` where `moments` and `ses` are NamedTuples of `MomentArray`s,
+keyed by filter names. For the default `filters=(uncond=Returns(true),)`, access the
+unconditional moments via `out.moments.uncond`.
+"""
 function describe(simseries::SimulationPanel,
     stat_functions = default_stats;
+    filters = (uncond = Returns(true),),
     additional_stats = (;),
     correlation_vars = collect(endog_states(simseries))
     )
@@ -289,27 +304,43 @@ function describe(simseries::SimulationPanel,
         _corname(s,n) => (v,sim) -> _cor(v, getproperty(sim, s), n)
         for (s,n) in correlation_vars)...)
 
-    N_runs = size(simseries, 1)
-    first_run, runs_iterator = Iterators.peel(eachrow(simseries))
-    run_stats    = _describe(first_run, stat_functions, cor_functions)
-    mean_stats   = copy(run_stats)
-    new_mean     = similar(run_stats)
-    stderr_stats = zeros(eltype(run_stats), size(run_stats)...)
+    var_names  = propertynames(simseries)
+    stat_names = (keys(stat_functions)..., keys(cor_functions)...)
+    filter_names = keys(filters)
+    filter_vals  = Tuple(values(filters))
+    n_filters    = length(filter_names)
+    n_vars       = length(var_names)
+    n_stats      = length(stat_names)
 
-    for (n, simvector) in enumerate(runs_iterator)
-        run_stats  .= _describe(simvector, stat_functions, cor_functions)
-        new_mean   .= mean_stats .+ (run_stats .- mean_stats) ./ (n + 1)
-        stderr_stats .+= (run_stats .- mean_stats) .* (run_stats .- new_mean)
-        mean_stats .= new_mean
+    function _filtered_stats(run, filt)
+        mask = map(filt, run)
+        sub  = run[mask]
+        return isempty(sub) ? fill(NaN, n_vars, n_stats) : _describe(sub, stat_functions, cor_functions)
     end
 
-    N_runs > 1 && (stderr_stats .= sqrt.(stderr_stats ./ (N_runs - 1)) ./ sqrt(N_runs))
+    N_runs = size(simseries, 1)
+    first_run, runs_iterator = Iterators.peel(eachrow(simseries))
 
-    stat_names = (keys(stat_functions)..., keys(cor_functions)...)
+    run_stats_f    = [_filtered_stats(first_run, f) for f in filter_vals]
+    mean_stats_f   = [copy(r) for r in run_stats_f]
+    new_mean_f     = [similar(r) for r in run_stats_f]
+    stderr_stats_f = [zeros(eltype(r), size(r)...) for r in run_stats_f]
 
+    for (n, run) in enumerate(runs_iterator)
+        for j in 1:n_filters
+            run_stats_f[j] .= _filtered_stats(run, filter_vals[j])
+            new_mean_f[j]  .= mean_stats_f[j] .+ (run_stats_f[j] .- mean_stats_f[j]) ./ (n + 1)
+            stderr_stats_f[j] .+= (run_stats_f[j] .- mean_stats_f[j]) .* (run_stats_f[j] .- new_mean_f[j])
+            mean_stats_f[j]   .= new_mean_f[j]
+        end
+    end
 
-    return MomentArray(mean_stats, propertynames(simseries), stat_names),
-              MomentArray(stderr_stats, propertynames(simseries), stat_names)
+    N_runs > 1 && foreach(se -> se .= sqrt.(se ./ (N_runs - 1)) ./ sqrt(N_runs), stderr_stats_f)
+
+    moments = NamedTuple{filter_names}(Tuple(MomentArray(m, var_names, stat_names) for m in mean_stats_f))
+    ses     = NamedTuple{filter_names}(Tuple(MomentArray(m, var_names, stat_names) for m in stderr_stats_f))
+
+    return (; moments, ses)
 end
 
 
