@@ -39,7 +39,10 @@ export MomentArray, row_names, col_names
 # Main interface 
 export solve_and_simulate
 
-include("types.jl")
+include("abstract_types.jl")
+include("named_interpolations.jl")
+include("solution_types.jl")
+include("statistics_types.jl")
 include("exog.jl")
 include("utils.jl")
 include("logging.jl")
