@@ -38,6 +38,8 @@ function main_setup(model::AbstractModel,
 
     # Define bounds
     Pfct_bounds, Tfct_bounds = bounds(stv)
+    Pfct_bounds = NamedTuple{keys(stv.guess)}(Pfct_bounds)
+    Tfct_bounds = NamedTuple{keys(stv.endog)}(Tfct_bounds)
 
     # Create interpolants
     if isnothing(initobj)
