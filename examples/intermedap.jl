@@ -165,31 +165,21 @@ function compute_next_period_values(next, model::IntermediaryAssetPricingModel, 
 
     # Expectations
     ΛF = Λ * Q
-    if mode isa SimulateMode
-        # QG = equity multiplier × trend growth, needed for expected equity return calculation
-        expectations = (
-                        KI = ΛF * KIpayoff,
-                        BI = ΛF * BIpayoff,
-                        BH = Λ  * BHpayoff,
-                        SH = Λ  * SHpayoff,
-                        CE = (G*V)^(1-γ),
-                        QG = Q * G,
-                        )
-    else
-        expectations = (
-                        KI = ΛF * KIpayoff,
-                        BI = ΛF * BIpayoff,
-                        BH = Λ  * BHpayoff,
-                        SH = Λ  * SHpayoff,
-                        CE = (G*V)^(1-γ),
-                        )
-    end
+    expectations = (
+                    KI = ΛF * KIpayoff,
+                    BI = ΛF * BIpayoff,
+                    BH = Λ  * BHpayoff,
+                    SH = Λ  * SHpayoff,
+                    CE = (G*V)^(1-γ),
+                    )
 
-    # C added to continuations only in SimulateMode -- not needed in solve/iterate hot loops
+    continuations = (; RK, G, q, V)
+
+    # Additional next-period quantities for simulation output.
     if mode isa SimulateMode
-        continuations = (; RK, G, q, V, Q, C)
-    else
-        continuations = (; RK, G, q, V)
+        QG = Q * G
+        expectations  = merge(expectations, (; QG))
+        continuations = merge(continuations, (; C))
     end
 
     return NextPeriod(; expectations, continuations)
@@ -261,27 +251,25 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
         if mode isa IterateMode
             return (; fx, trans, vals)
         elseif mode isa SimulateMode
-            # np.expectations.QG = E[Q_next * G_next] under physical measure;
-            # dividing by (Q - d) gives expected gross equity return controlling for trend growth
             r     = 1/p - 1
             E_rS  = np.expectations.QG / (Q - d) - 1
             E_xrS = E_rS - r
             simvars = (; Y, RK, i, I = i*K, N, BH, BI, D, w, d, x,
                 bind = λ > 0, r, E_rS, E_xrS)
-            simvals = merge(vals, simvars)
+            simvars = merge(vals, simvars)
 
-            return (; fx, trans, vals = simvals)
+            return (; fx, trans, simvars)
         end
     end
 
 end
 
-function normalize_fx_errors(::IntermediaryAssetPricingModel, fx_nt, addvars)
-    return (; EE_BH = fx_nt.EE_BH / addvars.p, 
-              EE_KI = fx_nt.EE_KI / addvars.q, 
-              EE_BI = fx_nt.EE_BI / addvars.p, 
-              MC_B  = fx_nt.MC_B  / addvars.BH, 
-              LC    = fx_nt.LC    / addvars.BH)
+function normalize_fx_errors(::IntermediaryAssetPricingModel, fx_nt, simvars)
+    return (; EE_BH = fx_nt.EE_BH / simvars.p, 
+              EE_KI = fx_nt.EE_KI / simvars.q, 
+              EE_BI = fx_nt.EE_BI / simvars.p, 
+              MC_B  = fx_nt.MC_B  / simvars.BH, 
+              LC    = fx_nt.LC    / simvars.BH)
 end
 
 mdl = IntermediaryAssetPricingModel()

@@ -53,7 +53,7 @@ get_next_exst(t, ssidx, exog_run) = t < length(exog_run) ? exog_run[t+1] : ssidx
 # Merge scalar fx errors with transition errors selected for the realized next exog state.
 merge_error(fx_nt, transerr, next_exst) = merge(fx_nt, map(v -> v[next_exst], transerr))
 
-function normalize_fx_errors(::AbstractModel, fx_nt, addvars)
+function normalize_fx_errors(::AbstractModel, fx_nt, simvars)
     return fx_nt
 end
 
