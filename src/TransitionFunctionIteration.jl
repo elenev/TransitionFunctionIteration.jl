@@ -45,6 +45,9 @@ include("abstract_types.jl")
 include("named_interpolations.jl")
 include("solution_types.jl")
 include("statistics_types.jl")
+
+include("stubs.jl")
+
 include("exog.jl")
 include("utils.jl")
 include("logging.jl")
@@ -88,7 +91,7 @@ function solve_and_simulate(model::AbstractModel;
     @info "Simulating to produce ergodic moments..."
     simseries, errs = simulate(obj, stv; simulate_kwargs...)
 
-    stats, _ = describe(simseries).moments.uncond, nothing
+    stats = describe(simseries).moments
     errstats = calc_error_stats(errs)
 
     if !run_irf

@@ -458,20 +458,6 @@ end
 
 ## Moment comparison across economies
 
-"""
-    ReportedMoment(; var, sample=:uncond, stat=:mean)
-
-Specification for a single entry in a `compare_economies` table.
-
-- `var`: variable name (Symbol) in the `MomentArray`
-- `sample`: filter name used in `describe()` (default `:uncond`)
-- `stat`: statistic name (default `:mean`)
-"""
-@kwdef struct ReportedMoment
-    var::Symbol
-    sample::Symbol = :uncond
-    stat::Symbol   = :mean
-end
 
 """
     compare_economies(moment_defs, economies) -> MomentArray

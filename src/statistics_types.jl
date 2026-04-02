@@ -179,3 +179,22 @@ end
 endog_states(::SimulationPanel{T, N, NAMES, A}) where {T, N, NAMES, A} = NAMES
 "Return `(:exst, endog_states(sp)...)` -- all state variable names including the exogenous index."
 states(sp::SimulationPanel) = (:exst, endog_states(sp)...)
+
+
+"""
+    ReportedMoment(; var, sample=:uncond, stat=:mean)
+
+Specification for a single entry in a `compare_economies` table.
+
+- `var`: variable name (Symbol) in the `MomentArray`
+- `sample`: filter name used in `describe()` (default `:uncond`)
+- `stat`: statistic name (default `:mean`)
+"""
+@kwdef struct ReportedMoment
+    var::Symbol
+    sample::Symbol = :uncond
+    stat::Symbol   = :mean
+end
+ReportedMoment(var::Symbol; kwargs...) = ReportedMoment(; var, kwargs...)
+
+getmoment(s::NamedTuple, rm::ReportedMoment) = getmoment(s[rm.sample], rm.var, rm.stat)

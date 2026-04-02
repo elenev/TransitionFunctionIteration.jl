@@ -1,5 +1,19 @@
 # Helpful economic functions used in many models 
 
+
+## Fisher-Burmeister complementarity function
+
+"""
+    fisher_burmeister(a, b) -> Real
+
+Fischer-Burmeister complementarity function: `a + b - sqrt(a² + b²)`.
+Returns 0 iff `a ≥ 0`, `b ≥ 0`, and `a * b = 0` (complementarity conditions).
+Used for inequality constraints in `calc_eqm`.
+"""
+function fisher_burmeister(a::Real, b::Real)
+    return a + b - sqrt(a^2 + b^2)
+end
+
 ## Utility
 @inline _crra(c::Real, γ::Real) = γ == 1.0 ? _logutility(c) : _crra_strict(c, γ)
 @inline _powerutility(c::Real, γ::Real) = γ == 1.0 ? _logutility(c) : _powerutility_strict(c, γ)

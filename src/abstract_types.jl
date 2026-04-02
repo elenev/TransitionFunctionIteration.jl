@@ -25,7 +25,7 @@ abstract type EvaluationMode end
 "Abstract dispatch tag for solution method."
 abstract type SolutionMethod end
 
-# Steady state solver modes
+"Abstract dispatch tag for steady-state solution method."
 abstract type SteadyStateMode end
 
 # 1. Define the custom exception type
@@ -45,25 +45,5 @@ function Base.showerror(io::IO, e::MethodNotImplementedError)
               "` be implemented for `", e.type_missing, "`", e.msg)
 end
 
-"""
-    define_endog_grids(model, stv) -> NamedTuple
 
-Return a `NamedTuple` of endogenous grid vectors (e.g., `(K = range(0.5, 10.0, 50),)`).
-Called by `main_setup` to build the `StateSpaceGrid`. Interface stub -- implement for your
-`AbstractModel` subtype when the default steady-state-proportional grid is not appropriate.
-"""
-function define_endog_grids(mdl::AbstractModel, ::AbstractSteadyState)
-    throw(MethodNotImplementedError(:define_endog_grids, typeof(mdl)))
-end
 
-# This is only necessary if steady state is not implemented. Must return a tuple (policy_guess, endog_guess, exogenv)
-# of NamedTuples keyed by the policy variable names and endogenous state variable names, respectively.
-# Exogenv should contain the 1-state MC in deterministic steady state.
-# It can also be nothing, in which case the default Exogenv(mdl) will be used to construct a constant MC at the ergodic mean.
-function steadystate_guess(mdl::AbstractModel)
-    throw(MethodNotImplementedError(:steadystate_guess, typeof(mdl)))
-end
-
-function steadystate_system(::NamedTuple, mdl::AbstractModel, mode::EvaluationMode)
-   throw(MethodNotImplementedError(:steadystate_system, typeof(mdl)))
-end

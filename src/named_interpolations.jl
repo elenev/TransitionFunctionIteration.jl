@@ -329,6 +329,6 @@ end
         (ssidx(env1) == ssidx(env2))
 end
 
-function StateSpaceGrid(exogenv::AbstractExogenv, endog_grids::NamedTuple)
+function StateSpaceGrid(exogenv::Exogenv, endog_grids::NamedTuple)
     return StateSpaceGrid(; exst = eachindex(exogenv.pts), endog_grids...)
 end

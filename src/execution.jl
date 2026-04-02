@@ -35,20 +35,14 @@ function forecast_next(trans, obj)
     return  StaticStructArray( SVector(forecast_tuple) )
 end
 
-"""
-    fisher_burmeister(a, b) -> Real
 
-Fischer-Burmeister complementarity function: `a + b - sqrt(a² + b²)`.
-Returns 0 iff `a ≥ 0`, `b ≥ 0`, and `a * b = 0` (complementarity conditions).
-Used for inequality constraints in `calc_eqm`.
-"""
-function fisher_burmeister(a::Real, b::Real)
-    return a + b - sqrt(a^2 + b^2)
-end
 
 function normalize_next_period_values(np, mdl::AbstractModel, mode::EvaluationMode)
-    # Placeholder for any normalization logic needed for expectations, continuations, or addvars
-    # For now, we just return them as-is
+    # Placeholder for any normalization logic needed for expectations and continuations
+    # after the initial taking of expecatations. E.g.,
+    # the Epstein-Zin SDF normalizes the value function by its certainty equivalent
+    # In the TFI method, both are constant over the solver's iterations, so it's efficient
+    # to compute them in the compute_expectations call, rather than recompute in calc_eqm
     return np
 end
 
@@ -173,7 +167,7 @@ function (sys::STPFISystem)(u,p::EvaluationMode)
 
     # Construct transition matrix
     u_tfct = SMatrix{ nof(sys.obj.Tfct), exnpt(sys.obj.exogenv)}(view(u,(p_nof+1):length(u)))    
-    u_tfct = to_constrained.(u_tfct, values(sys.obj.Tfct_bounds)) # DOES NOT CHECK THAT ORDER IS THE SAME YET
+    u_tfct = to_constrained.(u_tfct, values(sys.obj.Tfct_bounds)) # order ensured to be the same by main_setup
 
     # Name it
     named_trans = name_values(u_tfct, sys.obj.Tfct)

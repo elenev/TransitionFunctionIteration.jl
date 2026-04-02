@@ -1,23 +1,58 @@
 ### Transformations Into the Real Line
+"""
+    Bounded
+
+Abstract type for variable bounds. Used to specify the transformation of policy function variables 
+into an unconstrained space for the solver. Custom concrete types can be defined. They must
+implement  `to_constrained` and `to_unconstrained` for the transformations.
+"""
 abstract type Bounded end
 Base.broadcastable(b::Bounded) = Ref(b)
 
-
+"""
+    Unbounded <: Bounded
+No bounds; identity transformation.
+"""
 struct Unbounded <: Bounded end
 @inline Base.:(==)(::Unbounded, ::Unbounded) = ( true )
 
+"""
+    LowerBounded{L<:Real} <: Bounded
+Bounded below by `lower`. Transformed to unconstrained space by `to_constrained(x, b) = exp(x) + b.lower`.
+"""
 struct LowerBounded{L<:Real} <: Bounded
     lower::L
 end
+
+"""
+    PositiveBounded() := LowerBounded(0.0)
+
+Bounded below by `0`. Transformed to unconstrained space by `to_constrained(x, b) = exp(x)`.
+"""
 PositiveBounded() = LowerBounded(0.0)
+
 @inline Base.:(==)(b1::LowerBounded, b2::LowerBounded) = (b1.lower == b2.lower)
 
+"""
+    UpperBounded{U<:Real} <: Bounded
+Bounded above by `upper`. Transformed to unconstrained space by `to_constrained(x, b) = -exp(x) + b.upper`.
+"""
 struct UpperBounded{U<:Real} <: Bounded
     upper::U
 end
+"""
+    NegativeBounded() := UpperBounded(0.0)
+
+Bounded above by `0`. Transformed to unconstrained space by `to_constrained(x, b) = -exp(x)`.
+"""
 NegativeBounded() = UpperBounded(0.0)
 @inline Base.:(==)(b1::UpperBounded, b2::UpperBounded) = (b1.upper == b2.upper)
 
+"""
+    IntervalBounded{L<:Real = 0.0, U<:Real = 1.0} <: Bounded
+
+Bounded between `lower` and `upper`. Transformed to unconstrained space by `to_constrained(x, b) = (b.upper - b.lower) / (1 + exp(-x)) + b.lower`.
+"""
 struct IntervalBounded{L<:Real,U<:Real} <: Bounded
     lower::L
     upper::U
@@ -41,8 +76,8 @@ to_unconstrained(y, b::IntervalBounded) = log((y - b.lower) / (b.upper - y))
 
 Container for next-period information returned by `compute_next_period_values`.
 
-- `expectations`: probability-weighted averages (e.g., `E[β u′(C′)]`); scalar per exogenous state
-- `continuations`: per-exogenous-state raw values (e.g., capital payoff each state); stacked by `compute_expectations`
+- `expectations`: probability-weighted averages (e.g., `E[β u′(C′)]`); scalar for a given grid point
+- `continuations`: per-exogenous-state raw values (e.g., capital payoff each state); stacked by `compute_expectations` into an exnpt-length vector
 - `prnext`: transition probability vector (default `[1.0]` for a single state, overridden by `Exogenv`)
 """
 @kwdef struct NextPeriod{E,C,V<:AbstractVector}
@@ -115,11 +150,28 @@ end
 
 # Steady state solver modes
 
-"Dispatch tag: steady state is computed by an analytic formula in `steadystate(model, ::AnalyticalSteadyStateMode)`."
+"""
+    AnalyticalSteadyStateMode <: SteadyStateMode
+
+Dispatch tag: steady state is computed by an analytic formula in `steadystate(model, ::AnalyticalSteadyStateMode)`.
+To use this, implement a method for `steadystate` dispatching on your `AbstractModel` subtype and `AnalyticalSteadyStateMode()`.
+"""
 struct AnalyticalSteadyStateMode <: SteadyStateMode end
 
 _exogenv_from_point(pt) = Exogenv(pts = StaticStructArray(SVector(pt)), mtrans = [1.;;], ssidx=1)
-"Dispatch tag: steady state is found by iterating policy and transition functions from a starting guess."
+
+
+"""
+    FixedPointSteadyStateMode{P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv} <: SteadyStateMode
+
+Dispatch tag: steady state is found by iterating on the dynamic model equations and (constant) law of motion 
+for endogenous variables with a starting guess for policy and transition functions."
+
+- `policies`: `NamedTuple` of policy function values at the steady state (e.g., `(C = 0.8,)`)
+- `transitions`: `NamedTuple` of transition function values at the steady state (e.g., `(K = 3.2,)`)
+- `exogenv`: `Exogenv` representing the exogenous environment at the steady state. Can also be a 
+  `NamedTuple` of exogenous variable values (e.g., `(A = 1.0,)`), which will be converted to a degenerate `Exogenv` with a single point.
+"""
 struct FixedPointSteadyStateMode{P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv} <: SteadyStateMode
     policies::P
     transitions::T
@@ -140,7 +192,12 @@ function FixedPointSteadyStateMode(policies::NamedTuple, transitions::NamedTuple
     return FixedPointSteadyStateMode(policies, transitions, _exogenv_from_point(exogenv))
 end
 
-"Dispatch tag: steady state is found by solving a nonlinear system (e.g., system of equilibrium conditions)."
+"""
+    SystemSteadyStateMode{S<:NamedTuple, B<:NamedTuple} <: SteadyStateMode
+
+Dispatch tag: steady state is found by solving a steadystate specific nonlinear system (e.g., system of equilibrium conditions).
+Must implement `steadystate_system(guess, model, mode)` which returns the system residuals given a guess for the steady state values.
+"""
 struct SystemSteadyStateMode{S<:NamedTuple, B<:NamedTuple} <: SteadyStateMode
     ssguess::S
     bounds::B
@@ -207,47 +264,3 @@ struct TFIMethod <: SolutionMethod end
 struct STPFIMethod <: SolutionMethod end
 
 
-# Interface stubs requiring NextPeriod, Exogenv, or SteadyStateMode types
-
-"""
-    calc_eqm(state, policy, mdl, np, mode)
-
-Compute equilibrium conditions at `state` given `policy`. Interface stub --
-model packages must add methods dispatching on their `AbstractModel` subtype.
-
-Expected return: a NamedTuple with fields `fx` (residuals), `trans` (next-period
-transient state), and `vals` (value outputs and extra simulation variables in SimulateMode).
-"""
-function calc_eqm(state, policy, mdl::AbstractModel, np::NextPeriod, mode::EvaluationMode)
-    throw(MethodNotImplementedError(:calc_eqm, typeof(mdl)))
-end
-
-"""
-    compute_next_period_values(next, model, mode) -> NextPeriod
-
-Compute next-period auxiliary quantities given next-period state `next`. Interface stub --
-model packages must add methods dispatching on their `AbstractModel` subtype.
-
-Return a `NextPeriod(; expectations, continuations)` where:
-- `expectations`: probability-weighted scalars (averaged by `compute_expectations`)
-- `continuations`: per-state raw values (stacked into an `SVector` across exogenous states)
-"""
-function compute_next_period_values(next, mdl::AbstractModel, mode::EvaluationMode)::NextPeriod
-    throw(MethodNotImplementedError(:compute_next_period_values, typeof(mdl)))
-end
-
-function Exogenv(mdl::AbstractModel)
-    throw(MethodNotImplementedError(:Exogenv, typeof(mdl)))
-end
-
-"""
-    steadystate(model, mode) -> (SteadyState, Bool)
-
-Compute the steady state for `model` using the given `mode` (e.g., `AnalyticalSteadyStateMode()`).
-Interface stub -- model packages must add methods dispatching on their subtype.
-
-Returns `(stv, converged)` where `stv::SteadyState` and `converged::Bool` indicates success.
-"""
-function steadystate(mdl::AbstractModel, ::AnalyticalSteadyStateMode)
-    throw(MethodNotImplementedError(:steadystate, typeof(mdl), " for AnalyticalSteadyStateMode"))
-end
