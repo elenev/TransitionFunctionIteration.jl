@@ -73,6 +73,10 @@ empty NamedTuples (no augmentation).
 augment_simulation(::SimulationPanel, ::AbstractModel) = ((;), (;))
 
 function _merge_augmentation(simseries::SimulationPanel{T,N,NAMES}, extra_static, extra_dynamic, dynamic_align) where {T,N,NAMES}
+
+    extra_static =  (extra_static  isa StructArray) ? components(extra_static)  : extra_static
+    extra_dynamic = (extra_dynamic isa StructArray) ? components(extra_dynamic) : extra_dynamic
+
     # Merge static extra variables (same length as panel)
     if !isempty(extra_static)
         merged = StructArray(merge(components(simseries.data), extra_static))
@@ -127,7 +131,7 @@ function calc_result(state, obj)
     fx_nt = _fx_to_nt(out.fx)
     transerr = map(-, out_trans, trans)   # NamedTuple of SVectors, one per exog state
 
-    return StructArray(trans), merge(state, exog, out.vals), fx_nt, transerr
+    return StructArray(trans), merge(state, exog, out.simvars), fx_nt, transerr
 end
 
 """
@@ -153,7 +157,7 @@ function simulate(obj::ModelSolution, stv=nothing;
                                 shocks=sample_shocks(sz, seed, burn),
                                 exog_states = simulate_markov_chain(obj.exogenv, exog_start, shocks)[1],
                                 report_bounds=true,
-                                dynamic_align=:nan,
+                                dynamic_align=:drop,
                     )
     start = make_point(exog_start, endog_start)
 
@@ -304,8 +308,8 @@ function describe(simseries::SimulationPanel,
         _corname(s,n) => (v,sim) -> _cor(v, getproperty(sim, s), n)
         for (s,n) in correlation_vars)...)
 
-    var_names  = propertynames(simseries)
-    stat_names = (keys(stat_functions)..., keys(cor_functions)...)
+    var_names    = propertynames(simseries)
+    stat_names   = (keys(stat_functions)..., keys(cor_functions)...)
     filter_names = keys(filters)
     filter_vals  = Tuple(values(filters))
     n_filters    = length(filter_names)
@@ -328,19 +332,19 @@ function describe(simseries::SimulationPanel,
 
     for (n, run) in enumerate(runs_iterator)
         for j in 1:n_filters
-            run_stats_f[j] .= _filtered_stats(run, filter_vals[j])
-            new_mean_f[j]  .= mean_stats_f[j] .+ (run_stats_f[j] .- mean_stats_f[j]) ./ (n + 1)
+            run_stats_f[j]     .= _filtered_stats(run, filter_vals[j])
+            new_mean_f[j]      .= mean_stats_f[j] .+ (run_stats_f[j] .- mean_stats_f[j]) ./ (n + 1)
             stderr_stats_f[j] .+= (run_stats_f[j] .- mean_stats_f[j]) .* (run_stats_f[j] .- new_mean_f[j])
-            mean_stats_f[j]   .= new_mean_f[j]
+            mean_stats_f[j]    .= new_mean_f[j]
         end
     end
 
     N_runs > 1 && foreach(se -> se .= sqrt.(se ./ (N_runs - 1)) ./ sqrt(N_runs), stderr_stats_f)
 
     moments = NamedTuple{filter_names}(Tuple(MomentArray(m, var_names, stat_names) for m in mean_stats_f))
-    ses     = NamedTuple{filter_names}(Tuple(MomentArray(m, var_names, stat_names) for m in stderr_stats_f))
+    stderrs = NamedTuple{filter_names}(Tuple(MomentArray(m, var_names, stat_names) for m in stderr_stats_f))
 
-    return (; moments, ses)
+    return (; moments, stderrs)
 end
 
 
@@ -471,10 +475,12 @@ Returns a `MomentArray` with moment names as rows and economy names as columns.
 Each cell is `economies[econ].moments[moment.sample][moment.var, moment.stat]`.
 """
 function compare_economies(moment_defs::NamedTuple, economies::NamedTuple)
+    # Promote any non-ReportedMoment entries in moment_defs to ReportedMoment with default specs
+    moment_defs  = map(v -> v isa ReportedMoment ? v : ReportedMoment(v), moment_defs)
     moment_names = keys(moment_defs)
     econ_names   = keys(economies)
 
-    data = [getmoment(economies[econ].moments[moment.sample], moment.var, moment.stat)
+    data = [getmoment(economies[econ], moment)
             for moment in values(moment_defs), econ in econ_names]
 
     return MomentArray(data, moment_names, econ_names)

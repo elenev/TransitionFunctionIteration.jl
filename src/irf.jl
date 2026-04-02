@@ -114,7 +114,8 @@ function simulate_irf_shock(obj::ModelSolution,
 
     # Simulate model
     sim, _ = simulate(obj, burn=0, exog_start=start_exog, 
-                endog_start=start_endog, exog_states=exog,report_bounds=false)
+                endog_start=start_endog, exog_states=exog,
+                report_bounds=false, dynamic_align=:nan)
 
     # Summarize
     _f(fcn, var) = map(fcn, eachcol(var))
