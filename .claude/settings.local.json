@@ -19,7 +19,13 @@
       "Bash(for name:*)",
       "Bash(do echo:*)",
       "Bash(done)",
-      "Read",  "Glob", "Grep", "LS"
+      "Read",
+      "Glob",
+      "Grep",
+      "LS",
+      "Bash(julia --project=. -e \"using Pkg; Pkg.test\\(test_args=[\\\\\"test_logging\\\\\"]\\)\")",
+      "Bash(julia --project=. -e ':*)",
+      "WebSearch"
     ]
   }
 }

@@ -1,153 +1,213 @@
 using Logging
 using Printf
 
-# Custom log levels for solver progress
 """Log level: solver converged or iteration limit reached."""
-const COMPLETE = LogLevel(200)
-
+const COMPLETE        = LogLevel(200)
 """Log level: per-iteration convergence summary."""
-const ITERATION = LogLevel(100)
-
+const ITERATION       = LogLevel(100)
 """Log level: some grid points did not converge this iteration."""
 const ITERATIONFAILED = LogLevel(50)
-
 """Log level: a single grid point failed to converge."""
-const FAILEDPOINT = LogLevel(-100)
+const FAILEDPOINT     = LogLevel(-100)
 
-# Mappings
-const DEFAULT_PREFIX_MAP = Dict(
-    COMPLETE         => "✅ COMPLETE",
-    ITERATION        => "▶️  ITERATION",
-    ITERATIONFAILED  => "⚠️  FAILED POINTS",
-    FAILEDPOINT      => "❌ FAILED POINT"
-)
-
-const DEFAULT_COLOR_MAP = Dict(
-    ITERATION        => :cyan,
-    FAILEDPOINT      => :red,
-    ITERATIONFAILED  => :yellow,
-    COMPLETE         => :green,
-)
-
-# --- CSV column schema (fixed-width rows; missing fields left blank) ---
 const CSV_COLUMNS = (:level, :iter, :max_vdist, :max_tdist,
                      :worst_vvar, :worst_tvar, :worst_vpoint, :worst_tpoint, :worst_texst,
                      :n_failed, :n_total, :pass, :n_solved, :n_unsolved,
                      :fp_state, :fp_retcode, :msg)
-const CSV_HEADER = join(CSV_COLUMNS, ",")
+const CSV_HEADER  = join(CSV_COLUMNS, ",")
+
+
+# -- Appearance -------
+_level_color(level) =
+    level == ITERATION       ? :cyan   :
+    level == COMPLETE        ? :green  :
+    level == ITERATIONFAILED ? :yellow :
+    level == FAILEDPOINT     ? :red    : :normal
+
+_level_prefix(level) =
+    level == COMPLETE        ? "✅ COMPLETE"      :
+    level == ITERATION       ? "🔄 ITERATION"     :
+    level == ITERATIONFAILED ? "⚠️ FAILED POINTS" :
+    level == FAILEDPOINT     ? "❌ FAILED POINT"  : "" #"[$(Int(level))]"
+
+_level_name(level) =
+    level == COMPLETE        ? "COMPLETE"        :
+    level == ITERATION       ? "ITERATION"       :
+    level == ITERATIONFAILED ? "ITERATIONFAILED" :
+    level == FAILEDPOINT     ? "FAILEDPOINT"     : string(Int(level))
+
+
+# ── Types ─────────────────────────────────────────────────────────────────────
 
 """
-    ExecutionLogger(min_level; [io=stderr])
-    ExecutionLogger(filename::AbstractString; [min_level=ITERATION])
+    ExecutionLogger
 
-Colored, prefixed logger for solver progress. In the first form, logs to `io`
-(default `stderr`) with ANSI color. In the second form, opens `filename` and
-writes comma-separated rows for machine parsing (no color).
-
-Use inside `Logging.with_logger(ExecutionLogger(...)) do ... end` or pass via
-the `logging` keyword of `main_execute!`.
-
-Note: the current implementation logs to `stderr` (not `stdout`) for the colored
-mode, matching Julia's Logging convention.
+Abstract supertype for TFI solver loggers. Concrete subtypes:
+[`TerminalLogger`](@ref) (colored stderr) and [`CSVLogger`](@ref) (CSV file).
 """
-struct ExecutionLogger <: AbstractLogger
-    min_level::LogLevel
-    io::IO
-    csv_mode::Bool
-    csv_header_written::Ref{Bool}
-    prefix_map::Dict{LogLevel, String}
-    color_map::Dict{LogLevel, Symbol}
-end
-
-function ExecutionLogger(min_level::LogLevel = ITERATION;
-        io::IO = stderr,
-        prefix_map = DEFAULT_PREFIX_MAP,
-        color_map  = DEFAULT_COLOR_MAP)
-    ExecutionLogger(min_level, io, false, Ref(false), prefix_map, color_map)
-end
-
-function ExecutionLogger(filename::AbstractString;
-        min_level::LogLevel = ITERATION,
-        prefix_map = DEFAULT_PREFIX_MAP,
-        color_map  = DEFAULT_COLOR_MAP)
-    io = open(filename, "w")
-    ExecutionLogger(min_level, io, true, Ref(false), prefix_map, color_map)
-end
-
-Base.close(logger::ExecutionLogger) = logger.csv_mode ? close(logger.io) : nothing
+abstract type ExecutionLogger <: AbstractLogger end
 
 Logging.min_enabled_level(logger::ExecutionLogger) = logger.min_level
+Logging.shouldlog(logger::ExecutionLogger, level, ::Any, ::Any, ::Any) = level >= logger.min_level
 
-function Logging.shouldlog(logger::ExecutionLogger, level, _module, group, id)
-    return level >= logger.min_level
+"""
+    TerminalLogger(min_level; [io=stderr, varname_width=0, gridpoint_widths=(;)])
+    TerminalLogger(min_level, obj::AbstractModelSolution; [io=stderr])
+
+Colored iteration-progress logger. The second form infers all formatting from the model solution.
+"""
+struct TerminalLogger{S <: IO, GW <: NamedTuple} <: ExecutionLogger
+    min_level        :: LogLevel
+    io               :: S
+    varname_width    :: Int
+    gridpoint_widths :: GW
 end
 
-# Format a single value: floats get 4 significant figures, others are shown as-is
+TerminalLogger(min_level::LogLevel = ITERATION;
+        io = stderr, varname_width::Int = 0, gridpoint_widths::NamedTuple = (;)) =
+    TerminalLogger(min_level, io, varname_width, gridpoint_widths)
+
+function TerminalLogger(min_level::LogLevel, obj::AbstractModelSolution; io = stderr)
+    w_v = maximum(v -> length(":$v"),       varnames(obj.Vfct); init=1)
+    w_t = maximum(v -> length("(:$v, 99)"), varnames(obj.Tfct); init=1)
+    TerminalLogger(min_level, io, max(w_v, w_t), _gridpoint_widths(obj.ssg))
+end
+
+Base.close(::TerminalLogger) = nothing
+
+"""
+    CSVLogger(filename; [min_level=ITERATION])
+
+Logger that writes structured CSV rows to `filename`. Header written on construction.
+"""
+struct CSVLogger{S <: IO} <: ExecutionLogger
+    min_level :: LogLevel
+    io        :: S
+end
+
+function CSVLogger(filename::AbstractString; min_level::LogLevel = ITERATION)
+    io = open(filename, "w")
+    println(io, CSV_HEADER)
+    CSVLogger(min_level, io)
+end
+
+Base.close(logger::CSVLogger) = close(logger.io)
+
+# ── Grid-width helpers ────────────────────────────────────────────────────────
+
+_fmt_width(grid::AbstractArray{<:Integer}) = isempty(grid) ? 1 : maximum(ndigits, grid)
+function _fmt_width(grid::AbstractArray{<:Real})
+    isempty(grid) && return 5
+    int_digits = ndigits(floor(Int, max(1.0, maximum(abs, grid))))
+    int_digits + (any(<(0), grid) ? 1 : 0) + 4
+end
+
+_gridpoint_widths(ssg) = map(maximum ∘ _fmt_width, unigrids(ssg))
+
+# ── Formatters ────────────────────────────────────────────────────────────────
+
+# Distances
 _fmt_val(v::AbstractFloat) = @sprintf("%.4g", v)
-_fmt_val(v) = string(v)
+_fmt_val(v)                = string(v)
 
-function Logging.handle_message(logger::ExecutionLogger, level, message,
-        _module, group, id, file, line; kwargs...)
+# Variables
+_fmt_invar(v::Symbol, ::Nothing)     = ":$v"
+_fmt_invar(v::Symbol, exst::Integer) = "(:$v, $exst)"
 
-    level < logger.min_level && return nothing
-    kw = pairs(kwargs)
+# Grid point elements
+_fmt_gridval(v::Integer,       w::Int) = w > 0 ? lpad(string(v), w) : string(v)
+_fmt_gridval(v::AbstractFloat, w::Int) = lpad(@sprintf("%.3f", v), max(w, 5))
 
-    if logger.csv_mode
-        # --- CSV mode ---
-        if !logger.csv_header_written[]
-            println(logger.io, CSV_HEADER)
-            logger.csv_header_written[] = true
-        end
-        # Build a dict for fast lookup of provided kwargs
-        kw_dict = Dict(string(k) => _fmt_val(v) for (k, v) in kw)
-        level_str = get(Dict(
-            ITERATION       => "ITERATION",
-            ITERATIONFAILED => "ITERATIONFAILED",
-            FAILEDPOINT     => "FAILEDPOINT",
-            COMPLETE        => "COMPLETE",
-        ), level, string(level))
-        kw_dict["level"] = level_str
-        if !isempty(message)
-            kw_dict["msg"] = message
-        end
-        row = join((get(kw_dict, string(col), "") for col in CSV_COLUMNS), ",")
-        println(logger.io, row)
-        flush(logger.io)
+# Grid point
+_fmt_gridpoint(point::NamedTuple, widths::NamedTuple) = 
+    replace(string(map(_fmt_gridval, point, widths)), '"' => "")
+
+# ── Renderers ─────────────────────────────────────────────────────────────────
+
+function _render_csv!(logger::CSVLogger, level, message, kw)
+    d = Dict{Symbol,String}(k => _fmt_val(v) for (k,v) in kw)
+    d[:level] = _level_name(level)
+    haskey(d, :msg) || isempty(message) || (d[:msg] = message)
+    println(logger.io, join((get(d, col, "") for col in CSV_COLUMNS), ","))
+    flush(logger.io)
+end
+
+function _prepare_message(logger::TerminalLogger, kw, ::Val{ITERATION})
+    haskey(kw, :max_vdist) && haskey(kw, :max_tdist) || return
+    iter         = get(kw, :iter, 0)
+    worst_vvar   = get(kw, :worst_vvar,   :?)
+    worst_tvar   = get(kw, :worst_tvar,   :?)
+    worst_vpoint = get(kw, :worst_vpoint, (;))
+    worst_tpoint = get(kw, :worst_tpoint, (;))
+    worst_texst  = get(kw, :worst_texst,  nothing)
+    W  = logger.varname_width
+    gw = logger.gridpoint_widths
+    vname = rpad(_fmt_invar(worst_vvar, nothing),     W)
+    tname = rpad(_fmt_invar(worst_tvar, worst_texst), W)
+    
+    vmsg = @sprintf("%4d -- Max V Dist = %7.3f in %s at %s",
+            iter, kw[:max_vdist], vname, _fmt_gridpoint(worst_vpoint, gw))
+    tmsg = @sprintf("%4d -- Max T Dist = %7.3f in %s at %s",
+            iter, kw[:max_tdist], tname, _fmt_gridpoint(worst_tpoint, gw))
+    return (vmsg, tmsg)
+end
+
+function _prepare_message(::TerminalLogger, kw, ::Val{COMPLETE})
+    msg = get(kw, :msg, "")
+    return (msg,)
+end
+
+function _prepare_message(::TerminalLogger, kw, ::Val{ITERATIONFAILED})
+    pass = get(kw, :pass, 0)
+    n_failed = get(kw, :n_failed, 0)
+    n_total = get(kw, :n_total, 0)
+    n_solved = get(kw, :n_solved, 0)
+    n_unsolved = get(kw, :n_unsolved, 0)
+    revisiting_on = get(kw, :revisiting_on, false)
+
+    if pass == 1
+        extramsg = revisiting_on ? " Revisiting..." : ""
+        msg = @sprintf("Solver failed at %d points out of %d.%s",n_failed, n_total, extramsg)
     else
-        # --- Colored terminal mode (stderr) ---
-        prefix = get(logger.prefix_map, level, "[$(string(level))]")
-        color  = get(logger.color_map,  level, :normal)
-
-        if isempty(kw)
-            # Fall back to raw message string
-            printstyled(logger.io, "$prefix: $message\n"; color)
-        else
-            # Format kwargs as "key=value" pairs, floats rounded to 4 sig figs
-            parts = ["$k=$(_fmt_val(v))" for (k, v) in kw]
-            printstyled(logger.io, "$prefix: $(join(parts, "  "))\n"; color)
-        end
+        msg = @sprintf("Pass %2d: Revisiting solved %d points. %d remain unsolved.",
+            pass, n_solved, n_unsolved)
     end
+    return (msg,)
+end
+
+function _prepare_message(logger::TerminalLogger, kw, ::Val{FAILEDPOINT})
+    fp_state = get(kw, :fp_state, "")
+    fp_retcode = get(kw, :fp_retcode, "")
+
+    fp_state = _fmt_gridpoint(fp_state, logger.gridpoint_widths)
+    msg = "Solver did not converge: $(fp_retcode) at state $fp_state"
+    return (msg,)
+end
+
+function _prepare_message(::TerminalLogger, kw, ::Any)
+    text = isempty(kw) ? message : join(("$k=$(_fmt_val(v))" for (k,v) in kw), "  ")
+    return (text,)
+end
+
+# ── handle_message ────────────────────────────────────────────────────────────
+
+function Logging.handle_message(logger::TerminalLogger, level, message,
+        _module, group, id, file, line; 
+        msg=message, kwargs...)
+    level < logger.min_level && return nothing
+    kw = (; msg, kwargs...)
+    color = _level_color(level)
+
+    msg = _prepare_message(logger, kw, Val(level))
+    prefix = _level_prefix(level)
+    foreach(t -> printstyled(logger.io, "$prefix: $t\n"; color), msg)
+
     return nothing
 end
 
-# Custom macros for each log level.
-# Accept Julia @logmsg-style keyword arguments; message is optional.
-"Log structured data at the `COMPLETE` level."
-macro complete(exs...)
-    :($Logging.@logmsg($COMPLETE, "", $(exs...)))
-end
-
-"Log structured data at the `ITERATION` level."
-macro iteration(exs...)
-    :($Logging.@logmsg($ITERATION, "", $(exs...)))
-end
-
-"Log structured data at the `ITERATIONFAILED` level."
-macro iterationfailed(exs...)
-    :($Logging.@logmsg($ITERATIONFAILED, "", $(exs...)))
-end
-
-"Log structured data at the `FAILEDPOINT` level."
-macro failedpoint(exs...)
-    :($Logging.@logmsg($FAILEDPOINT, "", $(exs...)))
+function Logging.handle_message(logger::CSVLogger, level, message,
+        _module, group, id, file, line; kwargs...)
+    level < logger.min_level && return nothing
+    _render_csv!(logger, level, message, pairs(kwargs))
+    return nothing
 end

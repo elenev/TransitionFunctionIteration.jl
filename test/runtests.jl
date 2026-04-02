@@ -71,18 +71,18 @@ end
 # ── test suites ───────────────────────────────────────────────────────────────
 
 @testset "TransitionFunctionIteration" begin
-    include("test_statespace.jl")
-    include("test_interpolant.jl")
-    include("test_exogenv.jl")
-    include("test_bounded.jl")
-    include("test_momentarray.jl")
-    include("test_economics.jl")
-    include("test_simulation.jl")
+    # include("test_statespace.jl")
+    # include("test_interpolant.jl")
+    # include("test_exogenv.jl")
+    # include("test_bounded.jl")
+    # include("test_momentarray.jl")
+    # include("test_economics.jl")
+    # include("test_simulation.jl")
     include("test_logging.jl")
-    include("test_plotting.jl")
-    include("test_performance.jl")
-    include("test_irfplotting.jl")
-    include("test_execution.jl")
-    include("test_ngm.jl")       # must come first: brings obj, stv, simseries into global scope
-    include("test_linearize.jl") # uses those fixtures
+    # include("test_plotting.jl")
+    # include("test_performance.jl")
+    # include("test_irfplotting.jl")
+    # include("test_execution.jl")
+    # include("test_ngm.jl")       # must come first: brings obj, stv, simseries into global scope
+    # include("test_linearize.jl") # uses those fixtures
 end

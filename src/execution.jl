@@ -237,7 +237,7 @@ function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
     if SciMLBase.successful_retcode(sol)
         solution = sol.u
     else
-        @failedpoint fp_state=string(state) fp_retcode=string(sol.retcode)
+        @logmsg FAILEDPOINT "" fp_state=string(state) fp_retcode=string(sol.retcode)
         solution = x0 # Revert to original guess if not solved
     end
 
@@ -325,9 +325,9 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, iter, use_threa
         total_still_unsolved = sum(!s for s in success)
         solved_this_pass = total_unsolved - total_still_unsolved
         if pass==1 && total_still_unsolved>0
-            @iterationfailed iter=iter pass=pass n_failed=total_still_unsolved n_total=length(success)
+            @logmsg ITERATIONFAILED "" pass=pass n_failed=total_still_unsolved n_total=length(success) revisiting_on=npasses>1
         elseif pass>1
-            @iterationfailed iter=iter pass=pass n_solved=solved_this_pass n_unsolved=total_still_unsolved
+            @logmsg ITERATIONFAILED "" pass=pass n_solved=solved_this_pass n_unsolved=total_still_unsolved
         end
 
         if all(success)
@@ -382,6 +382,7 @@ function summarize_distances(distances, Fct)
     return dist, worst_var, worst_point, exst_idx
 end
 
+
 struct IterationDiagnostics{B,V,T}
     success::B    
     value_distances::V 
@@ -400,6 +401,10 @@ function IterationDiagnostics(obj)
 
     return IterationDiagnostics(success, vdistances, tdistances)
 end
+
+# Construct a logger from either a LogLevel (builds TerminalLogger) or a pre-built ExecutionLogger.
+_make_logger(level::LogLevel,         obj::AbstractModelSolution) = TerminalLogger(level, obj)
+_make_logger(logger::ExecutionLogger, ::AbstractModelSolution)    = logger
 
 """
     main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, logging=ITERATIONFAILED,
@@ -440,7 +445,7 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
         (Threads.nthreads() > 1) && (n_points * n_eqs > THREAD_THRESHOLD) :
         multithreaded::Bool
 
-    with_logger(ExecutionLogger(logging)) do
+    with_logger(_make_logger(logging, obj)) do
         while true
 
             perform_iteration!(obj, diag, damp, npasses, solmethod, iter, use_threads)
@@ -448,7 +453,7 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
             distV, worst_varV, worst_pointV = summarize_distances(diag.value_distances, obj.Vfct)
             distT, worst_varT, worst_pointT, worst_exst = summarize_distances(diag.transition_distances, obj.Tfct)
 
-            @iteration iter=iter max_vdist=distV max_tdist=distT worst_vvar=worst_varV worst_tvar=worst_varT worst_vpoint=string(worst_pointV) worst_tpoint=string(worst_pointT) worst_texst=string(worst_exst)
+            @logmsg ITERATION "" iter=iter max_vdist=distV max_tdist=distT worst_vvar=worst_varV worst_tvar=worst_varT worst_vpoint=worst_pointV worst_tpoint=worst_pointT worst_texst=worst_exst
 
             # Capture per-iteration snapshot if requested
             if !isnothing(track_history)
@@ -466,11 +471,11 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
             exec_update = (; iter, distV, worst_varV, worst_pointV, distT, worst_varT, worst_pointT, worst_exst)
 
             if iter >= maxiter
-                @complete iter=iter max_vdist=distV max_tdist=distT worst_vvar=worst_varV worst_tvar=worst_varT worst_vpoint=string(worst_pointV) worst_tpoint=string(worst_pointT) worst_texst=string(worst_exst) msg="Maximum iterations reached without convergence."
+                @logmsg COMPLETE "Maximum iterations reached without convergence." 
                 exec = merge(exec, exec_update)
                 break
             elseif distV < tol && distT < tol
-                @complete iter=iter max_vdist=distV max_tdist=distT worst_vvar=worst_varV worst_tvar=worst_varT worst_vpoint=string(worst_pointV) worst_tpoint=string(worst_pointT) worst_texst=string(worst_exst) msg="Converged."
+                @logmsg COMPLETE "Converged."
                 exec = merge(exec, exec_update)
                 break
             end
