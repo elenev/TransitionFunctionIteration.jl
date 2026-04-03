@@ -1,8 +1,12 @@
 // Document settings
-#set page(paper: "us-letter", margin: 1.25in)
+#set page(paper: "us-letter", margin: 1.25in, numbering: "1")
 // #set text(font: "Linux Libertine", size: 11pt)
 #set par(justify: true)
 // #set heading(numbering: "1.")
+
+#import "@preview/equate:0.2.1": equate
+#show: equate.with(sub-numbering: false, number-mode: "label")
+#set math.equation(numbering: "(1)")
 
 // Title Block
 #align(center)[
@@ -161,7 +165,7 @@ subject to:
 $
   hat(c)_t + s_t hat(Q)_t + p_t hat(hat(b))_t^h &= hat(a)_t + hat(w)_t \
   hat(a)_t  &= (hat(Q)_t + hat(D)_t) s_(t-1) + exp(-g_t) hat(hat(b))_(t-1)^h
-$
+$ <h-bc>
 where $cal(hat(Z))_t^H = (hat(K)_(t-1), hat(N)_t, hat(g)_t)$.
 
 === Intermediary
@@ -202,7 +206,7 @@ The first-order conditions for the household's problem are:
 $
   u'(hat(c)_t) p_t &= beta E_t [ exp((1-gamma) g_(t+1)) u'(hat(c)_(t+1)) exp(-g_(t+1))  ] \
   u'(hat(c)_t) hat(Q)_t &= beta E_t [ exp((1-gamma) g_(t+1)) u'(hat(c)_(t+1)) (hat(Q)_(t+1) + hat(D)_(t+1)) ] \
-$
+$ <h-euler>
 
 
 The household optimality conditions define a stationarized stochastic discount factor 
@@ -250,9 +254,8 @@ $
 subject to:
 
 $
-  q_t k_t  &= 1 - eta + p_t b_t + x_t - xi / 2 x_t^2 \
-  n_t &= exp(-g_t) [k_(t-1) (r_t^k + (1-delta)) - b_(t-1)] \
-  p_t b_t &<= theta q_t k_t
+  q_t k_t &= 1 - eta + p_t b_t + x_t - xi / 2 x_t^2 #<i-bc> \
+  p_t b_t &<= theta q_t k_t #<i-lev>
 $
 
 Assign $hat(mu)_t$ as the multiplier on the budget constraint and $hat(lambda)_t$ as the multiplier on the leverage constraint. The first-order conditions for the intermediary's problem are:
@@ -260,8 +263,8 @@ Assign $hat(mu)_t$ as the multiplier on the budget constraint and $hat(lambda)_t
 $
   hat(mu)_t q_t &= hat(lambda)_t theta + E_t [ hat(M)_(t,t+1) v^F_(t+1) exp(-g_(t+1)) (r_(t+1)^k + (1-delta)) ] \
   hat(mu)_t p_t &= hat(lambda)_t + E_t [ hat(M)_(t,t+1) v^F_(t+1) exp(-g_(t+1)) ] \
-  1 &= hat(mu)_t (1 - xi x_t) 
-$
+  1 &= hat(mu)_t (1 - xi x_t)
+$ <i-foc>
 
 Finally, $v^F (cal(Z)_t^F)$ is given by the envelope condition of the problem in levels:
 
@@ -525,7 +528,7 @@ The Euler Equations for bonds and stocks are then given by plugging in the appro
 $
   p_t &= E_t [ hat(M)_(t,t+1) exp(-g_(t+1)) ] \
   hat(Q)_t &= E_t [ hat(M)_(t,t+1) (hat(Q)_(t+1) + hat(D)_(t+1)) ]
-$
+$ <h-ez-euler>
 
 === Steady State SDF
 
@@ -574,5 +577,5 @@ Plugging in the certainty equivalent and re-arranging,
 $
   hat(V)^H &= hat(c)^(1-beta) (exp(g) hat(V)^H)^(beta) \
 
-  (hat(V)^H) &=  exp(beta/(1-beta) g) hat(c)
+  hat(V)^H &=  exp(beta/(1-beta) g) hat(c)
 $
