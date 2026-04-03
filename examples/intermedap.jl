@@ -4,11 +4,11 @@ using TransitionFunctionIteration, StaticArrays, StructArrays
 # Explicitly import functions that must be overloaded
 import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate_system, 
     compute_next_period_values, vals_from_policy, bounds, 
-    normalize_next_period_values, normalize_fx_errors
+    normalize_next_period_values, normalize_fx_errors, augment_simulation
 
 # Import some other functions for convenience
 import TransitionFunctionIteration: crra, cobb_douglas, cobb_douglas_prime, ces, epstein_zin_ce,
-    PositiveBounded, Unbounded
+    PositiveBounded, Unbounded, growth_rate, return_on_cum_price, return_on_ex_price
 
 @kwdef struct IntermediaryAssetPricingModel <: AbstractModel
     α::Float64 = 0.33   # capital share (implicit labor endowment of 1)
@@ -199,7 +199,7 @@ function normalize_next_period_values(np, mdl::IntermediaryAssetPricingModel, mo
     )
     # QG is the physical-measure E[Q*G]; it is not SDF-weighted so CEterm does not apply
     expectations = mode isa SimulateMode ?
-        merge(base_exp, (; QG = np.expectations.QG)) : base_exp
+        merge(base_exp, (; QG = np.expectations.QG, )) : base_exp
 
     return NextPeriod(expectations = expectations, continuations = np.continuations,
             prnext = np.prnext)
@@ -254,6 +254,7 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
             r     = 1/p - 1
             E_rS  = np.expectations.QG / (Q - d) - 1
             E_xrS = E_rS - r
+            E_rK   = RK - 1
             simvars = (; Y, RK, i, I = i*K, N, BH, BI, D, w, d, x,
                 bind = λ > 0, r, E_rS, E_xrS)
             simvars = merge(vals, simvars)
@@ -272,6 +273,24 @@ function normalize_fx_errors(::IntermediaryAssetPricingModel, fx_nt, simvars)
               LC    = fx_nt.LC    / simvars.BH)
 end
 
+
+function augment_simulation(sim::StructVector, mdl::IntermediaryAssetPricingModel)
+    _select(S, vars) = StructArray(StructArrays.components(S)[vars])
+
+    growth_rate_vars = (:Y, :K, :C, :D)
+    growth_rates = map(growth_rate, components(_select(sim, growth_rate_vars)))
+
+    rS = return_on_cum_price(sim.Q, sim.d, sim.G)
+    r = @view sim.r[2:end]
+    xrS = rS .- r
+    
+    (; MPK) = StructArray(calc_production.(_select(sim, (:K, :q)), Ref(mdl)))
+    rK = return_on_ex_price(sim.K, MPK, sim.G)
+    xrK = rK .- r
+
+    return (; growth_rates..., rS, xrS, rK, xrK)
+end
+
 mdl = IntermediaryAssetPricingModel()
 
 # Configuration
@@ -279,7 +298,7 @@ xguess = 0.018
 setup_opts = (mode = SystemSteadyStateMode((x=xguess,)), check_steadystate=true)
 exec_opts  = (; maxiter=1000, logging=COMPLETE)
 irf_opts   = (; path_vars=(:C, :K),)
-out = solve_and_simulate(mdl; setup_kwargs=setup_opts, execute_kwargs=exec_opts, irf_kwargs=irf_opts)
+#out = solve_and_simulate(mdl; setup_kwargs=setup_opts, execute_kwargs=exec_opts, irf_kwargs=irf_opts)
 
 
 # Steady state fixed point 

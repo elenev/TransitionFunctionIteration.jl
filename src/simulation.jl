@@ -58,45 +58,26 @@ function normalize_fx_errors(::AbstractModel, fx_nt, simvars)
 end
 
 """
-    augment_simulation(panel, model) -> (static_nt, dynamic_nt)
+    augment_simulation(run, model) -> (static_nt, dynamic_nt)
 
-Compute extra variables to append to the simulation panel after `simulate()` finishes.
+Compute extra variables for one simulation run after `simulate()` finishes.
 
-Return a 2-tuple `(static_nt, dynamic_nt)` where:
-- `static_nt`: `NamedTuple` of `N_runs × N_periods` arrays (same shape as `panel`), or `(;)`
-- `dynamic_nt`: `NamedTuple` of `N_runs × (N_periods-1)` arrays (e.g., one-period returns),
-  or `(;)` if no dynamic variables are needed
+`run` is a `Vector` of T NamedTuples (one period per element). Return a 2-tuple where:
+- `static_nt`: `NamedTuple` of T-element vectors (aligned with `run`), or `(;)`
+- `dynamic_nt`: `NamedTuple` of (T-1)-element vectors (e.g., one-period returns computed
+  from consecutive pairs), or `(;)` if no dynamic variables are needed
 
-Extend this function for a specific model type to add derived variables. The default returns
-empty NamedTuples (no augmentation).
+For `dynamic_align=:drop` in `simulate()`, burn is incremented by 1 so that `run` covers one
+extra period at the start; static results trim that first element and dynamic results align
+directly with the output panel. For `dynamic_align=:nan`, static results are used as-is and
+dynamic results receive a leading `NaN`.
+
+The default returns empty NamedTuples (no augmentation).
 """
-augment_simulation(::SimulationPanel, ::AbstractModel) = ((;), (;))
+augment_simulation(::StructVector, ::AbstractModel) = (;)
 
-function _merge_augmentation(simseries::SimulationPanel{T,N,NAMES}, extra_static, extra_dynamic, dynamic_align) where {T,N,NAMES}
-
-    extra_static =  (extra_static  isa StructArray) ? components(extra_static)  : extra_static
-    extra_dynamic = (extra_dynamic isa StructArray) ? components(extra_dynamic) : extra_dynamic
-
-    # Merge static extra variables (same length as panel)
-    if !isempty(extra_static)
-        merged = StructArray(merge(components(simseries.data), extra_static))
-        simseries = SimulationPanel(merged, NAMES)
-    end
-
-    # Merge dynamic extra variables (one period shorter)
-    isempty(extra_dynamic) && return simseries
-
-    if dynamic_align === :nan
-        padded = map(arr -> hcat(fill(eltype(arr)(NaN), size(arr, 1), 1), arr), extra_dynamic)
-    elseif dynamic_align === :drop
-        simseries = simseries[:, 2:end]
-        padded = extra_dynamic
-    else
-        throw(ArgumentError("dynamic_align must be :nan or :drop, got $dynamic_align"))
-    end
-    merged = StructArray(merge(components(simseries.data), padded))
-    return SimulationPanel(merged, NAMES)
-end
+# Allocate a NamedTuple of N_runs×n matrices with element types inferred from a template NamedTuple.
+_alloc_aug(nt::NamedTuple, N_runs, n) = map(v -> Matrix{eltype(v)}(undef, N_runs, n), nt)
 
 # Compute simulated results for one period
 function calc_eqm_from_state(state, obj, mode=SimulateMode())
@@ -135,21 +116,25 @@ function calc_result(state, obj)
 end
 
 """
-    simulate(obj, stv=nothing; sz=12=>100, seed=100, burn=0,
+    simulate(obj, stv=nothing; sz=12=>100, seed=100, burn=500,
              exog_start=ssidx(obj.exogenv), endog_start=stv.endog,
              shocks=sample_shocks(sz, seed, burn))
 
 Simulate the solved model along stochastic paths.
 
 Returns `(simseries, errs)`:
-- `simseries`: `N_runs × N_periods` StructArray of state and output variables
-- `errs`: matching StructArray of equation and transition errors, named after the
-  corresponding equations and endogenous state variables
+- `simseries`: `N_runs × N_periods` `SimulationPanel` of state and output variables
+- `errs`: matching `SimulationErrorPanel` of equation and transition errors
 
 `sz = N_runs => N_periods`. Burn-in periods are simulated but excluded from output.
+
+`dynamic_align` controls how dynamic augmentation variables (length T-1) are aligned with the
+output panel: `:drop` drops the first output period (burn incremented by 1 internally);
+`:nan` prepends `NaN` to each dynamic series.
 """
 function simulate(obj::ModelSolution, stv=nothing;
-                                sz::Pair=12=>10_000,
+                                dynamic_align=:drop,    
+                                sz::Pair=12=>(10_000+(dynamic_align == :drop ? 1 : 0)),
                                 seed=100,
                                 burn=500,
                                 exog_start=ssidx(obj.exogenv),
@@ -157,54 +142,73 @@ function simulate(obj::ModelSolution, stv=nothing;
                                 shocks=sample_shocks(sz, seed, burn),
                                 exog_states = simulate_markov_chain(obj.exogenv, exog_start, shocks)[1],
                                 report_bounds=true,
-                                dynamic_align=:drop,
                     )
+    dynamic_align ∈ (:drop, :nan) || throw(ArgumentError("dynamic_align must be :drop or :nan, got $dynamic_align"))
+
     start = make_point(exog_start, endog_start)
 
     # Add another period so that transition errors can be computed
     exog_states = hcat(exog_states, fill(ssidx(obj.exogenv), size(exog_states, 1)))
-
-    # Simulation size
     N_runs, N_periods = size(exog_states)
 
     # Infer element types from a trial run (also triggers compilation)
     _, _tmp_simvar, _tmp_fxerr, _tmp_transerr = calc_result(start, obj)
     _tmp_errs = merge_error(_tmp_fxerr, _tmp_transerr, exog_start)
-    simseries = Matrix{typeof(_tmp_simvar)}(undef, N_runs, N_periods)
-    errs      = Matrix{typeof(_tmp_errs)}(undef,   N_runs, N_periods)
+    sim_raw = Matrix{typeof(_tmp_simvar)}(undef, N_runs, N_periods)
+    err_raw = Matrix{typeof(_tmp_errs)}(undef,   N_runs, N_periods)
 
     # Expand endog_start
     endog_start = StructArray(expand_transitions(endog_start, obj.exogenv))
 
+    # Simulate each run and period
     original_threads = BLAS.get_num_threads()
-    BLAS.set_num_threads(1)  # To avoid thread oversubscription
-    #Threads.@threads :dynamic
+    BLAS.set_num_threads(1)
     for r in axes(exog_states, 1)
         exog_run = view(exog_states, r, :)
         trans = endog_start
         for t in axes(exog_states, 2)
             exog_idx = exog_states[r, t]
             state = make_point(exog_idx, trans[exog_idx])
-            trans, simseries[r,t], fx_nt, transerr = calc_result(state, obj)
-            errs[r,t] = merge_error(fx_nt, transerr, get_next_exst(t, ssidx(obj.exogenv), exog_run))
+            trans, sim_raw[r,t], fx_nt, transerr = calc_result(state, obj)
+            err_raw[r,t] = merge_error(fx_nt, transerr, get_next_exst(t, ssidx(obj.exogenv), exog_run))
         end
     end
-    BLAS.set_num_threads(original_threads)  # Restore
+    BLAS.set_num_threads(original_threads)
 
+    # Remove burn-in and package into StructArrays
     t_range = (burn+1):(N_periods-1)
+    simseries = StructArray(view(sim_raw, :, t_range))
 
-    simseries = SimulationPanel(StructArray(@view simseries[:, t_range]), propertynames(endog_start))
-    errs = SimulationErrorPanel(StructArray(@view errs[:, t_range]))
-    
-    if report_bounds
-        check_bounds(simseries, obj)
+    # Check bounds
+    report_bounds && check_bounds(simseries, obj)
+
+    # Augment with extra variables and align dynamic variables as needed.
+    _pad_aug_var!(v)  = length(v) <  N_periods ? pushfirst!(v, eltype(v)(NaN)) : v
+    _trim_aug_var!(v) = length(v) == N_periods ? view(v, 2:length(v))          : v 
+    align_aug_var!(v) = dynamic_align === :drop ? _trim_aug_var!(v) : _pad_aug_var!(v)
+
+    augseries = let model = obj.model
+        stack(
+            map(eachrow(simseries)) do runrow
+                aug = augment_simulation(runrow, model)
+                foreach(align_aug_var!, aug)
+                return StructArray(aug)
+            end,
+            dims=1)
     end
 
-    extra_static, extra_dynamic = augment_simulation(simseries, obj.model)
-    simseries = _merge_augmentation(simseries, extra_static, extra_dynamic, dynamic_align)
+    # Merge
+    simseries = dynamic_align === :drop ? view(simseries, :, 2:(size(simseries,2))) : simseries
+    simseries = merge_structarrays(simseries, augseries)
+
+    # Package into SimulationPanel
+    simseries = SimulationPanel(simseries, propertynames(endog_start))
+
+    # Errors
+    err_range = (burn+(dynamic_align === :drop ? 1 : 0) + 1):(N_periods-1)
+    errs      = SimulationErrorPanel(StructArray(@view err_raw[:, err_range]))
 
     return simseries, errs
-
 end
 
 """
