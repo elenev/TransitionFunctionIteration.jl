@@ -1,6 +1,6 @@
 // Document settings
 #set page(paper: "us-letter", margin: 1.25in)
-#set text(font: "Linux Libertine", size: 11pt)
+// #set text(font: "Linux Libertine", size: 11pt)
 #set par(justify: true)
 // #set heading(numbering: "1.")
 
@@ -17,20 +17,36 @@
 
 // This is a typst document. Math is formatted using typst, NOT LATEX.
 
-Time is discrete and infinite. There is a continuum of infinitely-lived households, each of which maximizes expected discounted utility from consumption. The representative household has preferences
+== Economic Environment
+
+Time is discrete and infinite. The economy is populated by two types of agents: a continuum of infinitely-lived households and financial intermediaries. Two frictions drive a wedge between the frictionless allocation and the equilibrium: a leverage constraint on intermediaries and costly equity issuance. These generate a time-varying gap between the household and intermediary discount factors.
+
+The other departure from a neoclassical growth model are permanent shocks to the technology level $Z_t$ and, in an extension, Epstein-Zin preferences, which ensure that these shocks carry a substantial price. Together, these model features produces large and time-varying risk premia.
+
+*Financial intermediaries* own the capital stock, operate the production technology, and are the only agents who can invest. They finance their capital holdings with equity (held by households) and short-term debt (bonds, also held by households). A leverage constraint limits debt to a fraction $theta$ of asset value -- a reduced-form representation of limits arising from regulation or incentive constraints. Equity issuance is possible but incurs a quadratic cost, capturing dilution and information frictions associated with seasoned equity offerings. Together, these frictions make intermediary net worth a state variable: a well-capitalized intermediary operates near its frictionless optimum, while a constrained one prices assets at a discount to fundamental value. When net worth falls after a bad shock, forced deleveraging amplifies the initial decline in asset prices and investment.
+
+*Households* cannot hold capital directly. They save by holding intermediary equity and bonds, and supply their unit labor endowment inelastically to intermediaries. Because the leverage and equity issuance frictions affect only intermediaries, the household problem remains standard, and the household's SDF serves as the pricing kernel for all traded assets in the absence of intermediary constraints.
+
+The technology level $Z_t$ grows stochastically, so all real variables are stationarized by dividing by $Z_t$ before solving.
+
+== Agent Problems
+
+There is a continuum of infinitely-lived households, each of which maximizes utility from consumption. In the baseline version of the model, the representative household has preferences
 
 $
 E_0 sum_(t=0)^infinity beta^t u(c_t) \
 u(c_t) = c_t^(1-gamma)/(1-gamma)
 $
 
-Households supply their unit labor endowment inelastically to firms, which produce output using a Cobb-Douglas production function with capital and labor. The technology growth rate follows an AR(1) process in logs.
+In an extension below, we consider Epstein-Zin preferences, which disentangle the intertemporal elasticity of substitution from risk aversion and allow for a more realistic calibration of the price of technology shocks. The derivation of the SDF becomes somewhat more complicated in this case, but the overall structure of the model and solution method remain unchanged.
 
-Firms are owned by financial intermediaries. Intermediaries optimize their capital structure between equity and one-period debt, subject to a leverage constraint and costly equity issuance. Intermediaries maximize the expected discounted value of dividends/
+Households supply their unit labor endowment inelastically to intermediaries, which own the capital stock and operate a Cobb-Douglas production technology. The technology growth rate follows an AR(1) process in logs. Intermediaries optimize their capital structure between equity and one-period debt, subject to a leverage constraint and costly equity issuance, and maximize the expected discounted value of dividends.
 
 Households own the equity of financial intermediaries, receiving dividends and buying their bonds.
 
 == Household Problem
+
+The household holds two assets: shares $s_(t-1)$ in the intermediary, which pay dividend $D_t$ per share and trade at price $Q_t$, and one-period discount bonds $b_(t-1)^h$ issued by the intermediary at price $p_t$. Labor income $w_t$ is taken as given. The household cannot hold capital directly; all intermediation between saving and investment goes through the financial sector. The aggregate state variables $cal(Z)_t^H = (K_(t-1), N_t, g_t)$ determine equilibrium prices and dividends, but the household is atomistic and takes them as given.
 
 Let $a_t$ denote household wealth at current prices. We will use $cal(Z)_t^H$ to denote state variables exogenous to the household -- aggregate capital stock $K_t$, aggregate intermediary net worth $N_t$, the productivity trend $Z_t$, and its growth rate $g_t$. To simplify notation, we drop the explicit dependence of prices and dividends on these state variables.
 
@@ -47,54 +63,13 @@ $
   a_t &= (Q_t + D_t) s_(t-1) + b_(t-1)^h
 $
 
-=== Stationarized Problem
+== Intermediary Problem
 
-Let $hat(c)_t = c_t / Z_t$, $hat(a)_t = a_t / Z_t$, $hat(Q)_t = Q_t / Z_t$, $hat(D)_t = D_t / Z_t$, $hat(b)_(t-1)^h = b_(t-1)^h / Z_t$, $hat(hat(b))_t^h = b_t^h / Z_t$, and $hat(w)_t = w_t / Z_t$, and $hat(V)^H_t = V^H_t / Z_t^(1-gamma)$. Then the stationarized problem is:
+The intermediary begins each period with net worth $N_t$, equal to the value of its capital portfolio net of outstanding debt. It owns the capital stock, operates the production technology, and hires labor from households. It also chooses how much capital $K_t$ to carry into the next period, how much debt $B_t$ to issue, and whether to raise outside equity $X_t > 0$. Dividends paid to households are $D_t = eta N_t - X_t$, where $eta$ is a target payout rate. The leverage constraint $p_t B_t <= theta q_t K_t$ is a reduced-form representation of limits arising from collateral or incentive constraints. Equity issuance incurs a quadratic cost $(xi \/ 2)(X_t \/ N_t)^2 N_t$, so intermediaries prefer internal financing and will issue equity only when severely undercapitalized. Net worth is therefore a non-trivial state variable: a constrained intermediary discounts assets more steeply than households, generating endogenous risk premia. The intermediary discounts future payoffs at the household SDF $M_(t,t+1)$ because households are its residual claimants.
 
-$
-  hat(V)^H (hat(a)_t, cal(hat(Z))_t^H ) = max_(hat(c)_t, s_t, b_t^h)  u(hat(c)_t) + beta  E_t [ hat(V)^H (hat(a)_(t+1), cal(hat(Z))_(t+1)) exp((1-gamma) g_(t+1)) ]
-$
-subject to:
-$
-  hat(c)_t + s_t hat(Q)_t + p_t hat(hat(b))_t^h &= hat(a)_t + hat(w)_t \
-  hat(a)_t  &= (hat(Q)_t + hat(D)_t) s_(t-1) + exp(-g_t) hat(hat(b))_(t-1)^h
-$
-where $cal(hat(Z))_t^H = (hat(K)_(t-1), hat(N)_t, hat(g)_t)$.
+Because per-period operating profits are linear in $K_(t-1)$, it is convenient to define them separately before writing the dynamic problem. The Tobin's $q$ variable $q_t$ is the shadow value of installed capital in terms of the consumption good, determined by the investment optimality condition below.
 
-
-=== Optimality Conditions
-
-The first-order conditions for the household's problem are:
-
-$
-  u'(hat(c)_t) p_t &= beta E_t [ exp((1-gamma) g_(t+1)) u'(hat(c)_(t+1)) exp(-g_(t+1))  ] \
-  u'(hat(c)_t) hat(Q)_t &= beta E_t [ exp((1-gamma) g_(t+1)) u'(hat(c)_(t+1)) (hat(Q)_(t+1) + hat(D)_(t+1)) ] \
-$
-
-
-The household optimality conditions define a stationarized stochastic discount factor 
-
-$
-hat(M)_(t,t+1) = beta exp((1-gamma) g_(t+1)) ( hat(c)_(t+1) / hat(c)_t )^(-gamma) 
-$
-
-The non-stationarized optimality condition, in contrast, imply the following SDF:
-
-$
-M_(t,t+1) = beta ( c_(t+1) / c_t )^(-gamma)
-$
-
-As a result, 
-
-$
-M_(t,t+1) =  beta ( hat(c)_(t+1) / hat(c)_t) ^(-gamma) exp(-gamma g_(t+1)) = 
-hat(M)_(t,t+1) exp(-g_(t+1))
-$
-
-
-== Firm Problem
-
-Let the static part of the firm problem be defined as:
+Let the static operating profits be defined as:
 $
   Pi(Z_t, K_(t-1)) = max_(L_t, I_t) ( K_t^alpha (Z_t L_t)^(1-alpha) - w_t L_t - I_t - phi /2 (I_t / K_t - tilde(delta) )^2 + q_t I_t )
 $
@@ -104,6 +79,8 @@ $
 z_t equiv log Z_t = z_(t-1) + g_t \
 g_t = (1 - rho) macron(g) + rho g_(t-1) + sigma_(g,epsilon) epsilon_t^g
 $
+
+The intermediary begins each period with net worth $N_t$, equal to the value of its capital portfolio net of outstanding debt. It chooses how much capital $K_t$ to carry into the next period, how much debt $B_t$ to issue, and whether to raise outside equity $X_t > 0$. Dividends paid to households are $D_t = eta N_t - X_t$, where $eta$ is a target payout rate. The leverage constraint $p_t B_t <= theta q_t K_t$ is a reduced-form representation of limits arising from collateral or incentive constraints. Equity issuance incurs a quadratic cost $(xi \/ 2)(X_t \/ N_t)^2 N_t$, so intermediaries prefer internal financing and will issue equity only when severely undercapitalized. Net worth is therefore a non-trivial state variable: a constrained intermediary discounts assets more steeply than households, generating endogenous risk premia. The intermediary discounts future payoffs at the household SDF $M_(t,t+1)$ because households are its residual claimants.
 
 Define the intermediary's net worth as:
 
@@ -154,7 +131,41 @@ $
   r^k_t equiv alpha l_t^(1-alpha) - phi/2 (i_t - tilde(delta))^2 + (q_t - 1) i_t
 $
 
-=== Stationarized Problem
+
+== Aggregation and Equilibrium
+
+Four markets must clear in each period: labor, capital, bonds, and goods. Because households are identical and of measure 1, household aggregates coincide with individual quantities. On the intermediary side, bond and capital market clearing tie household saving to intermediary financing, while goods market clearing pins down consumption as output minus investment and equity issuance costs. The equity price $hat(Q)_t = hat(N)_t hat(V)^F_t$ follows from the zero-profit condition for share issuance with $S_t = 1$ shares outstanding.
+
+There is a measure 1 of identical households, so household aggregates are straightforward: $hat(C) = integral hat(c)_t = hat(c)_t$, $hat(A) = integral hat(a)_t = hat(a)_t$, $L = 1$, $hat(hat(B))^H_t = integral hat(hat(b))_t^h = hat(hat(b))_t^h$, and $S_t = integral s_t = s_t$
+
+The following markets must clear in equilibrium:
+
++ Labor: $l_t hat(K)_(t-1) exp(-g_(t-1))  = L$
++ Capital: $k_t hat(N)_t = hat(hat(K))_t = (1-delta + i_t) hat(K)_(t-1) $
++ Bonds: $b_t hat(N)_t = hat(hat(B))^H_t$
++ Shares: $S_t = 1$
++ Goods: $hat(C)_t + (i_t + phi/2 i_t^2) hat(K)_(t-1) + xi/2 x_t^2 hat(N)_t = hat(K)_(t-1)^alpha L^(1-alpha)$
+
+Since the value of the firm is $hat(N)_t hat(V)^F_t$, the value per share is $hat(Q)_t$, and the number of shares is $S_t = 1$, we have that $hat(Q) = hat(N)_t hat(V)^F_t$ and $hat(D)_t = hat(N)_t (eta + x_t)$.
+
+== Stationarized Problems
+
+=== Household
+
+Let $hat(c)_t = c_t / Z_t$, $hat(a)_t = a_t / Z_t$, $hat(Q)_t = Q_t / Z_t$, $hat(D)_t = D_t / Z_t$, $hat(b)_(t-1)^h = b_(t-1)^h / Z_t$, $hat(hat(b))_t^h = b_t^h / Z_t$, and $hat(w)_t = w_t / Z_t$, and $hat(V)^H_t = V^H_t / Z_t^(1-gamma)$. Then the stationarized problem is:
+
+$
+  hat(V)^H (hat(a)_t, cal(hat(Z))_t^H ) = max_(hat(c)_t, s_t, b_t^h)  u(hat(c)_t) + beta  E_t [ hat(V)^H (hat(a)_(t+1), cal(hat(Z))_(t+1)) exp((1-gamma) g_(t+1)) ]
+$
+subject to:
+$
+  hat(c)_t + s_t hat(Q)_t + p_t hat(hat(b))_t^h &= hat(a)_t + hat(w)_t \
+  hat(a)_t  &= (hat(Q)_t + hat(D)_t) s_(t-1) + exp(-g_t) hat(hat(b))_(t-1)^h
+$
+where $cal(hat(Z))_t^H = (hat(K)_(t-1), hat(N)_t, hat(g)_t)$.
+
+=== Intermediary
+
 
 Let $hat(K)_(t-1) = K_(t-1) / Z_t$ and $hat(hat(K))_t = K_t / Z_t$ denote stationarized start-of-period and end-of-period capital,respectively. The same convention applies to $hat(B)_(t-1) = B_(t-1) / Z_t$ and $hat(hat(B))_t = B_t / Z_t$. Let $hat(N)_t = N_t / Z_t$ be stationarized net worth and $hat(V)^F_t = V^F_t / Z_t$.
 
@@ -167,7 +178,7 @@ subject to:
 
 $
   q_t hat(hat(K))_t &= p_t hat(hat(B))_t + (1-eta) hat(N)_t + hat(X)_t - xi / 2 (hat(X)_t / hat(N)_t)^2 hat(N)_t \
-  hat(N)_(t+1) &= exp(-g_(t+1)) [R^K hat(hat(K))_t (r_t^k + (1-delta)) -  hat(hat(B))_t ] \
+  hat(N)_(t+1) &= exp(-g_(t+1)) [hat(hat(K))_t underbrace( (r_t^k + (1-delta)), R^K ) -  hat(hat(B))_t ] \
   hat(K)_t &= hat(hat(K))_t exp(-g_(t+1)) \
   p_t hat(hat(B))_t &<= theta q_t hat(hat(K))_t
 $
@@ -180,18 +191,44 @@ $
   r^k_t equiv alpha (L / hat(K)_(t-1))^(1-alpha) - phi/2 (i_t - tilde(delta))^2 + (q_t - 1) i_t
 $
 
-// === Optimality Conditions
 
-// Assign $hat(mu)_t$ as the multiplier on the budget constraint and $hat(lambda)_t$ as the multiplier on the leverage constraint. The first-order conditions for the intermediary's problem are:
+== Optimality Conditions
 
-// $
-//   hat(mu)_t q_t &= hat(lambda)_t theta + E_t [ hat(M)_(t,t+1) hat(mu)_(t+1) exp(-g_(t+1)) (r_(t+1)^k + (1-delta)) ] \
-//   hat(mu)_t p_t &= hat(lambda)_t + E_t [ hat(M)_(t,t+1) hat(mu)_(t+1) exp(-g_(t+1)) ] \
-//   1 &= hat(mu)_t (1 - xi hat(X)_t / hat(N)_t)
-// $
+=== Household
 
 
-=== In Units of Net Worth 
+The first-order conditions for the household's problem are:
+
+$
+  u'(hat(c)_t) p_t &= beta E_t [ exp((1-gamma) g_(t+1)) u'(hat(c)_(t+1)) exp(-g_(t+1))  ] \
+  u'(hat(c)_t) hat(Q)_t &= beta E_t [ exp((1-gamma) g_(t+1)) u'(hat(c)_(t+1)) (hat(Q)_(t+1) + hat(D)_(t+1)) ] \
+$
+
+
+The household optimality conditions define a stationarized stochastic discount factor 
+
+$
+hat(M)_(t,t+1) = beta exp((1-gamma) g_(t+1)) ( hat(c)_(t+1) / hat(c)_t )^(-gamma) 
+$
+
+The non-stationarized optimality condition, in contrast, imply the following SDF:
+
+$
+M_(t,t+1) = beta ( c_(t+1) / c_t )^(-gamma)
+$
+
+As a result, 
+
+$
+M_(t,t+1) =  beta ( hat(c)_(t+1) / hat(c)_t) ^(-gamma) exp(-gamma g_(t+1)) = 
+hat(M)_(t,t+1) exp(-g_(t+1))
+$
+
+
+=== Intermediary
+
+The intermediary problem is homogeneous of degree 1 in net worth, so we can express it in units of net worth to aid derivations.
+
 Define $k_t = hat(hat(K))_t / hat(N)_t$ and $b_t = hat(hat(B))_t / hat(N)_t$ as well as $v^F = V^F_t / hat(N)_t$. Then the intermediary's problem can be rewritten as:
 
 $
@@ -218,8 +255,6 @@ $
   p_t b_t &<= theta q_t k_t
 $
 
-=== Optimality Conditions
-
 Assign $hat(mu)_t$ as the multiplier on the budget constraint and $hat(lambda)_t$ as the multiplier on the leverage constraint. The first-order conditions for the intermediary's problem are:
 
 $
@@ -234,19 +269,8 @@ $
   (partial hat(V)^F_t) / (partial hat(N)_t) &= v^F (cal(Z)_t^F) = eta - x_t + hat(mu)_t (1 - eta - xi/2 x_t^2)
 $
 
-== Aggregation and Equilibrium
 
-There is a measure 1 of identical households, so household aggregates are straightforward: $hat(C) = integral hat(c)_t = hat(c)_t$, $hat(A) = integral hat(a)_t = hat(a)_t$, $L = 1$, $hat(hat(B))^H_t = integral hat(hat(b))_t^h = hat(hat(b))_t^h$, and $S_t = integral s_t = s_t$
 
-The following markets must clear in equilibrium:
-
-+ Labor: $l_t hat(K)_(t-1) exp(-g_(t-1))  = L$
-+ Capital: $k_t hat(N)_t = hat(hat(K))_t = (1-delta + i_t) hat(K)_(t-1) $
-+ Bonds: $b_t hat(N)_t = hat(hat(B))^H_t$
-+ Shares: $S_t = 1$
-+ Goods: $hat(C)_t + (i_t + phi/2 i_t^2) hat(K)_(t-1) + xi/2 x_t^2 hat(N)_t = hat(K)_(t-1)^alpha L^(1-alpha)$
-
-Since the value of the firm is $hat(N)_t hat(V)^F_t$, the value per share is $hat(Q)_t$, and the number of shares is $S_t = 1$, we have that $hat(Q) = hat(N)_t hat(V)^F_t$ and $hat(D)_t = hat(N)_t (eta + x_t)$.
 
 == Deterministic Steady State
 
