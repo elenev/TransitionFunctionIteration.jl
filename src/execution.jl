@@ -406,6 +406,12 @@ end
 _make_logger(level::LogLevel,         obj::AbstractModelSolution) = TerminalLogger(level, obj)
 _make_logger(logger::ExecutionLogger, ::AbstractModelSolution)    = logger
 
+# Infer the concrete type of a history snapshot from the interpolant and requested variable names.
+function _snap_type(fct::AbstractInterpolant, var_names::Tuple)
+    ET = eltype(eltype(coefficients(fct)))
+    NamedTuple{var_names, NTuple{length(var_names), Vector{ET}}}
+end
+
 """
     main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, logging=ITERATIONFAILED,
                   track_history=nothing)
@@ -436,7 +442,12 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
 
     diag = IterationDiagnostics(obj)
     exec = (; maxiter, tol, damp, npasses, solmethod)
-    history_list = isnothing(track_history) ? nothing : []
+    if isnothing(track_history)
+        history_list = nothing
+    else
+        fct_name, var_names = track_history
+        history_list = Vector{_snap_type(getfield(obj, fct_name), var_names)}()
+    end
 
     # Threading heuristic: parallelize when problem is large enough and threads are available
     n_points = npt(obj.Vfct)
@@ -485,11 +496,7 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
 
     BLAS.set_num_threads(original_threads)  # Restore
 
-    history = if isnothing(history_list) || isempty(history_list)
-        nothing
-    else
-        StructArray(convert(Vector{typeof(history_list[1])}, history_list))
-    end
+    history = isnothing(history_list) || isempty(history_list) ? nothing : StructArray(history_list)
     return (; exec..., history)
 
 end
