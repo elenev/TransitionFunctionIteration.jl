@@ -43,6 +43,8 @@ export solve_and_simulate
 include("abstract_types.jl")
 include("named_interpolations.jl")
 include("solution_types.jl")
+
+include("transformations.jl")
 include("statistics_types.jl")
 
 include("stubs.jl")

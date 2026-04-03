@@ -182,18 +182,20 @@ states(sp::SimulationPanel) = (:exst, endog_states(sp)...)
 
 
 """
-    ReportedMoment(; var, sample=:uncond, stat=:mean)
+    ReportedMoment(; var, sample=:uncond, stat=:mean, transformation=Transformations.Level)
 
 Specification for a single entry in a `compare_economies` table.
 
 - `var`: variable name (Symbol) in the `MomentArray`
 - `sample`: filter name used in `describe()` (default `:uncond`)
 - `stat`: statistic name (default `:mean`)
+- `transformation`: optional T<:AbstractTransformation to apply to the raw moment (e.g., for reporting in levels or percentages)
 """
-@kwdef struct ReportedMoment
+@kwdef struct ReportedMoment{T<:Transformations.AbstractTransformation}
     var::Symbol
     sample::Symbol = :uncond
     stat::Symbol   = :mean
+    transformation::T = Transformations.Level
 end
 ReportedMoment(var::Symbol; kwargs...) = ReportedMoment(; var, kwargs...)
 
