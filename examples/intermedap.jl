@@ -297,12 +297,12 @@ mdl = IntermediaryAssetPricingModel()
 xguess = 0.018
 setup_opts = (mode = SystemSteadyStateMode((x=xguess,)), check_steadystate=true)
 exec_opts  = (; maxiter=1000, logging=COMPLETE)
-#stat_opts  = (; filters = (; neggrowth = x -> x.Y_gr < 0))
+stat_opts  = (; filters = (; neggrowth = x -> x.Y_gr < 0))
 irf_opts   = (; path_vars=(:C, :K),)
-out = solve_and_simulate(mdl; setup_kwargs=setup_opts, execute_kwargs=exec_opts, irf_kwargs=irf_opts) #, describe_kwargs=stat_opts)
+out = solve_and_simulate(mdl; setup_kwargs=setup_opts, execute_kwargs=exec_opts, irf_kwargs=irf_opts, describe_kwargs=stat_opts)
 
 mdl2 = IntermediaryAssetPricingModel(ϕ=5.0)
-out2 = solve_and_simulate(mdl2; setup_kwargs=setup_opts, execute_kwargs=exec_opts, irf_kwargs=irf_opts) #, describe_kwargs=stat_opts)
+out2 = solve_and_simulate(mdl2; setup_kwargs=setup_opts, execute_kwargs=exec_opts, irf_kwargs=irf_opts, describe_kwargs=stat_opts)
 
 # Steady state fixed point 
 # _, stvguess = steadystate_system((x=xguess,), mdl, IterateMode())

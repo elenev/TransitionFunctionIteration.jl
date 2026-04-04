@@ -93,7 +93,7 @@ function solve_and_simulate(model::AbstractModel;
     @info "Simulating to produce ergodic moments..."
     simseries, errs = simulate(obj, stv; simulate_kwargs...)
 
-    stats = describe(simseries, describe_kwargs...).moments
+    stats = describe(simseries; describe_kwargs...).moments
     errstats = calc_error_stats(errs)
 
     if !run_irf
