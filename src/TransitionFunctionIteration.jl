@@ -74,6 +74,7 @@ Set `run_simulate=false` to stop after solving; `run_irf=false` to skip IRF comp
 """
 function solve_and_simulate(model::AbstractModel;
     setup_kwargs=(;), execute_kwargs=(;), simulate_kwargs=(;), irf_kwargs=(;),
+    describe_kwargs=(;),
     run_simulate=true, run_irf=true)
 
     # Setup
@@ -92,7 +93,7 @@ function solve_and_simulate(model::AbstractModel;
     @info "Simulating to produce ergodic moments..."
     simseries, errs = simulate(obj, stv; simulate_kwargs...)
 
-    stats = describe(simseries).moments
+    stats = describe(simseries, describe_kwargs...).moments
     errstats = calc_error_stats(errs)
 
     if !run_irf
