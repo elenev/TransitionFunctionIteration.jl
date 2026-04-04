@@ -76,8 +76,29 @@ The default returns empty NamedTuples (no augmentation).
 """
 augment_simulation(::StructVector, ::AbstractModel) = (;)
 
-# Allocate a NamedTuple of N_runs×n matrices with element types inferred from a template NamedTuple.
-_alloc_aug(nt::NamedTuple, N_runs, n) = map(v -> Matrix{eltype(v)}(undef, N_runs, n), nt)
+function _update_simseries_with_augmented(simseries, obj, dynamic_align)
+    N_periods = size(simseries, 2)
+
+    # Augment with extra variables and align dynamic variables as needed.
+    _pad_aug_var!(v)  = length(v) <  N_periods ? pushfirst!(v, eltype(v)(NaN)) : v
+    _trim_aug_var!(v) = length(v) == N_periods ? view(v, 2:length(v))          : v 
+    align_aug_var!(v) = dynamic_align === :drop ? _trim_aug_var!(v) : _pad_aug_var!(v)
+
+    # Augment each run, align, and stack
+    augseries = let model = obj.model
+        stack(
+            map(eachrow(simseries)) do runrow
+                aug = augment_simulation(runrow, model)
+                foreach(align_aug_var!, aug)
+                return StructArray(aug)
+            end,
+            dims=1)
+    end
+
+    # Merge
+    simseries = dynamic_align === :drop ? view(simseries, :, 2:N_periods) : simseries
+    return merge_structarrays(simseries, augseries)
+end
 
 # Compute simulated results for one period
 function calc_eqm_from_state(state, obj, mode=SimulateMode())
@@ -182,24 +203,8 @@ function simulate(obj::ModelSolution, stv=nothing;
     # Check bounds
     report_bounds && check_bounds(simseries, obj)
 
-    # Augment with extra variables and align dynamic variables as needed.
-    _pad_aug_var!(v)  = length(v) <  N_periods ? pushfirst!(v, eltype(v)(NaN)) : v
-    _trim_aug_var!(v) = length(v) == N_periods ? view(v, 2:length(v))          : v 
-    align_aug_var!(v) = dynamic_align === :drop ? _trim_aug_var!(v) : _pad_aug_var!(v)
-
-    augseries = let model = obj.model
-        stack(
-            map(eachrow(simseries)) do runrow
-                aug = augment_simulation(runrow, model)
-                foreach(align_aug_var!, aug)
-                return StructArray(aug)
-            end,
-            dims=1)
-    end
-
-    # Merge
-    simseries = dynamic_align === :drop ? view(simseries, :, 2:(size(simseries,2))) : simseries
-    simseries = merge_structarrays(simseries, augseries)
+    # Augment with extra variables and align as needed
+    simseries = _update_simseries_with_augmented(simseries, obj, dynamic_align)
 
     # Package into SimulationPanel
     simseries = SimulationPanel(simseries, propertynames(endog_start))
@@ -288,10 +293,13 @@ unconditional moments via `out.moments.uncond`.
 """
 function describe(simseries::SimulationPanel,
     stat_functions = default_stats;
-    filters = (uncond = Returns(true),),
+    filters = (;),
     additional_stats = (;),
     correlation_vars = collect(endog_states(simseries))
     )
+
+    default_filters = (uncond = Returns(true),)
+    filters = merge(default_filters, filters)
 
     if correlation_vars isa Vector{Symbol}
         correlation_vars = [var => 0 for var in correlation_vars]
@@ -323,6 +331,7 @@ function describe(simseries::SimulationPanel,
     function _filtered_stats(run, filt)
         mask = map(filt, run)
         sub  = run[mask]
+        #Main.@infiltrate
         return isempty(sub) ? fill(NaN, n_vars, n_stats) : _describe(sub, stat_functions, cor_functions)
     end
 
@@ -478,13 +487,17 @@ Build a labeled table of moments across multiple economies.
 Returns a `MomentArray` with moment names as rows and economy names as columns.
 Each cell is `economies[econ].moments[moment.sample][moment.var, moment.stat]`.
 """
-function compare_economies(moment_defs::NamedTuple, economies::NamedTuple)
+function compare_economies(moment_defs::NamedTuple, economies::NamedTuple; base::Union{Integer,Symbol}=1)
+    if base isa Integer
+        base = keys(economies)[base]
+    end
+
     # Promote any non-ReportedMoment entries in moment_defs to ReportedMoment with default specs
     moment_defs  = map(v -> v isa ReportedMoment ? v : ReportedMoment(v), moment_defs)
     moment_names = keys(moment_defs)
     econ_names   = keys(economies)
 
-    data = [getmoment(economies[econ], moment)
+    data = [getmoment(economies, moment, econ, base)
             for moment in values(moment_defs), econ in econ_names]
 
     return MomentArray(data, moment_names, econ_names)

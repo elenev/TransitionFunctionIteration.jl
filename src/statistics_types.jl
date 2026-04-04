@@ -193,12 +193,32 @@ Specification for a single entry in a `compare_economies` table.
 - `stat`: statistic name (default `:mean`)
 - `transformation`: optional T<:AbstractTransformation to apply to the raw moment (e.g., for reporting in levels or percentages)
 """
-@kwdef struct ReportedMoment{T<:Transformations.AbstractTransformation}
+@kwdef struct ReportedMoment{T<:Transformations.AbstractTransformation, CT<:Transformations.AbstractTransformation}
     var::Symbol
     sample::Symbol = :uncond
     stat::Symbol   = :mean
-    transformation::T = Transformations.Level
+    transformation::T = Transformations.Level()
+    compare_transformation::CT = Transformations.Level()
 end
 ReportedMoment(var::Symbol; kwargs...) = ReportedMoment(; var, kwargs...)
 
-getmoment(s::NamedTuple, rm::ReportedMoment) = getmoment(s[rm.sample], rm.var, rm.stat)
+const SamplesTuple{SAMPLES, N, VARIABLES, STATS} = NamedTuple{SAMPLES, T} where {T <: NTuple{N, MomentArray{VARIABLES, STATS}}} 
+@inline function getmoment(s::SamplesTuple{SAMPLES, N, VARIABLES, STATS}, rm::ReportedMoment) where {SAMPLES, N, VARIABLES, STATS}
+    rm.sample ∈ SAMPLES   || throw(KeyError("Sample name $(rm.sample) not found in describe() output"))
+    rm.var    ∈ VARIABLES || throw(KeyError("Variable name $(rm.var) not found in moments for sample $(rm.sample)"))
+    rm.stat   ∈ STATS     || throw(KeyError("Statistic name $(rm.stat) not found in moments for sample $(rm.sample)"))
+    return rm.transformation(getmoment(s[rm.sample], rm.var, rm.stat))
+end
+
+const EconomiesTuple{ECONS, N, SAMPLES} = NamedTuple{ECONS, NTuple{N, SAMPLES}}
+@inline function getmoment(nt::EconomiesTuple, rm::ReportedMoment, economy::Symbol, base::Union{Symbol, Integer}=1)
+    base = base isa Integer ? keys(nt)[base] : base
+    economy ∈ keys(nt) || throw(KeyError("Economy name $economy not found in economies tuple"))
+    val     = getmoment(nt[economy], rm)
+    valbase = getmoment(nt[base], rm)
+    if economy == base 
+        return rm.transformation(val, basis=valbase)
+    else
+        return rm.compare_transformation(val, basis=valbase)
+    end
+end
