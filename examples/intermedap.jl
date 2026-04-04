@@ -277,8 +277,8 @@ end
 function augment_simulation(sim::StructVector, mdl::IntermediaryAssetPricingModel)
     _select(S, vars) = StructArray(StructArrays.components(S)[vars])
 
-    growth_rate_vars = (:Y, :K, :C, :D)
-    growth_rates = map(growth_rate, components(_select(sim, growth_rate_vars)))
+    growth_rate_vars = (:Y, :K, :C, :D, :I)
+    growth_rates = (; (Symbol("$(k)_gr") => growth_rate(getproperty(sim, k), sim.G) for k in growth_rate_vars)... )
 
     rS = return_on_cum_price(sim.Q, sim.d, sim.G)
     r = @view sim.r[2:end]
@@ -297,9 +297,12 @@ mdl = IntermediaryAssetPricingModel()
 xguess = 0.018
 setup_opts = (mode = SystemSteadyStateMode((x=xguess,)), check_steadystate=true)
 exec_opts  = (; maxiter=1000, logging=COMPLETE)
+#stat_opts  = (; filters = (; neggrowth = x -> x.Y_gr < 0))
 irf_opts   = (; path_vars=(:C, :K),)
-#out = solve_and_simulate(mdl; setup_kwargs=setup_opts, execute_kwargs=exec_opts, irf_kwargs=irf_opts)
+out = solve_and_simulate(mdl; setup_kwargs=setup_opts, execute_kwargs=exec_opts, irf_kwargs=irf_opts) #, describe_kwargs=stat_opts)
 
+mdl2 = IntermediaryAssetPricingModel(ϕ=5.0)
+out2 = solve_and_simulate(mdl2; setup_kwargs=setup_opts, execute_kwargs=exec_opts, irf_kwargs=irf_opts) #, describe_kwargs=stat_opts)
 
 # Steady state fixed point 
 # _, stvguess = steadystate_system((x=xguess,), mdl, IterateMode())
