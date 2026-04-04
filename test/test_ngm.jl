@@ -68,6 +68,47 @@ end
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
+@testset "NGM — STPFIMethod solves to same result" begin
+    ngm2 = NeoclassicalGrowthModel()
+    obj2, _ = main_setup(ngm2)
+    # STPFIMethod currently errors on BoundsError in ForwardDiff at grid boundary
+    @test_broken begin
+        main_execute!(obj2; maxiter=200, logging=COMPLETE, solmethod=STPFIMethod())
+        isapprox(coefficients(obj2.Pfct), coefficients(obj.Pfct), rtol=1e-3)
+    end
+end
+
+@testset "solve_and_simulate — full pipeline" begin
+    result = solve_and_simulate(NeoclassicalGrowthModel();
+        execute_kwargs=(; maxiter=200, logging=COMPLETE))
+    @test haskey(result, :obj)
+    @test haskey(result, :simseries)
+    @test haskey(result, :stats)
+    @test haskey(result, :errstats)
+    @test haskey(result, :irf)
+end
+
+@testset "solve_and_simulate — run_simulate=false" begin
+    obj3, stv3 = solve_and_simulate(NeoclassicalGrowthModel();
+        execute_kwargs=(; maxiter=200, logging=COMPLETE),
+        run_simulate=false)
+    @test obj3 isa TFI.ModelSolution
+end
+
+@testset "solve_and_simulate — run_irf=false" begin
+    result4 = solve_and_simulate(NeoclassicalGrowthModel();
+        execute_kwargs=(; maxiter=200, logging=COMPLETE),
+        run_irf=false)
+    obj4, stv4, simseries4, errs4 = result4
+    @test obj4 isa TFI.ModelSolution
+    @test simseries4 isa SimulationPanel
+end
+
+@testset "main_setup warm-start" begin
+    obj_warm, _ = main_setup(ngm, obj)
+    @test obj_warm.Pfct(points(obj_warm.ssg)) == obj.Pfct(points(obj_warm.ssg))
+end
+
 @testset "NGM — perturbation vs simulation linearization" begin
     Vlin, Tlin = solve_linearized(ngm)
     Vsim, Tsim = linearize(simseries, stv)

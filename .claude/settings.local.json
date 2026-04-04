@@ -27,7 +27,8 @@
       "Bash(julia --project=. -e ':*)",
       "WebSearch",
       "Bash(julia --project=. -e \"using TransitionFunctionIteration; println\\(\\\\\"OK\\\\\"\\)\")",
-      "Bash(julia --project=test test/runtests.jl)"
+      "Bash(julia --project=test test/runtests.jl)",
+      "Read(//tmp/**)"
     ]
   }
 }

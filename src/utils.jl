@@ -43,6 +43,9 @@ end
 
 
 
+value(x::AbstractFloat) = x
+value(x::ForwardDiff.Dual) = x.value  # Extract value from Dual numbers
+
 function merge_structarrays(arrays::StructArray...)
     array_components = map(sa -> StructArrays.components(sa), arrays)
     return StructArray(merge(array_components...))

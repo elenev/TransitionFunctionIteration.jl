@@ -45,9 +45,9 @@ is_ratio(::Type{<:Union{RatioPct, RatioAnnPct}}) = true
 is_ratio(::Type{<:AbstractTransformation}) = false
 
 function (t::AbstractTransformation)(x;
-    basis      = is_ratio(typeof(t)) ? 1.0 : 0.0,
-    trend      = zeros(size(x)),
-    basistrend = zeros(size(x)),
+    basis      = is_ratio(typeof(t)) ? one.(x) : zero(x),
+    trend      = zero(x),
+    basistrend = zero(x),
     init       = x[1])
     return t(x, basis, trend, basistrend, init)
 end

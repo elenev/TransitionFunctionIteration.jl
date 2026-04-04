@@ -85,8 +85,6 @@ function compute_expectations(next::StructArray, prnext, mdl::AbstractModel, mod
 end
 
 
-value(x::AbstractFloat) = x 
-value(x::ForwardDiff.Dual) = x.value  # Extract value from Dual numbers
 
 # function expand_transitions(trans, exogenv::AbstractExogenv)
 #     N = Val(exnpt(exogenv))

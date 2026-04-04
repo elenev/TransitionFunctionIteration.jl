@@ -39,6 +39,11 @@ end
     @test all(states_v[3,:] .== 3)
     @test all(1 .<= states_v .<= 3)
 
+    # sz/seed/burn convenience signature
+    states2, _ = simulate_markov_chain(exogenv, 2=>10, 2, 100, 0)
+    @test size(states2, 1) == 2     # N_runs
+    @test size(states2, 2) == 11    # N_periods + 1
+
 end
 
 @testset "calc_error_stats" begin
