@@ -98,7 +98,7 @@ end
         mean_C = ReportedMoment(var=:C),
         mean_K = ReportedMoment(var=:K, stat=:mean),
     )
-    economies = (baseline = d1, scaled = d2)
+    economies = (baseline = d1.moments, scaled = d2.moments)
 
     table = compare_economies(moment_defs, economies)
 

@@ -26,7 +26,8 @@
       "Bash(julia --project=. -e \"using Pkg; Pkg.test\\(test_args=[\\\\\"test_logging\\\\\"]\\)\")",
       "Bash(julia --project=. -e ':*)",
       "WebSearch",
-      "Bash(julia --project=. -e \"using TransitionFunctionIteration; println\\(\\\\\"OK\\\\\"\\)\")"
+      "Bash(julia --project=. -e \"using TransitionFunctionIteration; println\\(\\\\\"OK\\\\\"\\)\")",
+      "Bash(julia --project=test test/runtests.jl)"
     ]
   }
 }

@@ -74,14 +74,19 @@ dynamic results receive a leading `NaN`.
 
 The default returns empty NamedTuples (no augmentation).
 """
-augment_simulation(::StructVector, ::AbstractModel) = (;)
+augment_simulation(::StructVector, ::AbstractModel) = nothing
 
 function _update_simseries_with_augmented(simseries, obj, dynamic_align)
     N_periods = size(simseries, 2)
 
+    # Infer output type. If augment_simulation returns nothing, skip augmentation and return original simseries.
+    if augment_simulation(first(eachrow(simseries)), obj.model) === nothing
+        return simseries
+    end
+
     # Augment with extra variables and align dynamic variables as needed.
     _pad_aug_var!(v)  = length(v) <  N_periods ? pushfirst!(v, eltype(v)(NaN)) : v
-    _trim_aug_var!(v) = length(v) == N_periods ? view(v, 2:length(v))          : v 
+    _trim_aug_var!(v) = length(v) == N_periods ? popfirst!(v)                  : v 
     align_aug_var!(v) = dynamic_align === :drop ? _trim_aug_var!(v) : _pad_aug_var!(v)
 
     # Augment each run, align, and stack
@@ -97,6 +102,7 @@ function _update_simseries_with_augmented(simseries, obj, dynamic_align)
 
     # Merge
     simseries = dynamic_align === :drop ? view(simseries, :, 2:N_periods) : simseries
+    
     return merge_structarrays(simseries, augseries)
 end
 
@@ -268,7 +274,7 @@ const default_stats = merge( (; mean, std, minimum),
     (; max = maximum, ac = x -> autocor(x,[1])[1]) )
 
 
-function _describe(simvector, stat_functions, cor_functions)
+function _describe_run(simvector, stat_functions, cor_functions)
     varnames = propertynames(simvector)
     F = promote_type(fieldtypes(eltype(simvector))...)
     stats = [F(f(getproperty(simvector, var))) for var in varnames, f in values(stat_functions)]
@@ -276,6 +282,36 @@ function _describe(simvector, stat_functions, cor_functions)
     return hcat(stats, cor_stats)
 end
 
+function _describe_sample(simseries, stat_functions, cor_functions, mask)
+    N_runs = size(simseries, 1)
+    (first_run, first_mask), runs_iterator = 
+        Iterators.peel(zip(
+            eachrow(simseries),
+            eachrow(mask))
+        )
+    run_stats    = _describe_run(view(first_run, first_mask), stat_functions, cor_functions)
+    mean_stats   = copy(run_stats)
+    new_mean     = similar(run_stats)
+    stderr_stats = zeros(eltype(run_stats), size(run_stats)...)
+
+    for (n, (simvector, maskvector)) in enumerate(runs_iterator)
+        filtered_simvector = view(simvector, maskvector)
+        #Main.@infiltrate sum(maskvector) < 10_000
+        run_stats  .= _describe_run(filtered_simvector, stat_functions, cor_functions)
+        new_mean   .= mean_stats .+ (run_stats .- mean_stats) ./ (n + 1)
+        stderr_stats .+= (run_stats .- mean_stats) .* (run_stats .- new_mean)
+        mean_stats .= new_mean
+    end
+
+    N_runs > 1 && (stderr_stats .= sqrt.(stderr_stats ./ (N_runs - 1)) ./ sqrt(N_runs))
+
+    stat_names = (keys(stat_functions)..., keys(cor_functions)...)
+
+
+    return MomentArray(mean_stats, propertynames(simseries), stat_names),
+              MomentArray(stderr_stats, propertynames(simseries), stat_names)
+
+end
 
 """
     describe(simseries; filters=(uncond=Returns(true),), ...) -> (; moments, ses)
@@ -298,15 +334,19 @@ function describe(simseries::SimulationPanel,
     correlation_vars = collect(endog_states(simseries))
     )
 
+    # Merge user-specified filters  with defaults
     default_filters = (uncond = Returns(true),)
     filters = merge(default_filters, filters)
 
+    # If correlation lag isn't specified, default is contemporaneous
     if correlation_vars isa Vector{Symbol}
         correlation_vars = [var => 0 for var in correlation_vars]
     end
 
+    # Merge user-specified stats with defaults
     stat_functions = merge(stat_functions, additional_stats)
 
+    # (Auto)correlation function
     function _cor(v, s, n)
         if n != 0
             v = view(v, n+1:length(v))
@@ -315,48 +355,23 @@ function describe(simseries::SimulationPanel,
         return cor(v, s)
     end
 
+    # Create a map of correlation functions
     _corname(s,n) = Symbol("cor_$(s)_lag$(n)")
     cor_functions = (; (
         _corname(s,n) => (v,sim) -> _cor(v, getproperty(sim, s), n)
         for (s,n) in correlation_vars)...)
 
-    var_names    = propertynames(simseries)
-    stat_names   = (keys(stat_functions)..., keys(cor_functions)...)
-    filter_names = keys(filters)
-    filter_vals  = Tuple(values(filters))
-    n_filters    = length(filter_names)
-    n_vars       = length(var_names)
-    n_stats      = length(stat_names)
-
-    function _filtered_stats(run, filt)
-        mask = map(filt, run)
-        sub  = run[mask]
-        #Main.@infiltrate
-        return isempty(sub) ? fill(NaN, n_vars, n_stats) : _describe(sub, stat_functions, cor_functions)
+    # Iterate over samples
+    samples = map(filters) do filter_fcn
+        mask = filter_fcn.(simseries.data)
+        #Main.@infiltrate        
+        return _describe_sample(simseries, stat_functions, cor_functions, mask)
     end
 
-    N_runs = size(simseries, 1)
-    first_run, runs_iterator = Iterators.peel(eachrow(simseries))
-
-    run_stats_f    = [_filtered_stats(first_run, f) for f in filter_vals]
-    mean_stats_f   = [copy(r) for r in run_stats_f]
-    new_mean_f     = [similar(r) for r in run_stats_f]
-    stderr_stats_f = [zeros(eltype(r), size(r)...) for r in run_stats_f]
-
-    for (n, run) in enumerate(runs_iterator)
-        for j in 1:n_filters
-            run_stats_f[j]     .= _filtered_stats(run, filter_vals[j])
-            new_mean_f[j]      .= mean_stats_f[j] .+ (run_stats_f[j] .- mean_stats_f[j]) ./ (n + 1)
-            stderr_stats_f[j] .+= (run_stats_f[j] .- mean_stats_f[j]) .* (run_stats_f[j] .- new_mean_f[j])
-            mean_stats_f[j]    .= new_mean_f[j]
-        end
-    end
-
-    N_runs > 1 && foreach(se -> se .= sqrt.(se ./ (N_runs - 1)) ./ sqrt(N_runs), stderr_stats_f)
-
-    moments = NamedTuple{filter_names}(Tuple(MomentArray(m, var_names, stat_names) for m in mean_stats_f))
-    stderrs = NamedTuple{filter_names}(Tuple(MomentArray(m, var_names, stat_names) for m in stderr_stats_f))
-
+    #Re-nest 
+    moments = map(s -> s[1], samples)
+    stderrs = map(s -> s[2], samples)
+    
     return (; moments, stderrs)
 end
 

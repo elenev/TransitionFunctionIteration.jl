@@ -74,69 +74,51 @@ end
 
 end
 
-@testset "augment_simulation — default no-op" begin
-
-    # Build a tiny SimulationPanel
-    N_runs, N_periods = 2, 8
-    data = StructArray([(x = Float64(r+t), flag = (r+t) % 2 == 0)
-                        for r in 1:N_runs, t in 1:N_periods])
-    panel = SimulationPanel(data, (:x,))
-
-    extra_s, extra_d = augment_simulation(panel, DummyModel())
-    @test isempty(extra_s)
-    @test isempty(extra_d)
-
-    # _merge_augmentation with empty NTs returns the same panel
-    panel2 = TFI._merge_augmentation(panel, extra_s, extra_d, :nan)
-    @test propertynames(panel2) == propertynames(panel)
-    @test size(panel2) == size(panel)
-
+# AugModel returns one static (T-length) and one dynamic (T-1-length) extra variable
+struct AugModel <: AbstractModel end
+function TFI.augment_simulation(run::StructVector, ::AugModel)
+    return (; log_x = log.(run.x),   # static: T-length
+              dx    = diff(run.x))   # dynamic: (T-1)-length
 end
 
-@testset "augment_simulation — static merge" begin
+@testset "augment_simulation — default no-op" begin
+    run = StructArray([(x = Float64(t), flag = t % 2 == 0) for t in 1:8])
+    extra = augment_simulation(run, DummyModel())
+    @test isnothing(extra)
+end
 
+@testset "augment_simulation — static merge :nan" begin
     N_runs, N_periods = 2, 6
-    data = StructArray([(x = Float64(r*t),) for r in 1:N_runs, t in 1:N_periods])
-    panel = SimulationPanel(data, (:x,))
+    data = StructArray([(x = Float64(r * t),) for r in 1:N_runs, t in 1:N_periods])
 
-    extra_static = (log_x = log.(panel.x),)
-    panel2 = TFI._merge_augmentation(panel, extra_static, (;), :nan)
+    result = TFI._update_simseries_with_augmented(data, (; model = AugModel()), :nan)
 
-    @test :log_x in propertynames(panel2)
-    @test size(panel2) == size(panel)
-    @test panel2.log_x ≈ log.(panel.x)
-
+    @test :log_x in propertynames(result)
+    @test size(result) == (N_runs, N_periods)
+    @test result.log_x ≈ log.(data.x)
 end
 
 @testset "augment_simulation — dynamic merge :nan" begin
-
     N_runs, N_periods = 3, 5
     data = StructArray([(x = Float64(r + t),) for r in 1:N_runs, t in 1:N_periods])
-    panel = SimulationPanel(data, (:x,))
 
-    # Dynamic: x growth rate (N_periods-1 columns)
-    dx = panel.x[:, 2:end] ./ panel.x[:, 1:end-1] .- 1
-    panel2 = TFI._merge_augmentation(panel, (;), (dx = dx,), :nan)
+    result = TFI._update_simseries_with_augmented(data, (; model = AugModel()), :nan)
 
-    @test :dx in propertynames(panel2)
-    @test size(panel2) == size(panel)   # panel size unchanged
-    @test isnan(panel2.dx[1, 1])        # first column is NaN padding
-    @test panel2.dx[1, 2] ≈ dx[1, 1]   # subsequent columns match
-
+    @test :dx in propertynames(result)
+    @test size(result) == (N_runs, N_periods)
+    @test all(isnan, result.dx[:, 1])                         # first column is NaN padding
+    @test result.dx[1, 2] ≈ data.x[1, 2] - data.x[1, 1]
 end
 
 @testset "augment_simulation — dynamic merge :drop" begin
-
     N_runs, N_periods = 3, 5
     data = StructArray([(x = Float64(r + t),) for r in 1:N_runs, t in 1:N_periods])
-    panel = SimulationPanel(data, (:x,))
 
-    dx = panel.x[:, 2:end] ./ panel.x[:, 1:end-1] .- 1
-    panel2 = TFI._merge_augmentation(panel, (;), (dx = dx,), :drop)
+    result = TFI._update_simseries_with_augmented(data, (; model = AugModel()), :drop)
 
-    @test :dx in propertynames(panel2)
-    @test size(panel2, 2) == N_periods - 1   # first period dropped
-
+    @test :dx in propertynames(result)
+    @test size(result, 2) == N_periods - 1                    # first period dropped
+    @test result.dx[1, 1] ≈ data.x[1, 2] - data.x[1, 1]     # aligns directly, no NaN
 end
 
 @testset "describe — filters" begin
@@ -149,15 +131,15 @@ end
 
     out = describe(panel; filters=(uncond=Returns(true), flagged=row->row.flag))
 
-    # Return is a NamedTuple (; moments, ses)
+    # Return is a NamedTuple (; moments, stderrs)
     @test haskey(out, :moments)
-    @test haskey(out, :ses)
+    @test haskey(out, :stderrs)
 
-    # Both filters present in moments and ses
+    # Both filters present in moments and stderrs
     @test haskey(out.moments, :uncond)
     @test haskey(out.moments, :flagged)
-    @test haskey(out.ses,     :uncond)
-    @test haskey(out.ses,     :flagged)
+    @test haskey(out.stderrs, :uncond)
+    @test haskey(out.stderrs, :flagged)
 
     # MomentArrays have correct row names
     @test :x in row_names(out.moments.uncond)
