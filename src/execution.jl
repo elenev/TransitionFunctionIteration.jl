@@ -445,9 +445,16 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
     if isnothing(track_history)
         history_list = nothing
     else
-        fct_name, var_names = track_history
-        history_list = Vector{_snap_type(getfield(obj, fct_name), var_names)}()
+        # History is a NameTuple of tuples indicating what to track 
+        # E.g. track_history = (val_fcn_around_ss = (:Vfct, :V, 300), first_Ktrans_fcn = (:Tfct, :K, 1))
+        history_list = map(track_history) do track_var
+            coefs = coefficients(getproperty(obj, track_var[1]))
+            T = eltype(coefs) <: AbstractVector ? eltype(first(coefs)) : typeof(first(eachrow(coefs)))
+            return Vector{T}(undef,maxiter)
+        end
     end
+
+    #Main.@infiltrate
 
     # Threading heuristic: parallelize when problem is large enough and threads are available
     n_points = npt(obj.Vfct)
@@ -468,15 +475,16 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
 
             # Capture per-iteration snapshot if requested
             if !isnothing(track_history)
-                fct_name, var_names = track_history
-                fct = getfield(obj, fct_name)
-                vnames_all = varnames(fct)
-                coefs = coefficients(fct)
-                snap = NamedTuple{var_names}(Tuple(
-                    [coefs[i][findfirst(==(v), vnames_all)] for i in eachindex(coefs)]
-                    for v in var_names
-                ))
-                push!(history_list, snap)
+                foreach(track_history, history_list) do track_var, history_var
+                    (fct_sym, var_name, idx) = track_var
+                    fct = getproperty(obj, fct_sym)
+                    coefs = coefficients(fct)
+                    snapshot = coefs[idx]  # Extract the requested variable's full grid array at this iteration
+
+                     # Append to the corresponding history list
+                     history_idx = varindex(fct, var_name)
+                     history_var[iter] = snapshot[history_idx]
+                end
             end
 
             exec_update = (; iter, distV, worst_varV, worst_pointV, distT, worst_varT, worst_pointT, worst_exst)
@@ -495,8 +503,12 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
     end
 
     BLAS.set_num_threads(original_threads)  # Restore
-
-    history = isnothing(history_list) || isempty(history_list) ? nothing : StructArray(history_list)
+    if isnothing(history_list) || isempty(history_list)
+        history = nothing
+    else
+        history = StructArray(history_list)
+        resize!(history, iter)
+    end
     return (; exec..., history)
 
 end

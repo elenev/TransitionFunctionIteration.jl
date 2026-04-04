@@ -120,6 +120,7 @@ struct Interpolant{SSG, ITP<:Interpolations.AbstractInterpolation, NAMES} <: Abs
 end
 
 @inline varnames(::Interpolant{SSG,ITP,NAMES}) where {SSG, ITP, NAMES} = NAMES
+@inline varindex(::Interpolant{SSG,ITP,NAMES}, var::Symbol) where {SSG, ITP, NAMES} = findfirst(==(var), NAMES)
 
 # Non-singleton state variable names in the order itp expects them for positional evaluation.
 function Interpolant(ssg::AbstractStateSpaceGrid, returnvals::NamedTuple)
