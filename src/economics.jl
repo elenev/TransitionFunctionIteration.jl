@@ -182,7 +182,7 @@ end
 @inline return_on_cum_price(p::Real,  p′::Real, d::Real = 0.0, G=1.0) = 
     p′        / (p-d)    * G - 1
 @inline return_on_cum_price(p::AbstractVector{<:Real}, d::AbstractVector{<:Real} = zeros(size(p)), G::AbstractVector{<:Real}=ones(size(p))) = 
-    return_on_cum_price.(p[1:end-1], p[2:end], d[2:end], G[2:end])
+    return_on_cum_price.(p[1:end-1], p[2:end], d[1:end-1], G[2:end])
 
 # Growth rates
 @inline growth_rate(x::Real, x′::Real, G=1.0) = return_on_ex_price(x, x′, 0.0, G)
