@@ -267,19 +267,86 @@ function check_bounds(simseries, obj)
 end
 
 
-const default_percentiles = (5, 25, 50, 75, 95);
-
-const default_stats = merge( (; mean, std, minimum),
-    (; (Symbol("p$k") => x -> quantile(x,k/100) for k in default_percentiles)...),
-    (; max = maximum, ac = x -> autocor(x,[1])[1]) )
+const default_percentiles = SVector(5, 25, 50, 75, 95);
 
 
-function _describe_run(simvector, stat_functions, cor_functions)
+ac1(x) = cor(view(x, 2:length(x)), view(x, 1:length(x)-1))
+
+struct StatisticsSet{NAMES, FUNCS<:Tuple}
+    funcs::FUNCS
+end
+
+# Outer constructor
+function StatisticsSet(names::NTuple{N, Symbol}, funcs::Tuple) where N
+    return StatisticsSet{names, typeof(funcs)}(funcs)
+end
+function StatisticsSet(nt::NamedTuple{NAMES, FUNCS}) where {NAMES, FUNCS<:Tuple}
+    return StatisticsSet{NAMES, FUNCS}(values(nt))
+end
+
+StatisticsSet(ss::StatisticsSet) = ss  # Identity for already-constructed sets
+
+# The "Call" method
+function (statset::StatisticsSet{NAMES})(args...) where NAMES
+    nested = fmap(statset.funcs, args...)
+    flattened = (Iterators.flatten(nested)...,)
+    return NamedTuple{NAMES}(flattened)
+end
+
+# Length methods
+Base.length(::Type{<:StatisticsSet{NAMES}}) where NAMES = length(NAMES)
+Base.length(statset::StatisticsSet) = length(typeof(statset))
+Base.merge(s1::StatisticsSet{NAMES1}, s2::StatisticsSet{NAMES2}) where {NAMES1, NAMES2} = 
+    StatisticsSet( (NAMES1..., NAMES2...), (s1.funcs..., s2.funcs...) )
+varnames(::StatisticsSet{NAMES}) where NAMES = NAMES
+
+# A multivariate stat function (v, sim) -> scalar that accesses sim field S by name.
+# S is a type parameter so getproperty(sim, S) is type-stable; f receives the concrete column.
+struct MultivariateStatFun{S, F}
+    f::F
+end
+MultivariateStatFun{S}(f::F) where {S, F} = MultivariateStatFun{S, F}(f)
+(msf::MultivariateStatFun{S})(v, sim) where {S} = msf.f(v, getproperty(sim, S))
+
+const default_stats = StatisticsSet(
+    (:mean, :std, :minimum, :maximum, :ac, :p5, :p25, :p50, :p75, :p95),
+    (mean, std, minimum, maximum, ac1, map(p -> (x -> quantile(x, p/100)), default_percentiles)...)
+    )
+
+
+function _describe_variable!(outrow, v, simvector, unistat_functions, multistat_functions)
+    N_uni = length(unistat_functions)
+    N_multi = length(multistat_functions)
+    N_total = N_uni + N_multi
+    outrow[1:N_uni]         .= values(unistat_functions(v))
+    outrow[N_uni+1:N_total] .= values(multistat_functions(v, simvector))
+end
+
+function _describe_run!(out, simvector, unistat_functions, multistat_functions)
+    vnames = propertynames(simvector)
+    #Main.@infiltrate
+    # N_stat = length(unistat_functions)
+    # N_cor = length(multistat_functions)
+    # N_total = N_stat + N_cor
+
+    # out = Matrix{F}(undef, N_var, N_total)
+    for (i, var) in enumerate(vnames)
+        v = getproperty(simvector, var)
+        _describe_variable!(view(out, i, :), v, simvector, unistat_functions, multistat_functions)
+    end
+    # stats = [F(f(getproperty(simvector, var))) for var in vnames, f in values(unistat_functions)]
+    # cor_stats = [F(f(getproperty(simvector, var), simvector)) for var in vnames, f in values(multistat_functions)]
+    # return hcat(stats, cor_stats)
+end
+
+function _preallocate_stats(simvector, stat_functions, cor_functions)
     varnames = propertynames(simvector)
     F = promote_type(fieldtypes(eltype(simvector))...)
-    stats = [F(f(getproperty(simvector, var))) for var in varnames, f in values(stat_functions)]
-    cor_stats = [F(f(getproperty(simvector, var), simvector)) for var in varnames, f in values(cor_functions)]
-    return hcat(stats, cor_stats)
+    N_stat = length(stat_functions)
+    N_cor = length(cor_functions)
+    N_total = N_stat + N_cor
+    N_var = length(varnames)
+    return Matrix{F}(undef, N_var, N_total)
 end
 
 function _describe_sample(simseries, stat_functions, cor_functions, mask)
@@ -289,7 +356,9 @@ function _describe_sample(simseries, stat_functions, cor_functions, mask)
             eachrow(simseries),
             eachrow(mask))
         )
-    run_stats    = _describe_run(view(first_run, first_mask), stat_functions, cor_functions)
+
+    run_stats    = _preallocate_stats(view(first_run, first_mask), stat_functions, cor_functions)
+    _describe_run!(run_stats, view(first_run, first_mask), stat_functions, cor_functions)
     mean_stats   = copy(run_stats)
     new_mean     = similar(run_stats)
     stderr_stats = zeros(eltype(run_stats), size(run_stats)...)
@@ -297,7 +366,7 @@ function _describe_sample(simseries, stat_functions, cor_functions, mask)
     for (n, (simvector, maskvector)) in enumerate(runs_iterator)
         filtered_simvector = view(simvector, maskvector)
         #Main.@infiltrate sum(maskvector) < 10_000
-        run_stats  .= _describe_run(filtered_simvector, stat_functions, cor_functions)
+        _describe_run!(run_stats, filtered_simvector, stat_functions, cor_functions)
         new_mean   .= mean_stats .+ (run_stats .- mean_stats) ./ (n + 1)
         stderr_stats .+= (run_stats .- mean_stats) .* (run_stats .- new_mean)
         mean_stats .= new_mean
@@ -305,12 +374,29 @@ function _describe_sample(simseries, stat_functions, cor_functions, mask)
 
     N_runs > 1 && (stderr_stats .= sqrt.(stderr_stats ./ (N_runs - 1)) ./ sqrt(N_runs))
 
-    stat_names = (keys(stat_functions)..., keys(cor_functions)...)
+    all_stats = merge(stat_functions, cor_functions)
+    return MomentArray(mean_stats,   simseries, all_stats),
+           MomentArray(stderr_stats, simseries, all_stats)
 
+end
 
-    return MomentArray(mean_stats, propertynames(simseries), stat_names),
-              MomentArray(stderr_stats, propertynames(simseries), stat_names)
+function _build_correlation_functions(correlation_vars)
+    # If correlation lag isn't specified, default is contemporaneous
+    if correlation_vars isa Vector{Symbol}
+        correlation_vars = [var => 0 for var in correlation_vars]
+    end
 
+    # (Auto)correlation function; col = getproperty(sim, s) resolved by MultivariateStatFun
+    function _cor(v, col, n)
+        n == 0 && return cor(v, col)
+        return cor(view(v, n+1:length(v)), view(col, 1:length(col)-n))
+    end
+
+    # Create a map of correlation functions
+    _corname(s, n) = Symbol("cor_$(s)_lag$(n)")
+    cor_names = Tuple(_corname(s, n) for (s, n) in correlation_vars)
+    cor_fcns  = Tuple(MultivariateStatFun{s}((v, col) -> _cor(v, col, n)) for (s, n) in correlation_vars)
+    return StatisticsSet(cor_names, cor_fcns)
 end
 
 """
@@ -334,36 +420,21 @@ function describe(simseries::SimulationPanel,
     correlation_vars = collect(endog_states(simseries))
     )
 
+    simseries = simseries.data
+
     # Merge user-specified filters  with defaults
     default_filters = (uncond = Returns(true),)
     filters = merge(default_filters, filters)
 
-    # If correlation lag isn't specified, default is contemporaneous
-    if correlation_vars isa Vector{Symbol}
-        correlation_vars = [var => 0 for var in correlation_vars]
-    end
-
     # Merge user-specified stats with defaults
-    stat_functions = merge(stat_functions, additional_stats)
+    stat_functions = merge(stat_functions, StatisticsSet(additional_stats))
 
-    # (Auto)correlation function
-    function _cor(v, s, n)
-        if n != 0
-            v = view(v, n+1:length(v))
-            s = view(s, 1:length(s)-n)
-        end
-        return cor(v, s)
-    end
-
-    # Create a map of correlation functions
-    _corname(s,n) = Symbol("cor_$(s)_lag$(n)")
-    cor_functions = (; (
-        _corname(s,n) => (v,sim) -> _cor(v, getproperty(sim, s), n)
-        for (s,n) in correlation_vars)...)
+    # Build correlation functions
+    cor_functions = _build_correlation_functions(correlation_vars)
 
     # Iterate over samples
     samples = map(filters) do filter_fcn
-        mask = filter_fcn.(simseries.data)
+        mask = filter_fcn.(simseries)
         #Main.@infiltrate        
         return _describe_sample(simseries, stat_functions, cor_functions, mask)
     end
@@ -395,7 +466,7 @@ function _regress(states, values, valnames; constant = true)
     #return statesmat
     coefs = statesmat \ values  # nof x nvar
     coefs = SMatrix{size(coefs)...}(coefs)  # Convert to static for easier handling
-    return MomentArray(coefs', valnames, keys(components(states)))
+    return MomentArray(coefs', valnames, components(states))
 end
 
 function linearize(obj::ModelSolution, stv::SteadyState; loglin=true)
@@ -515,5 +586,5 @@ function compare_economies(moment_defs::NamedTuple, economies::NamedTuple; base:
     data = [getmoment(economies, moment, econ, base)
             for moment in values(moment_defs), econ in econ_names]
 
-    return MomentArray(data, moment_names, econ_names)
+    return MomentArray(data, moment_defs, economies)
 end

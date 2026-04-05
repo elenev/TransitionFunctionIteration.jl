@@ -22,7 +22,16 @@ struct MomentArray{ROWS, COLS, T, M <: AbstractMatrix{T}} <: AbstractMatrix{T}
     end
 end
 
-MomentArray(data, rownames, colnames) = MomentArray{tuple(rownames...), tuple(colnames...)}(data)
+MomentArray(data, ::Val{ROWS}, ::Val{COLS}) where {ROWS, COLS} =
+    MomentArray{ROWS, COLS}(data)
+
+# Convenience constructors for types whose names are statically known
+const _HasVarnames = Union{StructArray, NamedTuple, StatisticsSet}
+_varnames(x::StructArray)     = propertynames(x)
+_varnames(::NamedTuple{N})    where {N} = N
+_varnames(::StatisticsSet{N}) where {N} = N
+MomentArray(data, rows::_HasVarnames, cols::_HasVarnames) =
+    MomentArray{_varnames(rows), _varnames(cols)}(data)
 
 # Names are free: extracted directly from type parameters
 "Return the row names (variable names) of a `MomentArray` as a tuple of Symbols."

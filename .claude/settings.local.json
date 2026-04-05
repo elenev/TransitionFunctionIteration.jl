@@ -28,7 +28,8 @@
       "WebSearch",
       "Bash(julia --project=. -e \"using TransitionFunctionIteration; println\\(\\\\\"OK\\\\\"\\)\")",
       "Bash(julia --project=test test/runtests.jl)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(julia --project=c:/Users/elene/Documents/Repositories/juliadev/TransitionFunctionIteration.jl -e \"using InteractiveUtils; import Statistics; display\\(@which Statistics.quantile!\\([1.0,2.0],[0.5,0.9]\\)\\)\")"
     ]
   }
 }

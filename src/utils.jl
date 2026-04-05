@@ -66,3 +66,14 @@ function flatten_structarray(sa::StructArray)
     # 3. Reassemble the StructArray around the new views
     return StructArray(flat_comps)
 end
+
+# Function maps
+
+@generated function fmap(funcs::Tuple, args...)
+    calls = [:(funcs[$i](args...)) for i in 1:fieldcount(funcs)]
+    return :(($(calls...),))
+end
+
+function fmap(nt::NamedTuple{NAMES}, args...) where NAMES
+    return NamedTuple{NAMES}(fmap(values(nt), args...))
+end
