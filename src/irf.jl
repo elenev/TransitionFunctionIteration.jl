@@ -79,7 +79,7 @@ function simulate_irf(obj::ModelSolution, endogstart;
     end
 
     # Generate random numbers
-    sz = N => T
+    sz = T => N
     rands = sample_shocks(sz, seed, 0)
 
     # Simulate IRF for each shock
@@ -101,15 +101,15 @@ function simulate_irf_shock(obj::ModelSolution,
     # Simulate exogenus states
     shock = shock isa Integer ? [shock] : shock
     T_fixed = length(shock)
-    T = size(rands, 2) + 1
-    N = size(rands, 1)
+    T = size(rands, 1) + 1
+    N = size(rands, 2)
     last_fixed_exog = isempty(shock) ? start_exog : shock[end]
-    exog, _ = simulate_markov_chain(obj.exogenv, last_fixed_exog, rands[:, T_fixed+1:end])
+    exog, _ = simulate_markov_chain(obj.exogenv, last_fixed_exog, rands[T_fixed+1:end, :])
     #@debug "exog" exog
     if !isempty(shock)
-        exog = hcat(fill(start_exog,N,1), repeat(shock', N, 1), exog[:,2:end])
+        exog = vcat(fill(start_exog,1,N), repeat(shock, 1, N), exog[2:end,:])
     else
-        exog = hcat(fill(start_exog,N,1), exog[:,2:end])
+        exog = vcat(fill(start_exog,1,N), exog[2:end,:])
     end
 
     # Simulate model

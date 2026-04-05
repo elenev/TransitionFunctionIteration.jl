@@ -5,6 +5,7 @@ using LinearAlgebra
 # scope via `include`, making them available to test_linearize.jl.
 include("../examples/ngm.jl")
 
+
 # ── Klein (2000) perturbation solver ──────────────────────────────────────────
 
 """
@@ -61,8 +62,8 @@ function solve_linearized(model::NeoclassicalGrowthModel)
     Kk = KK + KC * Ck
     Ka = KA + KC * Ca
 
-    vcoefs = TransitionFunctionIteration.MomentArray([0.0 Ca Ck],      (:C,),  (:constant, :A, :K))
-    tcoefs = TransitionFunctionIteration.MomentArray([0.0 Ka Kk 0.0],  (:K′,), (:constant, :A, :K, :A′))
+    vcoefs = @MomentArray [0.0 Ca Ck]      (:C,)   (:constant, :A, :K)
+    tcoefs = @MomentArray [0.0 Ka Kk 0.0]  (:K′,)  (:constant, :A, :K, :A′)
     return vcoefs, tcoefs
 end
 
@@ -71,7 +72,6 @@ end
 @testset "NGM — STPFIMethod solves to same result" begin
     ngm2 = NeoclassicalGrowthModel()
     obj2, _ = main_setup(ngm2)
-    # STPFIMethod currently errors on BoundsError in ForwardDiff at grid boundary
     @test_broken begin
         main_execute!(obj2; maxiter=200, logging=COMPLETE, solmethod=STPFIMethod())
         isapprox(coefficients(obj2.Pfct), coefficients(obj.Pfct), rtol=1e-3)
@@ -92,7 +92,7 @@ end
     obj3, stv3 = solve_and_simulate(NeoclassicalGrowthModel();
         execute_kwargs=(; maxiter=200, logging=COMPLETE),
         run_simulate=false)
-    @test obj3 isa TFI.ModelSolution
+    @test obj3 isa TransitionFunctionIteration.ModelSolution
 end
 
 @testset "solve_and_simulate — run_irf=false" begin
@@ -100,8 +100,8 @@ end
         execute_kwargs=(; maxiter=200, logging=COMPLETE),
         run_irf=false)
     obj4, stv4, simseries4, errs4 = result4
-    @test obj4 isa TFI.ModelSolution
-    @test simseries4 isa SimulationPanel
+    @test obj4 isa TransitionFunctionIteration.ModelSolution
+    @test simseries4 isa TransitionFunctionIteration.SimulationPanel
 end
 
 @testset "main_setup warm-start" begin
@@ -113,10 +113,10 @@ end
     Vlin, Tlin = solve_linearized(ngm)
     Vsim, Tsim = linearize(simseries, stv)
 
-    @test Vlin isa TFI.MomentArray
-    @test Tlin isa TFI.MomentArray
-    @test Vsim isa TFI.MomentArray
-    @test Tsim isa TFI.MomentArray
+    @test Vlin isa TransitionFunctionIteration.MomentArray
+    @test Tlin isa TransitionFunctionIteration.MomentArray
+    @test Vsim isa TransitionFunctionIteration.MomentArray
+    @test Tsim isa TransitionFunctionIteration.MomentArray
 
     # Exclude the constant: stochastic SS differs slightly from deterministic SS,
     # so we don't expect the intercepts to match.

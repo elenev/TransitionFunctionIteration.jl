@@ -35,7 +35,7 @@ export SimulationPanel, SimulationErrorPanel, endog_states, states
 export IRFResult, Transformations, ReportedVariable, IRFPage, simulate_irf
 
 # MomentArray
-export MomentArray, row_names, col_names
+export MomentArray, @MomentArray, row_names, col_names
 
 # Main interface 
 export solve_and_simulate

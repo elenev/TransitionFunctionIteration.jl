@@ -1,5 +1,34 @@
 using .Transformations
 
+## Statistics Function Sets 
+struct StatisticsSet{NAMES, FUNCS<:Tuple}
+    funcs::FUNCS
+end
+
+# Outer constructor
+function StatisticsSet(names::NTuple{N, Symbol}, funcs::Tuple) where N
+    return StatisticsSet{names, typeof(funcs)}(funcs)
+end
+function StatisticsSet(nt::NamedTuple{NAMES, FUNCS}) where {NAMES, FUNCS<:Tuple}
+    return StatisticsSet{NAMES, FUNCS}(values(nt))
+end
+
+StatisticsSet(ss::StatisticsSet) = ss  # Identity for already-constructed sets
+
+# The "Call" method
+function (statset::StatisticsSet{NAMES})(args...) where NAMES
+    nested = fmap(statset.funcs, args...)
+    flattened = (Iterators.flatten(nested)...,)
+    return NamedTuple{NAMES}(flattened)
+end
+
+# Length methods
+Base.length(::Type{<:StatisticsSet{NAMES}}) where NAMES = length(NAMES)
+Base.length(statset::StatisticsSet) = length(typeof(statset))
+Base.merge(s1::StatisticsSet{NAMES1}, s2::StatisticsSet{NAMES2}) where {NAMES1, NAMES2} = 
+    StatisticsSet( (NAMES1..., NAMES2...), (s1.funcs..., s2.funcs...) )
+varnames(::StatisticsSet{NAMES}) where NAMES = NAMES
+
 ## Simulation Stats
 
 """
@@ -22,16 +51,22 @@ struct MomentArray{ROWS, COLS, T, M <: AbstractMatrix{T}} <: AbstractMatrix{T}
     end
 end
 
-MomentArray(data, ::Val{ROWS}, ::Val{COLS}) where {ROWS, COLS} =
-    MomentArray{ROWS, COLS}(data)
+# MomentArray(data, row_names::Tuple{Vararg{Symbol}}, col_names::Tuple{Vararg{Symbol}}) =
+#     MomentArray(data, Val(row_names), Val(col_names))
 
 # Convenience constructors for types whose names are statically known
-const _HasVarnames = Union{StructArray, NamedTuple, StatisticsSet}
-_varnames(x::StructArray)     = propertynames(x)
-_varnames(::NamedTuple{N})    where {N} = N
-_varnames(::StatisticsSet{N}) where {N} = N
+const _HasVarnames = Union{StructArray, NamedTuple, StatisticsSet, Tuple{Vararg{Symbol}}, Val{N} where N}
+_varnames(x::StructArray)               = propertynames(x)
+_varnames(::NamedTuple{N})    where N   = N
+_varnames(::StatisticsSet{N}) where N   = N
+_varnames(::Val{N})           where N   = N
+_varnames(names::Tuple{Vararg{Symbol}}) = names
 MomentArray(data, rows::_HasVarnames, cols::_HasVarnames) =
     MomentArray{_varnames(rows), _varnames(cols)}(data)
+
+macro MomentArray(data, rows, cols)
+    return :( MomentArray{$(esc(rows)), $(esc(cols))}($(esc(data))) )
+end
 
 # Names are free: extracted directly from type parameters
 "Return the row names (variable names) of a `MomentArray` as a tuple of Symbols."
@@ -129,7 +164,7 @@ end
 """
     SimulationErrorPanel(data::StructArray)
 
-Thin wrapper around a 2-D `StructArray` (runs × periods) of equation residuals produced by
+Thin wrapper around a 2-D `StructArray` (periods × runs) of equation residuals produced by
 `simulate`. Each named field is one residual series (e.g., `:euler`). Passed to
 `calc_error_stats` for summary statistics.
 """
@@ -158,7 +193,7 @@ end
 """
     SimulationPanel(data::StructArray, endog_names)
 
-Thin wrapper around a 2-D `StructArray` (runs × periods) of simulated variables. The
+Thin wrapper around a 2-D `StructArray` (periods × runs) of simulated variables. The
 `NAMES` type parameter records which fields are endogenous states (used by `linearize` and
 `endog_states`). All fields are accessible via `panel.varname`.
 """

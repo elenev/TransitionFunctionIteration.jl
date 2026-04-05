@@ -1,25 +1,25 @@
 """
     sample_shocks(sz::Pair, seed, burn) -> Matrix{Float64}
 
-Draw a `first(sz) × (last(sz) + burn)` matrix of uniform [0,1) random numbers
-using `MersenneTwister(seed)`. `sz` should be `N_runs => N_periods`.
+Draw a `(first(sz) + burn) × last(sz)` matrix of uniform [0,1) random numbers
+using `MersenneTwister(seed)`. `sz` should be `N_periods => N_runs`.
 """
 function sample_shocks(sz, seed, burn)
     rng = MersenneTwister(seed)
-    return rand(rng, first(sz), last(sz)+burn)
+    return rand(rng, first(sz)+burn, last(sz))
 end
 
 """
     simulate_markov_chain(exogenv, start, shocks) -> Matrix{Integer}
 
-Simulate exogenous state paths from `start` for `size(shocks, 2)` periods.
+Simulate exogenous state paths from `start` for `size(shocks, 1)` periods.
 
 - `start`: integer (broadcast to all runs) or `Vector{Integer}` (per-run)
-- `shocks`: `N_runs × N_periods` matrix of uniform [0,1) draws
-- Returns: `N_runs × (N_periods+1)` matrix of 1-indexed state integers
+- `shocks`: `N_periods × N_runs` matrix of uniform [0,1) draws
+- Returns: `(N_periods+1) × N_runs` matrix of 1-indexed state integers
 """
 function simulate_markov_chain(exogenv::AbstractExogenv, start::Integer, shocks::AbstractMatrix)
-    startvec = fill(start, size(shocks,1))
+    startvec = fill(start, size(shocks,2))
     return simulate_markov_chain(exogenv, startvec, shocks)
 end
 
@@ -29,13 +29,13 @@ function simulate_markov_chain(exogenv::AbstractExogenv, sz, start = ssidx(exoge
 end
 
 function simulate_markov_chain(exogenv::AbstractExogenv, start::AbstractVector{T} where T<:Integer, shocks::AbstractMatrix)
-    N_runs, N_periods = size(shocks)
-    states = zeros(Int64, N_runs, N_periods+1)
+    N_periods, N_runs = size(shocks)
+    states = zeros(Int64, N_periods+1, N_runs)
     cumprobs = zeros(N_runs, exnpt(exogenv))
-    states[:,1] .= start
-    for t in axes(shocks,2)
-        cumprobs .= cumsum(exogenv.mtrans[states[:,t],:], dims=2)
-        states[:,t+1] .= dropdims(sum(shocks[:,t] .> cumprobs, dims=2), dims=2) .+ 1
+    states[1,:] .= start
+    for t in axes(shocks,1)
+        cumprobs .= cumsum(exogenv.mtrans[states[t,:],:], dims=2)
+        states[t+1,:] .= dropdims(sum(shocks[t,:] .> cumprobs, dims=2), dims=2) .+ 1
     end
     return states, points(exogenv, states)
 end
@@ -77,32 +77,32 @@ The default returns empty NamedTuples (no augmentation).
 augment_simulation(::StructVector, ::AbstractModel) = nothing
 
 function _update_simseries_with_augmented(simseries, obj, dynamic_align)
-    N_periods = size(simseries, 2)
+    N_periods = size(simseries, 1)
 
     # Infer output type. If augment_simulation returns nothing, skip augmentation and return original simseries.
-    if augment_simulation(first(eachrow(simseries)), obj.model) === nothing
+    if augment_simulation(first(eachcol(simseries)), obj.model) === nothing
         return simseries
     end
 
     # Augment with extra variables and align dynamic variables as needed.
     _pad_aug_var!(v)  = length(v) <  N_periods ? pushfirst!(v, eltype(v)(NaN)) : v
-    _trim_aug_var!(v) = length(v) == N_periods ? popfirst!(v)                  : v 
+    _trim_aug_var!(v) = length(v) == N_periods ? popfirst!(v)                  : v
     align_aug_var!(v) = dynamic_align === :drop ? _trim_aug_var!(v) : _pad_aug_var!(v)
 
     # Augment each run, align, and stack
     augseries = let model = obj.model
         stack(
-            map(eachrow(simseries)) do runrow
-                aug = augment_simulation(runrow, model)
+            map(eachcol(simseries)) do runcol
+                aug = augment_simulation(runcol, model)
                 foreach(align_aug_var!, aug)
                 return StructArray(aug)
             end,
-            dims=1)
+            dims=2)
     end
 
     # Merge
-    simseries = dynamic_align === :drop ? view(simseries, :, 2:N_periods) : simseries
-    
+    simseries = dynamic_align === :drop ? view(simseries, 2:N_periods, :) : simseries
+
     return merge_structarrays(simseries, augseries)
 end
 
@@ -143,25 +143,25 @@ function calc_result(state, obj)
 end
 
 """
-    simulate(obj, stv=nothing; sz=12=>100, seed=100, burn=500,
+    simulate(obj, stv=nothing; sz=10_000=>12, seed=100, burn=500,
              exog_start=ssidx(obj.exogenv), endog_start=stv.endog,
              shocks=sample_shocks(sz, seed, burn))
 
 Simulate the solved model along stochastic paths.
 
 Returns `(simseries, errs)`:
-- `simseries`: `N_runs × N_periods` `SimulationPanel` of state and output variables
+- `simseries`: `N_periods × N_runs` `SimulationPanel` of state and output variables
 - `errs`: matching `SimulationErrorPanel` of equation and transition errors
 
-`sz = N_runs => N_periods`. Burn-in periods are simulated but excluded from output.
+`sz = N_periods => N_runs`. Burn-in periods are simulated but excluded from output.
 
 `dynamic_align` controls how dynamic augmentation variables (length T-1) are aligned with the
 output panel: `:drop` drops the first output period (burn incremented by 1 internally);
 `:nan` prepends `NaN` to each dynamic series.
 """
 function simulate(obj::ModelSolution, stv=nothing;
-                                dynamic_align=:drop,    
-                                sz::Pair=12=>(10_000+(dynamic_align == :drop ? 1 : 0)),
+                                dynamic_align=:drop,
+                                sz::Pair=(10_000+(dynamic_align == :drop ? 1 : 0))=>12,
                                 seed=100,
                                 burn=500,
                                 exog_start=ssidx(obj.exogenv),
@@ -175,14 +175,14 @@ function simulate(obj::ModelSolution, stv=nothing;
     start = make_point(exog_start, endog_start)
 
     # Add another period so that transition errors can be computed
-    exog_states = hcat(exog_states, fill(ssidx(obj.exogenv), size(exog_states, 1)))
-    N_runs, N_periods = size(exog_states)
+    exog_states = vcat(exog_states, fill(ssidx(obj.exogenv), 1, size(exog_states, 2)))
+    N_periods, N_runs = size(exog_states)
 
     # Infer element types from a trial run (also triggers compilation)
     _, _tmp_simvar, _tmp_fxerr, _tmp_transerr = calc_result(start, obj)
     _tmp_errs = merge_error(_tmp_fxerr, _tmp_transerr, exog_start)
-    sim_raw = Matrix{typeof(_tmp_simvar)}(undef, N_runs, N_periods)
-    err_raw = Matrix{typeof(_tmp_errs)}(undef,   N_runs, N_periods)
+    sim_raw = Matrix{typeof(_tmp_simvar)}(undef, N_periods, N_runs)
+    err_raw = Matrix{typeof(_tmp_errs)}(undef,   N_periods, N_runs)
 
     # Expand endog_start
     endog_start = StructArray(expand_transitions(endog_start, obj.exogenv))
@@ -190,21 +190,21 @@ function simulate(obj::ModelSolution, stv=nothing;
     # Simulate each run and period
     original_threads = BLAS.get_num_threads()
     BLAS.set_num_threads(1)
-    for r in axes(exog_states, 1)
-        exog_run = view(exog_states, r, :)
+    for r in axes(exog_states, 2)
+        exog_run = view(exog_states, :, r)
         trans = endog_start
-        for t in axes(exog_states, 2)
-            exog_idx = exog_states[r, t]
+        for t in axes(exog_states, 1)
+            exog_idx = exog_states[t, r]
             state = make_point(exog_idx, trans[exog_idx])
-            trans, sim_raw[r,t], fx_nt, transerr = calc_result(state, obj)
-            err_raw[r,t] = merge_error(fx_nt, transerr, get_next_exst(t, ssidx(obj.exogenv), exog_run))
+            trans, sim_raw[t,r], fx_nt, transerr = calc_result(state, obj)
+            err_raw[t,r] = merge_error(fx_nt, transerr, get_next_exst(t, ssidx(obj.exogenv), exog_run))
         end
     end
     BLAS.set_num_threads(original_threads)
 
     # Remove burn-in and package into StructArrays
     t_range = (burn+1):(N_periods-1)
-    simseries = StructArray(view(sim_raw, :, t_range))
+    simseries = StructArray(view(sim_raw, t_range, :))
 
     # Check bounds
     report_bounds && check_bounds(simseries, obj)
@@ -217,7 +217,7 @@ function simulate(obj::ModelSolution, stv=nothing;
 
     # Errors
     err_range = (burn+(dynamic_align === :drop ? 1 : 0) + 1):(N_periods-1)
-    errs      = SimulationErrorPanel(StructArray(@view err_raw[:, err_range]))
+    errs      = SimulationErrorPanel(StructArray(@view err_raw[err_range, :]))
 
     return simseries, errs
 end
@@ -272,33 +272,7 @@ const default_percentiles = SVector(5, 25, 50, 75, 95);
 
 ac1(x) = cor(view(x, 2:length(x)), view(x, 1:length(x)-1))
 
-struct StatisticsSet{NAMES, FUNCS<:Tuple}
-    funcs::FUNCS
-end
 
-# Outer constructor
-function StatisticsSet(names::NTuple{N, Symbol}, funcs::Tuple) where N
-    return StatisticsSet{names, typeof(funcs)}(funcs)
-end
-function StatisticsSet(nt::NamedTuple{NAMES, FUNCS}) where {NAMES, FUNCS<:Tuple}
-    return StatisticsSet{NAMES, FUNCS}(values(nt))
-end
-
-StatisticsSet(ss::StatisticsSet) = ss  # Identity for already-constructed sets
-
-# The "Call" method
-function (statset::StatisticsSet{NAMES})(args...) where NAMES
-    nested = fmap(statset.funcs, args...)
-    flattened = (Iterators.flatten(nested)...,)
-    return NamedTuple{NAMES}(flattened)
-end
-
-# Length methods
-Base.length(::Type{<:StatisticsSet{NAMES}}) where NAMES = length(NAMES)
-Base.length(statset::StatisticsSet) = length(typeof(statset))
-Base.merge(s1::StatisticsSet{NAMES1}, s2::StatisticsSet{NAMES2}) where {NAMES1, NAMES2} = 
-    StatisticsSet( (NAMES1..., NAMES2...), (s1.funcs..., s2.funcs...) )
-varnames(::StatisticsSet{NAMES}) where NAMES = NAMES
 
 # A multivariate stat function (v, sim) -> scalar that accesses sim field S by name.
 # S is a type parameter so getproperty(sim, S) is type-stable; f receives the concrete column.
@@ -350,11 +324,11 @@ function _preallocate_stats(simvector, stat_functions, cor_functions)
 end
 
 function _describe_sample(simseries, stat_functions, cor_functions, mask)
-    N_runs = size(simseries, 1)
-    (first_run, first_mask), runs_iterator = 
+    N_runs = size(simseries, 2)
+    (first_run, first_mask), runs_iterator =
         Iterators.peel(zip(
-            eachrow(simseries),
-            eachrow(mask))
+            eachcol(simseries),
+            eachcol(mask))
         )
 
     run_stats    = _preallocate_stats(view(first_run, first_mask), stat_functions, cor_functions)
@@ -365,7 +339,6 @@ function _describe_sample(simseries, stat_functions, cor_functions, mask)
 
     for (n, (simvector, maskvector)) in enumerate(runs_iterator)
         filtered_simvector = view(simvector, maskvector)
-        #Main.@infiltrate sum(maskvector) < 10_000
         _describe_run!(run_stats, filtered_simvector, stat_functions, cor_functions)
         new_mean   .= mean_stats .+ (run_stats .- mean_stats) ./ (n + 1)
         stderr_stats .+= (run_stats .- mean_stats) .* (run_stats .- new_mean)
@@ -545,9 +518,9 @@ function linearize(simseries::StructArray{T,2} where T, stv::SteadyState; loglin
     next_endog_names = _add_primes(keys(stv.endog))
     nextnames = (next_exog_names..., next_endog_names...)
 
-    nextstates = map(x -> x[:,2:end], states)
+    nextstates = map(x -> x[2:end,:], states)
     nextstates = NamedTuple{nextnames}(values(nextstates))
-    prevstates = map(x -> x[:,1:end-1], states)
+    prevstates = map(x -> x[1:end-1,:], states)
     merged_states = merge(prevstates, nextstates)
 
     x_names = (keys(statevars)..., next_exog_names...)
