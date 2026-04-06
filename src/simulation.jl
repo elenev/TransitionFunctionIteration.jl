@@ -34,8 +34,10 @@ function simulate_markov_chain(exogenv::AbstractExogenv, start::AbstractVector{T
     cumprobs = zeros(N_runs, exnpt(exogenv))
     states[1,:] .= start
     for t in axes(shocks,1)
-        cumprobs .= cumsum(exogenv.mtrans[states[t,:],:], dims=2)
-        states[t+1,:] .= dropdims(sum(shocks[t,:] .> cumprobs, dims=2), dims=2) .+ 1
+        this_states = view(states,t,:)
+        this_shocks = view(shocks,t,:)
+        cumprobs .= cumsum(exogenv.mtrans[this_states,:], dims=2)
+        states[t+1,:] .= dropdims(sum(this_shocks .> cumprobs, dims=2), dims=2) .+ 1
     end
     return states, points(exogenv, states)
 end
@@ -273,7 +275,6 @@ const default_percentiles = SVector(5, 25, 50, 75, 95);
 ac1(x) = cor(view(x, 2:length(x)), view(x, 1:length(x)-1))
 
 
-
 # A multivariate stat function (v, sim) -> scalar that accesses sim field S by name.
 # S is a type parameter so getproperty(sim, S) is type-stable; f receives the concrete column.
 struct MultivariateStatFun{S, F}
@@ -288,7 +289,7 @@ const default_stats = StatisticsSet(
     )
 
 
-function _describe_variable!(outrow, v, simvector, unistat_functions, multistat_functions)
+@inline function _describe_variable!(outrow, v, simvector, unistat_functions, multistat_functions)
     N_uni = length(unistat_functions)
     N_multi = length(multistat_functions)
     N_total = N_uni + N_multi
@@ -296,22 +297,19 @@ function _describe_variable!(outrow, v, simvector, unistat_functions, multistat_
     outrow[N_uni+1:N_total] .= values(multistat_functions(v, simvector))
 end
 
-function _describe_run!(out, simvector, unistat_functions, multistat_functions)
-    vnames = propertynames(simvector)
-    #Main.@infiltrate
-    # N_stat = length(unistat_functions)
-    # N_cor = length(multistat_functions)
-    # N_total = N_stat + N_cor
 
-    # out = Matrix{F}(undef, N_var, N_total)
-    for (i, var) in enumerate(vnames)
-        v = getproperty(simvector, var)
-        _describe_variable!(view(out, i, :), v, simvector, unistat_functions, multistat_functions)
+function _describe_run!(out, simvector, unistat_functions, multistat_functions)
+    foreach(eachrow(out), components(simvector)) do outrow, v
+       _describe_variable!(outrow, v, simvector, unistat_functions, multistat_functions)
     end
-    # stats = [F(f(getproperty(simvector, var))) for var in vnames, f in values(unistat_functions)]
-    # cor_stats = [F(f(getproperty(simvector, var), simvector)) for var in vnames, f in values(multistat_functions)]
-    # return hcat(stats, cor_stats)
 end
+
+# @generated function _describe_run!(out, simvector::StructArray{T,N,C}, unistat_functions, multistat_functions) where {T,N,C}
+#     calls = [:(
+#         _describe_variable!(view(out, $i, :), getproperty(simvector, $(QuoteNode(name))), simvector, unistat_functions, multistat_functions)
+#     ) for (i, name) in enumerate(fieldnames(C))]
+#     return quote $(calls...); nothing end
+# end
 
 function _preallocate_stats(simvector, stat_functions, cor_functions)
     varnames = propertynames(simvector)
@@ -334,19 +332,19 @@ function _describe_sample(simseries, stat_functions, cor_functions, mask)
     run_stats    = _preallocate_stats(view(first_run, first_mask), stat_functions, cor_functions)
     _describe_run!(run_stats, view(first_run, first_mask), stat_functions, cor_functions)
     mean_stats   = copy(run_stats)
-    new_mean     = similar(run_stats)
+    delta        = similar(run_stats)
     stderr_stats = zeros(eltype(run_stats), size(run_stats)...)
 
     for (n, (simvector, maskvector)) in enumerate(runs_iterator)
-        filtered_simvector = view(simvector, maskvector)
+        filtered_simvector = simvector[maskvector] #view(simvector, maskvector)
         _describe_run!(run_stats, filtered_simvector, stat_functions, cor_functions)
-        new_mean   .= mean_stats .+ (run_stats .- mean_stats) ./ (n + 1)
-        stderr_stats .+= (run_stats .- mean_stats) .* (run_stats .- new_mean)
-        mean_stats .= new_mean
+        delta         .= run_stats .- mean_stats
+        mean_stats   .+= delta ./ (n + 1)
+        stderr_stats .+= delta .* (run_stats .- mean_stats)
     end
-
+    # return run_stats
     N_runs > 1 && (stderr_stats .= sqrt.(stderr_stats ./ (N_runs - 1)) ./ sqrt(N_runs))
-
+    #return mean_stats, stderr_stats 
     all_stats = merge(stat_functions, cor_functions)
     return MomentArray(mean_stats,   simseries, all_stats),
            MomentArray(stderr_stats, simseries, all_stats)
