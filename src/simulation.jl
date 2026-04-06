@@ -78,16 +78,29 @@ The default returns empty NamedTuples (no augmentation).
 """
 augment_simulation(::StructVector, ::AbstractModel) = nothing
 
+@inline apply_function_to_variables(f, oldnames, sim) = apply_function_to_variables(f, oldnames, sim, oldnames)
 
-function apply_function_to_variables(f, variables, sim; flabel = v -> Symbol("$(v)_fun"))
-    _select(S, vars) = StructArray(StructArrays.components(S)[vars])
-    inputs = _select(sim, variables)
-    outputs = map(components(inputs)) do var
-        f(var, sim)
+@inline function apply_function_to_variables(f, oldnames::NTuple, sim, newnames = oldnames)
+    apply_function_to_variables(f, Val(oldnames), sim, newnames)
+end
+
+@inline function apply_function_to_variables(f, oldnames::Val{OLD}, sim, flabel::Function) where OLD
+    newnames = map(flabel, OLD)
+    apply_function_to_variables(f, oldnames, sim, Val(newnames))
+end
+
+@inline function apply_function_to_variables(f, oldnames::Val, sim, newnames::NTuple)
+    apply_function_to_variables(f, oldnames, sim, Val(newnames))
+end
+
+@generated function apply_function_to_variables(f, ::Val{OLD}, sim, ::Val{NEW}) where {OLD, NEW}
+    # Create expressions like: f(components(sim).K, sim)
+    calls = [:(f(getproperty(StructArrays.components(sim), $(QuoteNode(s))), sim)) for s in OLD]
+    
+    return quote
+        outputs = ($(calls...),)
+        return NamedTuple{NEW}(outputs)
     end
-    names = map(flabel, variables)
-    outputs = NamedTuple{names}(values(outputs))
-    return outputs
 end
 
 function _update_simseries_with_augmented(simseries, obj, dynamic_align)

@@ -77,3 +77,23 @@ end
 function fmap(nt::NamedTuple{NAMES}, args...) where NAMES
     return NamedTuple{NAMES}(fmap(values(nt), args...))
 end
+
+# Struct Array Select 
+@inline select(sa::StructArray, vars::NTuple{N,Symbol} where N) = select(sa, Val(vars))
+
+@generated function select(sa::StructArray, ::Val{NAMES}) where NAMES
+    # NAMES is a tuple of symbols, e.g., (:K, :Y)
+    # We construct an expression that accesses each field directly
+    
+    # 1. Get the components (the internal NamedTuple)
+    # 2. Build the subsetting expression: (K = comps.K, Y = comps.Y)
+    elements = [:(getproperty(comps, $(QuoteNode(s)))) for s in NAMES]
+    
+    return quote
+        comps = StructArrays.components(sa)
+        # Construct a new NamedTuple with the subset
+        new_components = NamedTuple{$NAMES}(($(elements...),))
+        # Re-wrap into a StructArray
+        return StructArray(new_components)
+    end
+end

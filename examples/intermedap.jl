@@ -275,17 +275,15 @@ end
 
 
 function augment_simulation(sim::StructVector, mdl::IntermediaryAssetPricingModel)
-    _select(S, vars) = StructArray(StructArrays.components(S)[vars])
-
     growth_rate_vars = (:Y, :K, :C, :D, :I)
     growth_rates = TransitionFunctionIteration.apply_function_to_variables((v,s) -> growth_rate(v,s.G), 
-        growth_rate_vars, sim; flabel = v -> Symbol("$(v)_gr"))
+        growth_rate_vars, sim, v -> Symbol("$(v)_gr"))
 
     rS = return_on_cum_price(sim.Q, sim.d, sim.G)
     r = @view sim.r[2:end]
     xrS = rS .- r
-    
-    (; MPK) = StructArray(calc_production.(_select(sim, (:K, :q)), Ref(mdl)))
+
+    (; MPK) = StructArray(calc_production.(sim, Ref(mdl)))
     rK = return_on_ex_price(sim.K, MPK, sim.G)
     xrK = rK .- r
 
