@@ -78,6 +78,18 @@ The default returns empty NamedTuples (no augmentation).
 """
 augment_simulation(::StructVector, ::AbstractModel) = nothing
 
+
+function apply_function_to_variables(f, variables, sim; flabel = v -> Symbol("$(v)_fun"))
+    _select(S, vars) = StructArray(StructArrays.components(S)[vars])
+    inputs = _select(sim, variables)
+    outputs = map(components(inputs)) do var
+        f(var, sim)
+    end
+    names = map(flabel, variables)
+    outputs = NamedTuple{names}(values(outputs))
+    return outputs
+end
+
 function _update_simseries_with_augmented(simseries, obj, dynamic_align)
     N_periods, N_runs = size(simseries)
 

@@ -278,7 +278,8 @@ function augment_simulation(sim::StructVector, mdl::IntermediaryAssetPricingMode
     _select(S, vars) = StructArray(StructArrays.components(S)[vars])
 
     growth_rate_vars = (:Y, :K, :C, :D, :I)
-    growth_rates = (; (Symbol("$(k)_gr") => growth_rate(getproperty(sim, k), sim.G) for k in growth_rate_vars)... )
+    growth_rates = TransitionFunctionIteration.apply_function_to_variables((v,s) -> growth_rate(v,s.G), 
+        growth_rate_vars, sim; flabel = v -> Symbol("$(v)_gr"))
 
     rS = return_on_cum_price(sim.Q, sim.d, sim.G)
     r = @view sim.r[2:end]
