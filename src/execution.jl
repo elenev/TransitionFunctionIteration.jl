@@ -253,7 +253,13 @@ end
 
 const THREAD_THRESHOLD = 500  # parallelize when n_points * n_equations exceeds this
 
-function perform_iteration!(obj, diag, damp, npasses, solmethod, iter, use_threads::Bool)
+@inline _make_guess(guess_idx, _, Pfct_coeffs, Tfct_coeffs, ::TFIMethod)   = Pfct_coeffs[guess_idx]
+@inline _make_guess(guess_idx, i, Pfct_coeffs, Tfct_coeffs, ::STPFIMethod) = (Pfct_coeffs[guess_idx], Tfct_coeffs[i])
+
+@inline _guess_indices(i, R, ::Val{1}) = @SVector[R[i]]
+@inline _guess_indices(i, R, ::Val)    = find_neighbors_with_diagonals(i, R)
+
+function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bool)
 
     #states = collect(points(obj.ssg))
     Pfct_coeffs = coefficients(obj.Pfct)
@@ -272,28 +278,22 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, iter, use_threa
 
     R = CartesianIndices(values(dims(obj.ssg)))
 
-    guess_selector = i -> @SVector[R[i]]
-
     pass = 1
     while true
         unsolved_state_indices = findall(!s for s in success)
         total_unsolved = length(unsolved_state_indices)
-        
 
-        _solve_loop!(idx) = begin
+
+        function _solve_loop!(idx, pass)
             i = unsolved_state_indices[idx]
             state = obj.ssg[i]
-            guess_indices = guess_selector(i)
+            guess_indices = _guess_indices(i, R, Val(pass))
             values = Vfct_coeffs[i]
             trans = Tfct_coeffs[i]
 
             local new
             for guess_idx in guess_indices
-                if solmethod isa TFIMethod
-                    oldguess = Pfct_coeffs[guess_idx]
-                elseif solmethod isa STPFIMethod
-                    oldguess = (Pfct_coeffs[guess_idx], Tfct_coeffs[i])
-                end
+                oldguess = _make_guess(guess_idx, i, Pfct_coeffs, Tfct_coeffs, solmethod)
                 old = FunctionValuesAtPoint(state, oldguess, values, trans)
                 new, success[i] = solve_at_point(old, obj, solmethod)
                 if success[i] break end
@@ -308,17 +308,15 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, iter, use_threa
 
         if use_threads
             @batch per=thread for idx in eachindex(unsolved_state_indices)
-                _solve_loop!(idx)
+                _solve_loop!(idx, pass)
             end
         else
             for idx in eachindex(unsolved_state_indices)
-                _solve_loop!(idx)
+                _solve_loop!(idx, pass)
             end
         end
 
         Pfct_coeffs .= new_Pfct
-
-        guess_selector = i -> find_neighbors_with_diagonals(i, R)
 
         total_still_unsolved = sum(!s for s in success)
         solved_this_pass = total_unsolved - total_still_unsolved
@@ -464,7 +462,7 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
     with_logger(_make_logger(logging, obj)) do
         while true
 
-            perform_iteration!(obj, diag, damp, npasses, solmethod, iter, use_threads)
+            perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads)
 
             distV, worst_varV, worst_pointV = summarize_distances(diag.value_distances, obj.Vfct)
             distT, worst_varT, worst_pointT, worst_exst = summarize_distances(diag.transition_distances, obj.Tfct)
