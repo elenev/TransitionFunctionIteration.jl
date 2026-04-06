@@ -79,32 +79,63 @@ The default returns empty NamedTuples (no augmentation).
 augment_simulation(::StructVector, ::AbstractModel) = nothing
 
 function _update_simseries_with_augmented(simseries, obj, dynamic_align)
-    N_periods = size(simseries, 1)
+    N_periods, N_runs = size(simseries)
 
-    # Infer output type. If augment_simulation returns nothing, skip augmentation and return original simseries.
-    if augment_simulation(first(eachcol(simseries)), obj.model) === nothing
-        return simseries
+    # Initialize iterator over runs 
+    first_run, runs_iterator = Iterators.peel(eachcol(simseries))
+
+    # Probe
+    first_aug = augment_simulation(first_run, obj.model)
+
+    # If augment_simulation returns nothing, skip augmentation and return original simseries.
+    first_aug === nothing && return simseries
+
+    # Set flag for mode
+    is_drop = dynamic_align == :drop
+
+    # Preallocate matrices
+    F = promote_type(fieldtypes(eltype(simseries))...)
+    N_augperiods = N_periods - (is_drop ? 1 : 0)
+    A = similar(first(components(simseries)), F, N_augperiods, N_runs)
+    fill!(A,NaN)
+
+    augmat_nt = map(_ -> copy(A), first_aug)
+
+
+    # Define fill function
+    function fill_aug!(augmat_nt, simvector, r)
+        # Compute augmented variables for this run
+        augvector = augment_simulation(simvector, obj.model)
+        # Fill each variable's column in the appropriate augmented matrix, aligned according to dynamic_align 
+        foreach(augmat_nt, augvector) do mat, v 
+            N_v = length(v)
+            if is_drop
+                source = N_v == N_periods ? view(v, 2:N_periods) : v
+                target = view(mat, :, r)
+            else
+                source = v
+                target = N_v == N_periods ? view(mat,:,r) : view(mat, 2:N_periods, r)
+            end
+            target .= source
+        end
     end
 
-    # Augment with extra variables and align dynamic variables as needed.
-    _pad_aug_var!(v)  = length(v) <  N_periods ? pushfirst!(v, eltype(v)(NaN)) : v
-    _trim_aug_var!(v) = length(v) == N_periods ? popfirst!(v)                  : v
-    align_aug_var!(v) = dynamic_align === :drop ? _trim_aug_var!(v) : _pad_aug_var!(v)
+    
+    fill_aug!(augmat_nt, first_run, 1)  # Fill first run's augmented variables
 
-    # Augment each run, align, and stack
-    augseries = let model = obj.model
-        stack(
-            map(eachcol(simseries)) do runcol
-                aug = augment_simulation(runcol, model)
-                foreach(align_aug_var!, aug)
-                return StructArray(aug)
-            end,
-            dims=2)
+    # Loop over runs 
+    for (i, simvector) in enumerate(runs_iterator)
+        r = i + 1
+        fill_aug!(augmat_nt, simvector, r)
     end
+
+    # Convert to StructArray
+    augseries = StructArray(augmat_nt)
+
+    # Drop first period of simseries if needed for alignment
+    simseries = is_drop ? view(simseries, 2:N_periods, :) : simseries
 
     # Merge
-    simseries = dynamic_align === :drop ? view(simseries, 2:N_periods, :) : simseries
-
     return merge_structarrays(simseries, augseries)
 end
 
