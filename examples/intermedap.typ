@@ -579,3 +579,119 @@ $
 
   hat(V)^H &=  exp(beta/(1-beta) g) hat(c)
 $
+
+=== Log Value-Consumption Ratio Approximation
+
+The derivation above yields the _deterministic_ steady state value function. But it is a poor guess for the value function in the stochastic economy, since the presence of risk lowers utility. With Epstein-Zin preferences, the value function is in the SDF so it affects equilibrium quantities, meaning that a poor initial guess can significantly slow down convergence.
+
+To initialize the solution algorithm with a good initial guess, it is helpful to approximate the risk-adjustment using a stripped-down endowment economy with Epstein-Zin preferences and AR(1) consumption growth:
+$
+  g_(t+1) = (1-rho) macron(g) + rho g_t + sigma_epsilon epsilon_(t+1)
+$
+with $epsilon_(t+1) ~ N(0,1)$ and $C_(t+1) = exp(g_(t+1)) C_t$.
+
+Define the log value-consumption ratio
+$
+  w_t equiv log(V_t / C_t)
+$
+and approximate it using the method of undetermined coefficients:
+$
+  w_t = a + b (g_t - macron(g))
+$
+
+The earlier Epstein-Zin recursion can be rewritten directly in terms of the value-consumption ratio as
+$
+  exp((1-1/psi) w_t)
+  =
+  (1-beta) + beta (CE_t / C_t)^(1-1/psi)
+$
+where
+$
+  CE_t = E_t [ V_(t+1)^(1-gamma) ]^(1/(1-gamma))
+$
+in the endowment economy. Taking logs gives
+$
+  w_t = 1/(1-1/psi) log( (1-beta) + beta exp((1-1/psi) z_t) )
+$
+where
+$
+  z_t equiv log(CE_t / C_t)
+$
+
+Under the affine guess,
+$
+  w_(t+1) + g_(t+1) = a + b (g_(t+1) - macron(g)) + g_(t+1)
+$
+so
+$
+  w_(t+1) + g_(t+1) = a - b macron(g) + (1+b) g_(t+1)
+$
+Since $g_(t+1) | g_t$ is normal, the certainty equivalent is also log-linear:
+$
+  z_t = 1/(1-gamma) log E_t [ exp((1-gamma)(w_(t+1) + g_(t+1))) ]
+$
+which implies
+$
+  z_t =
+  a + [1 - (1+b) rho] macron(g)
+  + (1+b) rho g_t
+  + 1/2 (1-gamma) (1+b)^2 sigma^2
+$
+or, collecting the mean and slope terms,
+$
+  z_t =
+  underbrace(
+    a + macron(g) + 1/2 (1-gamma) (1+b)^2 sigma^2
+  )_("mean term")
+  + (1+b) rho (g_t - macron(g))
+$
+
+Substituting this into the exact recursion for $w_t$ still leaves a nonlinear function of $g_t$. To keep the affine approximation while centering it on the stochastic economy rather than the deterministic steady state, expand the outer log-sum-exp map around the mean term:
+$
+  z^* = a + macron(g) + 1/2 (1-gamma) (1+b)^2 sigma^2
+$
+and define
+$
+  K = exp((1-1/psi) z^*)
+$
+Then the constant term in the approximation is
+$
+  a = 1/(1-1/psi) log(1-beta + beta K)
+$
+
+The local slope of the nonlinear map at $z^*$ is
+$
+  lambda = (beta K) / (1-beta + beta K)
+$
+so matching coefficients on $(g_t - macron(g))$ yields
+$
+  b = lambda (1+b) rho
+$
+which can be rewritten as
+$
+  b = (lambda rho) / (1 - lambda rho)
+$
+or, equivalently,
+$
+  b = rho / ( (1-beta)/(beta K) + 1-rho )
+$
+
+The coefficients $a$ and $b$ therefore satisfy the nonlinear system
+$
+  K = exp((1-1/psi) ( a + macron(g) + 1/2 (1-gamma) (1+b)^2 sigma^2 ))
+$
+$
+  a = 1/(1-1/psi) log(1-beta + beta K)
+$
+$
+  b = rho / ( (1-beta)/(beta K) + 1-rho )
+$
+
+This system is no longer closed form, but it is centered on the stochastic economy itself. For $gamma > 1$, the variance term lowers $z^*$ and therefore lowers the average value-consumption ratio, with larger effects when volatility $sigma$ or persistence $rho$ is higher.
+
+Note that with $sigma = 0$, it collapses to the deterministic steady state:
+
+$
+  exp(a (1-1/psi)) &= 1-beta + beta exp((1-1/psi) ( a + macron(g) )) \
+
+$

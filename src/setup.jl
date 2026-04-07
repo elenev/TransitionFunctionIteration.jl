@@ -29,6 +29,9 @@ function main_setup(model::AbstractModel,
         end
     end
 
+    # Adjust steady state before using it as initial value 
+    stv = initial_guess_from_stv(stv, model)
+
     # Define endogenous grids
     default_grids = define_endog_grids(model, stv)
     grids = isnothing(grids) ? default_grids : merge(default_grids, grids)
@@ -88,6 +91,11 @@ end
 # the fixed-point steady state solver how to construct the next period values needed.
 function vals_from_policy(state, policy, model::AbstractModel, args...)
     return policy
+end
+
+# Default initial guess is the steady state 
+function initial_guess_from_stv(stv::SteadyState, model::AbstractModel)
+    return stv
 end
 
 @inline function _guessvec_to_nt(x, nt_bounds)

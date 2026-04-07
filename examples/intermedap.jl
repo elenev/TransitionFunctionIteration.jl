@@ -3,7 +3,7 @@ using TransitionFunctionIteration, StaticArrays, StructArrays
 
 # Explicitly import functions that must be overloaded
 import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids, steadystate_system, 
-    compute_next_period_values, vals_from_policy, bounds, 
+    initial_guess_from_stv, compute_next_period_values, vals_from_policy, bounds, 
     normalize_next_period_values, normalize_fx_errors, augment_simulation
 
 # Import some other functions for convenience
@@ -120,6 +120,18 @@ function vals_from_policy(state, policy, model::IntermediaryAssetPricingModel)
 
     return (; C, q, Q, V)
 end
+
+# function initial_guess_from_stv(stv::SteadyState, model::IntermediaryAssetPricingModel)
+#     (; β, γ, ψ, gbar, σ, ρ) = model
+#     μ = gbar
+#     ρ = 0.5
+#     σ = σ * sqrt(1 - ρ^2)
+#     vadj = TransitionFunctionIteration.epstein_zin_jensen_correction(; β, γ, ψ, μ, σ, ρ)
+#     V = stv.values.V * exp(vadj)
+#     values = merge(stv.values, (; V))
+#     return SteadyState(; model=stv.model, guess=stv.guess, 
+#         endog=stv.endog, exog=stv.exog, values)
+# end
 
 function define_endog_grids(model::IntermediaryAssetPricingModel, stv::SteadyState)
     K_grid = range(0.5, 2.5, length=15) * stv.endog.K
