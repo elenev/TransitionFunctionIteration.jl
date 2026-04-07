@@ -476,8 +476,12 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
                 foreach(track_history, history_list) do track_var, history_var
                     (fct_sym, var_name, idx) = track_var
                     fct = getproperty(obj, fct_sym)
-                    coefs = coefficients(fct)
-                    snapshot = coefs[idx]  # Extract the requested variable's full grid array at this iteration
+                    if isa(idx, Integer)
+                        coefs = coefficients(fct)
+                        snapshot = coefs[idx]  # Extract the requested variable's full grid array at this iteration
+                    elseif isa(idx, NamedTuple)
+                        snapshot = SVector(fct(idx)...)
+                    end
 
                      # Append to the corresponding history list
                      history_idx = varindex(fct, var_name)
