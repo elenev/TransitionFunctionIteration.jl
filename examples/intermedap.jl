@@ -134,8 +134,8 @@ end
 # end
 
 function define_endog_grids(model::IntermediaryAssetPricingModel, stv::SteadyState)
-    K_grid = range(0.5, 2.5, length=15) * stv.endog.K
-    L_grid = range(0.10, 0.125, length=9)
+    K_grid = range(1.8, 9.0, 20) #range(0.5, 2.5, length=15) * stv.endog.K
+    L_grid = range(0.09, 0.12, length=15)
     return (; K=K_grid, L=L_grid)
 end
 
@@ -183,6 +183,7 @@ function compute_next_period_values(next, model::IntermediaryAssetPricingModel, 
                     BH = Λ  * BHpayoff,
                     SH = Λ  * SHpayoff,
                     CE = (G*V)^(1-γ),
+                    q  = q,
                     )
 
     continuations = (; RK, G, q, V)
@@ -208,6 +209,7 @@ function normalize_next_period_values(np, mdl::IntermediaryAssetPricingModel, mo
         BH = np.expectations.BH * CEterm,
         SH = np.expectations.SH * CEterm,
         CE = CE,
+        q  = np.expectations.q,
     )
     # QG is the physical-measure E[Q*G]; it is not SDF-weighted so CEterm does not apply
     expectations = mode isa SimulateMode ?
@@ -249,14 +251,14 @@ function calc_eqm(state, policy, model::IntermediaryAssetPricingModel, np::NextP
           EE_KI = q - np.expectations.KI / ΛF   - λ*θ,
           EE_BI = p - np.expectations.BI / ΛF   - λ,
           MC_B  = BH - BI,
-          LC    = fisher_burmeister(λ, θ*q*K′ - p*BI))
+          LC    = fisher_burmeister(λ, θ*q*K′ - p*BI)) #np.expectations.
 
     if mode isa SolveMode
         return fx
     else
         N′ = @. K′*np.continuations.RK - BI
         trans = (K = K′ ./ np.continuations.G, 
-                 L = N′ ./ (q.*K′))
+                 L = N′ ./ (np.continuations.q.*K′))
         V = ces(C, np.expectations.CE, 1-β, ψ)
         vals = (; C, q, Q, V)
         
