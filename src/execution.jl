@@ -420,6 +420,8 @@ repeats until `log₁₀(max_distance) < tol` or `maxiter` is reached.
 - `tol`: convergence threshold as log₁₀ distance (`-5` means 1e-5)
 - `damp`: value function damping in [0,1] (1 = full update, 0 = no update)
 - `npasses`: revisit passes for grid points where the solver failed on the first pass
+- `solmethod`: `TFIMethod()` (default) or `STPFIMethod()`, controls whether to precompute
+  expectations (Elenev and Landvoigt) or to add transition functions to the system (Cao et al)
 - `logging`: minimum `LogLevel` to display (`COMPLETE` suppresses iteration logs)
 - `track_history`: `nothing` (default) or `(fct_sym, var_names)` where `fct_sym` is `:Vfct`
   or `:Tfct` and `var_names` is a tuple of variable name Symbols. When set, returns a
