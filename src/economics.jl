@@ -187,3 +187,53 @@ end
 # Growth rates
 @inline growth_rate(x::Real, x′::Real, G=1.0) = return_on_ex_price(x, x′, 0.0, G)
 @inline growth_rate(x::AbstractVector{<:Real}, G::AbstractVector{<:Real}=ones(size(x))) = growth_rate.(x[1:end-1], x[2:end], G[2:end])
+
+
+# Approximate Jensen term in the Epstein-Zin value function
+# This is useful to "correct" the deterministic steady state value function for the presence of uncertainty,
+# making it a better initial guess for the stochastic model.
+@inline function epstein_zin_jensen_correction(; β=0.99,γ=1.0,ψ=1.0,μ=0.0,σ=0.01,ρ=0.9)
+    # No adjustment for γ = 1.0
+    if γ ≈ 1.0
+        return 0.0
+    end
+
+    # Solve using Method Undetermined Coefficients
+
+    # Multiplier preferences
+    if ψ ≈ 1.0
+        b  = (β*ρ) / (1 - β*ρ)
+        a0 = β/(1 - β) * μ
+        a  = β/(1 - β) * (μ + 0.5*(1-γ)*(1+b)^2*σ^2)
+        return a - a0
+    end
+    
+    # Define the residual function for the nonlinear system
+    function objfun(x,p)
+        a, b = x 
+        (; β, γ, ψ, μ, σ, ρ) = p
+        K = exp( (1-1/ψ) * (a + μ + 0.5*(1-γ)*(1+b)^2*σ^2))
+        e1 = a - 1/(1-1/ψ)*log(1-β + β*K)
+        e2 = b - ρ / ((1-β)/(β*K) + 1 - ρ)
+        #Main.@infiltrate
+        return SVector(e1, e2)
+    end
+
+    # General EZ case
+    x0 = SVector(0.0, 0.0)
+    p = (; β, γ, ψ, μ, σ, ρ)
+    #Main.@infiltrate
+    problem = NonlinearProblem{false}(objfun, x0, p)
+    alg = SimpleTrustRegion()
+    sol = solve(problem, alg)
+
+    if !SciMLBase.successful_retcode(sol)
+        @warn "Failed to solve for Epstein-Zin Jensen correction. Returning zero correction. Error: $(sol.retcode)"
+        return 0.0
+    end
+
+    # Deterministic coefficient 
+    a0 =  1/(1-1/ψ) * log((1-β) / (1 - β * exp((1-1/ψ) * μ)))
+
+    return sol.u[1] - a0
+end
