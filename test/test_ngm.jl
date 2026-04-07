@@ -72,7 +72,7 @@ end
 @testset "NGM — STPFIMethod solves to same result" begin
     ngm2 = NeoclassicalGrowthModel()
     obj2, _ = main_setup(ngm2)
-    @test_broken begin
+    @test begin
         main_execute!(obj2; maxiter=200, logging=COMPLETE, solmethod=STPFIMethod())
         isapprox(coefficients(obj2.Pfct), coefficients(obj.Pfct), rtol=1e-3)
     end

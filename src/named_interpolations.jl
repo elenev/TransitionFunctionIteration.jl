@@ -215,8 +215,27 @@ end
     return StructArray(_evaluate(fct,x) for x in pts)
 end
 
+# Deals with interaction bug in Interpolations.jl and ForwardDiff.jl
+# A BoundsError is raised when an interpolation is evaluated exactly 
+# at the upper boundary with a Dual number. An @inbounds call in
+# Interpolations.jl catches it but that's disabled during tests, raising
+# an error. Solution: a small nudge.
+@inline _bound_dual(x::Real, ::Real, ::Real) = x
+@inline function _bound_dual(x::ForwardDiff.Dual, lo::Real, hi::Real)
+    v = ForwardDiff.value(x)
+    v == hi && return typeof(x)(prevfloat(convert(typeof(v), hi)), ForwardDiff.partials(x))
+    v == lo && return typeof(x)(nextfloat(convert(typeof(v), lo)), ForwardDiff.partials(x))
+    return x
+end
+
+# Apply only to floating-point (Flat()-extrapolated) axes; skip NoInterp integer axes.
+@inline _bound_coord(x, k::AbstractVector{<:AbstractFloat}) = _bound_dual(x, first(k), last(k))
+@inline _bound_coord(x, ::Any) = x
+
 @inline function _evaluate(fct, x)
-    out = fct.itp(x...)
+    xv = values(x)
+    xv_bounded = map(_bound_coord, xv, knots(fct.itp))
+    out = fct.itp(xv_bounded...)
     return name_values(out, fct)
 end
 
