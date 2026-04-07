@@ -183,7 +183,7 @@ execution, simulation, momentarray, logging, plotting, irfplotting, linearize, n
 
 ### Memory
 - At the end of every session, write a summary of completed/discussed work into `.claude/logs/` with the date and time in the filename.
-
+- At the start of every session, review the logs to guide your code review.
 
 
 ---
