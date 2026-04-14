@@ -37,8 +37,8 @@ export IRFResult, Transformations, ReportedVariable, IRFPage, simulate_irf
 # MomentArray
 export MomentArray, @MomentArray, row_names, col_names
 
-# Main interface 
-export solve_and_simulate
+# Main interface
+export solve_and_simulate, generate_template
 
 include("abstract_types.jl")
 include("named_interpolations.jl")
@@ -58,6 +58,7 @@ include("setup.jl")
 include("execution.jl")
 include("simulation.jl")
 include("economics.jl")
+include("template.jl")
 
 include("irf.jl")
 include("irfplotting.jl")
