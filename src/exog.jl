@@ -2,7 +2,21 @@
 
 import QuantEcon.rouwenhorst
 
-# Discretize AR(1) using Rouwenhorst method
+"""
+    ExogenvAR1(; ρ=0.0, σ=1.0, μ=0.0, n=3, jensen=false, transform=identity, shock_name=:z)
+
+Construct an `Exogenv` for a discretized AR(1) process using the Rouwenhorst method.
+
+- `ρ`: persistence
+- `σ`: unconditional standard deviation
+- `μ`: unconditional mean (in levels before transform)
+- `n`: number of grid points
+- `jensen`: if `true`, uses `transform=exp` and applies Jensen correction so that the
+  unconditional mean of the transformed process equals `exp(μ)`
+- `shock_volatility`: if `true`, the supplied `σ` is the volatility of the shock rather than the state, so the function adjusts `σ` accordingly
+- `transform`: applied element-wise to the grid (default `identity`; use `exp` for log-normal)
+- `shock_name`: name of the exogenous variable in the state NamedTuple
+"""
 function ExogenvAR1(;
     ρ::Real = 0.0,
     σ::Real = 1.0,
@@ -13,24 +27,35 @@ function ExogenvAR1(;
     transform::Function = jensen ? exp : identity,
     shock_name::Symbol = :z)
 
-    if ~shock_volatility
-        # If the supplied volatility is the volatility of the state rather than the shock,
-        # we need to adjust the parameters
-        σ = σ * sqrt(1 - ρ^2)
+    # Interpret σ based on shock_volatility
+    # If true, it's a shock volatility so unconditional vol of the state is higher
+    # If false, it's unconditional vol so shock vol is lower.
+    if shock_volatility
+        σϵ = σ
+        σx = σϵ / sqrt(1 - ρ^2)
+    else
+        σx = σ
+        σϵ = σx * sqrt(1 - ρ^2)
     end
 
     if jensen
         # Jensen correction to the mean
         # such that expectation is exp(μ)
         # rather than exp(μ + σ^2/2)
-        μ -= σ^2/2
+        μ -= σx^2/2
     end
 
 
     # Markov chain constructor from QuantEcon
-    mc = rouwenhorst(n, ρ, σ, μ)
+    mc = rouwenhorst(n, ρ, σϵ, μ*(1-ρ))
 
-    state_values = SVector{length(mc.state_values)}(mc.state_values)
+    state_values = mc.state_values
+    mtrans = mc.p
+    if n <= 10
+        state_values = SVector{n}(state_values)
+        mtrans = SMatrix{n, n}(mtrans)
+    end
+
     pts = StructArray((; shock_name => transform.(state_values)))
 
     # Steady state index is middle point
@@ -38,7 +63,7 @@ function ExogenvAR1(;
 
     #@info "Created Exogenv with ρ=$(ρ), σ=$(σ), μ=$(μ), n=$(n), jensen=$(jensen)"
     #return mc, pts, ssidx
-    return Exogenv(pts = pts, mtrans = mc.p, ssidx = ssidx)
+    return Exogenv(; pts, mtrans, ssidx)
 
 end
 
