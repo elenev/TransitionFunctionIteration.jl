@@ -2,37 +2,110 @@ module TransitionFunctionIteration
 
 using Interpolations, NonlinearSolve, ForwardDiff, StaticArrays, StructArrays
 using RecipesBase
-using Logging, LinearAlgebra, Random, Statistics
+using Logging, LinearAlgebra, Random, Statistics, StatsBase, PrettyTables
+using Polyester: @batch
 
 # Types
-export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant
-export StateSpaceGrid, Interpolant, Exogenv, ModelSolution
+export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant, AbstractSteadyState
+export StateSpaceGrid, Interpolant, Exogenv, ModelSolution, SteadyState, NextPeriod
 export EvaluationMode, SolveMode, IterateMode, SimulateMode
-export points, dims, npt, nof, varnames, unigrids, singletons, ssidx, exnpt, nex
+export SteadyStateMode, AnalyticalSteadyStateMode, SystemSteadyStateMode, FixedPointSteadyStateMode
+export points, dims, npt, nof, elsize, varnames, unigrids, singletons
 export coefficients, knots, statespacegrid, name_values
+
 # Interface stub: model packages extend this
-export calc_eqm
+export calc_eqm, compute_next_period_values, steadystate, define_endog_grids
 
 # Logging
-export ExecutionLogger
+export ExecutionLogger, TerminalLogger, CSVLogger
 export COMPLETE, ITERATION, ITERATIONFAILED, FAILEDPOINT
-export @complete, @iteration, @iterationfailed, @failedpoint
 
 # Exogenous environment tools
-export ExogenvAR1, ergodic_distro
+export ExogenvAR1, ergodic_distro, ssidx, exnpt, nex, transition_matrix, conditional_distro
 
 # Solver
-export main_execute!, forecast_next, forecast_at_point, make_point
+export main_setup, main_execute!, make_point, compute_expectations, TFIMethod, STPFIMethod, fisher_burmeister
 
 # Simulation
-export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds
+export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, augment_simulation
+export ReportedMoment, compare_economies
+export SimulationPanel, SimulationErrorPanel, endog_states, states
 
-include("types.jl")
+# IRFs
+export IRFResult, Transformations, ReportedVariable, IRFPage, simulate_irf
+
+# MomentArray
+export MomentArray, @MomentArray, row_names, col_names
+
+# Main interface
+export solve_and_simulate, generate_template, update_model
+
+include("abstract_types.jl")
+include("named_interpolations.jl")
+include("solution_types.jl")
+
+include("transformations.jl")
+include("statistics_types.jl")
+
+include("stubs.jl")
+
 include("exog.jl")
+include("utils.jl")
 include("logging.jl")
 include("plotting.jl")
+
+include("setup.jl")
 include("execution.jl")
 include("simulation.jl")
+include("economics.jl")
+include("template.jl")
 
+include("irf.jl")
+include("irfplotting.jl")
+
+
+"""
+    solve_and_simulate(model; setup_kwargs=(;), execute_kwargs=(;), simulate_kwargs=(;),
+                       irf_kwargs=(;), run_simulate=true, run_irf=true)
+
+Convenience wrapper: calls `main_setup`, `main_execute!`, `simulate`, and `simulate_irf`
+in sequence. Returns a NamedTuple `(; obj, stv, simseries, errs, stats, errstats, irf)`.
+
+Set `run_simulate=false` to stop after solving; `run_irf=false` to skip IRF computation.
+"""
+function solve_and_simulate(model::AbstractModel;
+    setup_kwargs=(;), execute_kwargs=(;), simulate_kwargs=(;), irf_kwargs=(;),
+    describe_kwargs=(;),
+    run_simulate=true, run_irf=true)
+
+    # Setup
+    @info "Setting up the model..."
+    obj, stv = main_setup(model; setup_kwargs...)
+
+    # Execute
+    @info "Solving..."
+    main_execute!(obj; execute_kwargs...)
+
+    if !run_simulate
+        return obj, stv
+    end
+
+    # Simulate
+    @info "Simulating to produce ergodic moments..."
+    simseries, errs = simulate(obj, stv; simulate_kwargs...)
+
+    stats = describe(simseries; describe_kwargs...).moments
+    errstats = calc_error_stats(errs)
+
+    if !run_irf
+        return obj, stv, simseries, errs
+    end
+
+    # IRF
+    @info "Running IRFs..."
+    irf = simulate_irf(obj, simseries; irf_kwargs...)
+
+    return (; obj, stv, simseries, errs, stats, errstats, irf)
+end
 
 end
