@@ -81,4 +81,52 @@
         @test page[2].transformation isa Transformations.DiffLevel
     end
 
+    @testset "IRF recipe — pers parameter" begin
+        rv = ReportedVariable(:C)
+        specs = RecipesBase.apply_recipe(
+            Dict{Symbol,Any}(:pers => 1:3), irf_mock, rv, :shock_1)
+        @test length(specs) >= 1
+        # x-axis should cover the requested period range
+        @test specs[1].args[1] == 1:3
+    end
+
+    @testset "IRF recipe — sd ribbon" begin
+        rv = ReportedVariable(:C)
+        # sd=true adds a ribbon; recipe should complete without error
+        specs = RecipesBase.apply_recipe(
+            Dict{Symbol,Any}(:sd => true), irf_mock, rv, :shock_1)
+        @test length(specs) >= 1
+        # ribbon attribute should be set
+        @test haskey(specs[1].plotattributes, :ribbon)
+    end
+
+    @testset "IRF recipe — fan chart" begin
+        # Need paths data for fan chart: irf.paths.shock_1.C is an N×T matrix
+        N_paths = 20
+        paths_C = randn(N_paths, T) .+ shock_C'  # N × T matrix
+        irf_with_paths = IRFResult(
+            irf_mock.means,
+            irf_mock.stdevs,
+            irf_mock.other_stats,
+            (shock_1 = StructArray((C = paths_C,)),),
+        )
+
+        rv = ReportedVariable(:C)
+        specs = RecipesBase.apply_recipe(
+            Dict{Symbol,Any}(:fan => true, :n_bands => 3, :tail_pct => 5.0),
+            irf_with_paths, rv, :shock_1)
+        # fan=true produces n_bands series + 1 mean line
+        @test length(specs) >= 4
+    end
+
+    @testset "IRFPage recipe — smoke test" begin
+        page = IRFPage([
+            ReportedVariable(:C),
+            ReportedVariable(:C; transformation=Transformations.DiffLevel()),
+        ])
+        specs = RecipesBase.apply_recipe(Dict{Symbol,Any}(), irf_mock, page, :shock_1)
+        # One @series per variable in the page
+        @test length(specs) >= length(page)
+    end
+
 end

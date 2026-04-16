@@ -75,6 +75,7 @@ end
     include("test_interpolant.jl")
     include("test_exogenv.jl")
     include("test_bounded.jl")
+    include("test_stubs.jl")
     include("test_momentarray.jl")
     include("test_economics.jl")
     include("test_simulation.jl")
@@ -85,7 +86,8 @@ end
     include("test_execution.jl")
     include("test_utils.jl")
     include("test_transformations.jl")
-    include("test_ngm.jl")       # must come first: brings obj, stv, simseries into global scope
+    include("test_ngm.jl")       # must come first: brings ngm, obj, stv, simseries into global scope
     include("test_irf.jl")       # uses obj, stv, simseries from test_ngm.jl
     include("test_linearize.jl") # uses those fixtures
+    include("test_setup.jl")     # uses ngm, obj, stv from test_ngm.jl
 end

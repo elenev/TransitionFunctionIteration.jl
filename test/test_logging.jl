@@ -81,3 +81,66 @@ end
     @test contains(out, "done")
 
 end
+
+@testset "ExecutionLogger — shouldlog" begin
+
+    # When min_level=ITERATION, levels above should pass, below should not
+    logger = TerminalLogger(ITERATION; io=devnull)
+
+    @test TFI.Logging.shouldlog(logger, COMPLETE,        nothing, nothing, nothing) == true
+    @test TFI.Logging.shouldlog(logger, ITERATION,       nothing, nothing, nothing) == true
+    @test TFI.Logging.shouldlog(logger, ITERATIONFAILED, nothing, nothing, nothing) == false
+    @test TFI.Logging.shouldlog(logger, FAILEDPOINT,     nothing, nothing, nothing) == false
+
+end
+
+@testset "ExecutionLogger — ITERATIONFAILED message" begin
+
+    buf = IOBuffer()
+    logger = TerminalLogger(ITERATIONFAILED; io=buf)
+
+    with_logger(logger) do
+        @logmsg ITERATIONFAILED "" pass=1 n_failed=3 n_total=50
+    end
+
+    out = String(take!(buf))
+    @test contains(out, "3")
+    @test contains(out, "50")
+
+    # Pass > 1 format
+    buf2 = IOBuffer()
+    logger2 = TerminalLogger(ITERATIONFAILED; io=buf2)
+    with_logger(logger2) do
+        @logmsg ITERATIONFAILED "" pass=2 n_solved=2 n_unsolved=1
+    end
+    out2 = String(take!(buf2))
+    @test contains(out2, "Pass")
+
+end
+
+@testset "ExecutionLogger — TerminalLogger(level, obj) constructor" begin
+
+    # The second TerminalLogger overload infers widths from a ModelSolution.
+    # Uses the DummyModel/obj fixture defined in runtests.jl.
+    logger = TerminalLogger(ITERATION, obj; io=devnull)
+    @test logger isa TerminalLogger
+    @test TFI.Logging.min_enabled_level(logger) == ITERATION
+    # varname_width should be positive (inferred from Vfct/Tfct variable names)
+    @test logger.varname_width >= 1
+
+end
+
+@testset "ExecutionLogger — close" begin
+
+    # close(TerminalLogger) is a no-op; should not error
+    logger_t = TerminalLogger(ITERATION; io=devnull)
+    @test close(logger_t) === nothing
+
+    # close(CSVLogger) closes the underlying IO
+    tmp = tempname() * ".csv"
+    logger_c = CSVLogger(tmp; min_level=ITERATION)
+    @test isopen(logger_c.io) == true
+    close(logger_c)
+    @test isopen(logger_c.io) == false
+
+end

@@ -76,6 +76,98 @@ end
     @test rm.stat   == :mean
 end
 
+@testset "StatisticsSet — construction and callable" begin
+
+    # Construct from NamedTuple of functions
+    ss = TFI.StatisticsSet((mean = mean, std = std))
+    @test TFI.varnames(ss) == (:mean, :std)
+    @test length(ss) == 2
+
+    # Callable: applies each function to args and returns a NamedTuple
+    x = [1.0, 2.0, 3.0, 4.0, 5.0]
+    result = ss(x)
+    @test result isa NamedTuple
+    @test result.mean ≈ mean(x)
+    @test result.std  ≈ std(x)
+
+    # Construct from Tuple form
+    ss2 = TFI.StatisticsSet((:p50, :p90), (x -> median(x), x -> quantile(x, 0.9)))
+    @test TFI.varnames(ss2) == (:p50, :p90)
+    result2 = ss2(x)
+    @test result2.p50 ≈ median(x)
+
+    # Identity: StatisticsSet(ss) returns the same object
+    @test TFI.StatisticsSet(ss) === ss
+
+end
+
+@testset "StatisticsSet — merge" begin
+
+    ss1 = TFI.StatisticsSet((mean = mean,))
+    ss2 = TFI.StatisticsSet((std = std,))
+    ss3 = merge(ss1, ss2)
+
+    @test TFI.varnames(ss3) == (:mean, :std)
+    x = [1.0, 2.0, 3.0]
+    r = ss3(x)
+    @test r.mean ≈ mean(x)
+    @test r.std  ≈ std(x)
+
+end
+
+@testset "SimulationPanel — property delegation and metadata" begin
+
+    data = StructArray([(C = 1.0*i, K = 2.0*i) for _ in 1:4, i in 1:10])
+    panel = SimulationPanel(data, (:K,))
+
+    # propertynames delegates to the underlying StructArray
+    @test :C in propertynames(panel)
+    @test :K in propertynames(panel)
+
+    # getproperty delegation
+    @test panel.C === data.C
+    @test panel.K === data.K
+
+    # endog_states / states
+    @test TFI.endog_states(panel) == (:K,)
+    @test TFI.states(panel) == (:exst, :K)
+
+    # size matches underlying data
+    @test size(panel) == (4, 10)
+
+end
+
+@testset "SimulationErrorPanel — property delegation" begin
+
+    data = StructArray([(euler = 1e-5*i,) for _ in 1:4, i in 1:10])
+    ep = TFI.SimulationErrorPanel(data)
+
+    @test :euler in propertynames(ep)
+    @test ep.euler === data.euler
+    @test size(ep) == (4, 10)
+
+end
+
+@testset "MomentArray — show" begin
+
+    data = reshape(Float64.(1:6), 2, 3)
+    m = TFI.MomentArray(data, (:a, :b), (:mean, :std, :p90))
+
+    # Compact show (no MIME)
+    io = IOBuffer()
+    show(io, m)
+    s = String(take!(io))
+    @test occursin("MomentArray", s)
+
+    # text/plain show
+    io2 = IOBuffer()
+    show(io2, MIME"text/plain"(), m)
+    s2 = String(take!(io2))
+    @test occursin("MomentArray", s2)
+    @test occursin("mean", s2)
+
+end
+
 @testset "compare_economies" begin
 
     # Build two minimal describe() outputs using synthetic data

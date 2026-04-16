@@ -26,7 +26,7 @@ y-axis labels and tick values only on the leftmost column.
 @recipe function f(errs::SimulationErrorPanel, sim::SimulationPanel)
     errnames    = pop!(plotattributes, :errnames,    propertynames(errs))
     exogstates  = pop!(plotattributes, :exogstates,  sort(unique(sim.exst)))
-    endogstates = pop!(plotattributes, :endogstates, endog_states(sim)[1:2])
+    endogstates = pop!(plotattributes, :endogstates, endog_states(sim)[1:min(2, length(endog_states(sim)))])
     stategrid   = pop!(plotattributes, :stategrid,   nothing)
     maxpoints   = pop!(plotattributes, :maxpoints,   nothing)
 

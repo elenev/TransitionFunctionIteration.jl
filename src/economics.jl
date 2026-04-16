@@ -198,7 +198,7 @@ end
         return 0.0
     end
 
-    # Solve using Method Undetermined Coefficients
+    # Solve V = a + b (ΔC - E[ΔC]) using Method Undetermined Coefficients
 
     # Multiplier preferences
     if ψ ≈ 1.0
@@ -232,8 +232,9 @@ end
         return 0.0
     end
 
-    # Deterministic coefficient 
+    # Deterministic coefficient a
     a0 =  1/(1-1/ψ) * log((1-β) / (1 - β * exp((1-1/ψ) * μ)))
 
+    # Return the uncertainty correction
     return sol.u[1] - a0
 end
