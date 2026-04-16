@@ -77,7 +77,7 @@ The examples folder contains two models solved using this package.
 
 $$
 \begin{aligned}
- V(A,K) &= \max_{C,K'} \left\{ \frac{C^{1-\gamma}}{1-\gamma} + \beta E[V(A',K') | A] \right\} \\
+ V(A,K) &= \max_{C,K'} \left\lbrace \frac{C^{1-\gamma}}{1-\gamma} + \beta E[V(A',K') | A] \right\rbrace \\
  &\text{s.t.} \\
  C + I &= A K^\alpha \\
  K' &= (1-\delta) K + I
