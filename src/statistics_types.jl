@@ -246,12 +246,22 @@ Specification for a single entry in a `compare_economies` table.
 end
 ReportedMoment(var::Symbol; kwargs...) = ReportedMoment(; var, kwargs...)
 
-const SamplesTuple{SAMPLES, N, VARIABLES, STATS} = NamedTuple{SAMPLES, T} where {T <: NTuple{N, MomentArray{VARIABLES, STATS}}} 
-@inline function getmoment(s::SamplesTuple{SAMPLES, N, VARIABLES, STATS}, rm::ReportedMoment) where {SAMPLES, N, VARIABLES, STATS}
-    rm.sample ∈ SAMPLES   || throw(KeyError("Sample name $(rm.sample) not found in describe() output"))
-    rm.var    ∈ VARIABLES || throw(KeyError("Variable name $(rm.var) not found in moments for sample $(rm.sample)"))
-    rm.stat   ∈ STATS     || throw(KeyError("Statistic name $(rm.stat) not found in moments for sample $(rm.sample)"))
-    return rm.transformation(getmoment(s[rm.sample], rm.var, rm.stat))
+const SamplesTuple{SAMPLES} = NamedTuple{SAMPLES, <:Tuple{Vararg{MomentArray}}}
+
+@inline _get_vars(::MomentArray{V, S}) where {V, S} = V
+@inline _get_stats(::MomentArray{V, S}) where {V, S} = S
+
+@inline function getmoment(s::SamplesTuple{SAMPLES}, rm::ReportedMoment) where {SAMPLES}
+    rm.sample ∈ SAMPLES || throw(KeyError("Sample name $(rm.sample) not found in describe() output"))
+    
+    m_array = s[rm.sample]
+    VARIABLES = _get_vars(m_array)
+    STATS = _get_stats(m_array)
+    
+    rm.var  ∈ VARIABLES || throw(KeyError("Variable name $(rm.var) not found in moments for sample $(rm.sample)"))
+    rm.stat ∈ STATS     || throw(KeyError("Statistic name $(rm.stat) not found in moments for sample $(rm.sample)"))
+    
+    return rm.transformation(getmoment(m_array, rm.var, rm.stat))
 end
 
 const EconomiesTuple{ECONS, N, SAMPLES} = NamedTuple{ECONS, NTuple{N, SAMPLES}}
