@@ -1,8 +1,8 @@
 # TransitionFunctionIteration.jl
 
 [![Build Status](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CI.yml)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://elenev.github.io/PrivateEquityMacro.jl/dev/)
-[![CompatHelper](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CompatHelper.yml/badge.svg)](https://github.com/elenev/PrivateEquityMacro.jl/actions/workflows/CompatHelper.yml)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://elenev.github.io/TransitionFunctionIteration.jl/dev/)
+[![CompatHelper](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CompatHelper.yml/badge.svg)](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CompatHelper.yml)
 [![TagBot](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/TagBot.yml/badge.svg)](https://github.com/YourUsername/TransitionFunctionIteration.jl/actions/workflows/TagBot.yml)
 
 This is a package for globally solving macroeconomic models using Transition Function Iteration of Elenev, Landvoigt, and Van Nieuwerburgh (2021) or, optionally, also using the Simultaneous Transition and Policy Function Iteration (STPFI) algorithm introduced in Cao, Luo, and Nie (2023).
