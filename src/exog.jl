@@ -8,11 +8,12 @@ import QuantEcon.rouwenhorst
 Construct an `Exogenv` for a discretized AR(1) process using the Rouwenhorst method.
 
 - `ρ`: persistence
-- `σ`: innovation standard deviation
+- `σ`: unconditional standard deviation
 - `μ`: unconditional mean (in levels before transform)
 - `n`: number of grid points
 - `jensen`: if `true`, uses `transform=exp` and applies Jensen correction so that the
   unconditional mean of the transformed process equals `exp(μ)`
+- `shock_volatility`: if `true`, the supplied `σ` is the volatility of the shock rather than the state, so the function adjusts `σ` accordingly
 - `transform`: applied element-wise to the grid (default `identity`; use `exp` for log-normal)
 - `shock_name`: name of the exogenous variable in the state NamedTuple
 """
@@ -26,22 +27,27 @@ function ExogenvAR1(;
     transform::Function = jensen ? exp : identity,
     shock_name::Symbol = :z)
 
-    if ~shock_volatility
-        # If the supplied volatility is the volatility of the state rather than the shock,
-        # we need to adjust the parameters
-        σ = σ * sqrt(1 - ρ^2)
+    # Interpret σ based on shock_volatility
+    # If true, it's a shock volatility so unconditional vol of the state is higher
+    # If false, it's unconditional vol so shock vol is lower.
+    if shock_volatility
+        σϵ = σ
+        σx = σϵ / sqrt(1 - ρ^2)
+    else
+        σx = σ
+        σϵ = σx * sqrt(1 - ρ^2)
     end
 
     if jensen
         # Jensen correction to the mean
         # such that expectation is exp(μ)
         # rather than exp(μ + σ^2/2)
-        μ -= σ^2/2
+        μ -= σx^2/2
     end
 
 
     # Markov chain constructor from QuantEcon
-    mc = rouwenhorst(n, ρ, σ, μ*(1-ρ))
+    mc = rouwenhorst(n, ρ, σϵ, μ*(1-ρ))
 
     state_values = mc.state_values
     mtrans = mc.p
