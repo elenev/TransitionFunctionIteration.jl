@@ -7,3 +7,9 @@ TransitionFunctionIteration = "7ca8190d-a0e2-4989-8875-c3198677b17d"
 
 [sources]
 TransitionFunctionIteration = {path = ".."}
+
+[compat]
+Plots = "1.41"
+Roots = "2.2"
+StaticArrays = "1.9"
+StructArrays = "0.7"
