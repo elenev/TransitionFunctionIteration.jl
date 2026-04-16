@@ -38,7 +38,7 @@ export IRFResult, Transformations, ReportedVariable, IRFPage, simulate_irf
 export MomentArray, @MomentArray, row_names, col_names
 
 # Main interface
-export solve_and_simulate, generate_template
+export solve_and_simulate, generate_template, update_model
 
 include("abstract_types.jl")
 include("named_interpolations.jl")

@@ -176,3 +176,7 @@ function update_model(mdl::T, newparams::NamedTuple) where {T<:AbstractModel}
     oldparams = (; (k => getproperty(mdl, k) for k in explicit_parameters(mdl) )...)
     return T(; merge(oldparams, newparams)...)
 end
+
+function update_model(mdl::T; kwargs...) where {T<:AbstractModel}
+    return update_model(mdl, (; kwargs...))
+end
