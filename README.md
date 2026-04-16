@@ -76,10 +76,12 @@ The examples folder contains two models solved using this package.
 1. `ngm.jl`: Neoclassical Growth Model. The textbook model defined by equations below. This is an easy model to solve and, the log-linear approximation is very close to the global solution. In fact, the packages test suite uses the log-linear solution as a "check" on the correct implementation of the method.
 
 $$
- V(A,K) = \max_{C,K'} \left\{ \frac{C^{1-\gamma}}{1-\gamma} + \beta E[V(A',K') | A] \right\} \\
- \text{s.t.} \\
- C + I = A K^\alpha \\
- K' = (1-\delta) K + I
+\begin{aligned}
+ V(A,K) &= \max_{C,K'} \left\{ \frac{C^{1-\gamma}}{1-\gamma} + \beta E[V(A',K') | A] \right\} \\
+ &\text{s.t.} \\
+ C + I &= A K^\alpha \\
+ K' &= (1-\delta) K + I
+\end{aligned}
 $$
 
 2. `intermedap.jl`: An intermediary-asset pricing model with two agents, occasionally binding constraints, trend growth, and Epstein-Zin preferences. `examples/intermedap.pdf` contains the model details.
