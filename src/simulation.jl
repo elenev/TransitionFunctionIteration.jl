@@ -587,7 +587,30 @@ function linearize(simseries::StructArray{T,2} where T, stv::SteadyState; loglin
 end
 
 ## Moment comparison across economies
+const ModelTuple{NAMES,N,T} = NamedTuple{NAMES, NTuple{N, T}}
+function _distinct_parameters(models::ModelTuple)
+    props = propertynames(first(models))
+    
+    mask = map(props) do p
+        val = getproperty(first(models), p)
+        if val isa Number && !allequal(getproperty(m, p) for m in models)
+            return p
+        else
+            return nothing
+        end
+    end
+    return filter(!isnothing, mask)
+end
 
+function _compare_parameters(params, models::NamedTuple)
+    data = [getproperty(models[econ], p) for p in params, econ in keys(models)]
+    return MomentArray(data, params, keys(models))
+end
+
+function _compare_parameters(models::NamedTuple)
+    params = _distinct_parameters(models)
+    return _compare_parameters(params, models)
+end
 
 """
     compare_economies(moment_defs, economies) -> MomentArray
@@ -600,7 +623,12 @@ Build a labeled table of moments across multiple economies.
 Returns a `MomentArray` with moment names as rows and economy names as columns.
 Each cell is `economies[econ].moments[moment.sample][moment.var, moment.stat]`.
 """
-function compare_economies(moment_defs::NamedTuple, economies::NamedTuple; base::Union{Integer,Symbol}=1)
+function compare_economies(moment_defs::NamedTuple, economies::NamedTuple;
+    base::Union{Integer,Symbol}=1,
+    models::Union{Nothing,ModelTuple} = nothing,
+    parameters = isnothing(models) ? nothing : _distinct_parameters(models)
+    )
+
     if base isa Integer
         base = keys(economies)[base]
     end
@@ -613,5 +641,13 @@ function compare_economies(moment_defs::NamedTuple, economies::NamedTuple; base:
     data = [getmoment(economies, moment, econ, base)
             for moment in values(moment_defs), econ in econ_names]
 
-    return MomentArray(data, moment_defs, economies)
+
+    stats = MomentArray(data, moment_defs, economies)
+
+    if models !== nothing
+        params = _compare_parameters(parameters, models)
+        return [params; stats]
+    else
+        return stats
+    end
 end

@@ -101,6 +101,21 @@ function Base.similar(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{MomentArray
     return MomentArray(similar(Array{T}, axes(bc)), row_names(ma), col_names(ma))
 end
 
+function Base.vcat(arrs::MomentArray...)
+    data = vcat(map(a -> a.data, arrs)...)
+    cols = col_names(arrs[1])
+    rows = Tuple(Iterators.flatten(map(row_names, arrs)))
+    return MomentArray(data, rows, cols)
+end
+
+function Base.hcat(arrs::MomentArray...)
+    data = hcat(map(a -> a.data, arrs)...)
+    rows = row_names(arrs[1])
+    cols = Tuple(Iterators.flatten(map(col_names, arrs)))
+    return MomentArray(data, rows, cols)
+end
+
+
 # --- REPL Printing ---
 function Base.show(io::IO, ::MIME"text/plain", m::MomentArray)
     println(io, "MomentArray ($(size(m, 1)) × $(size(m, 2))):")

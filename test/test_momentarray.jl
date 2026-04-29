@@ -204,3 +204,140 @@ end
     @test table(:mean_K, :scaled) > table(:mean_K, :baseline)
 
 end
+
+# Lightweight model struct for parameter comparison tests
+struct _TwoParamModel
+    alpha::Float64
+    beta::Float64
+    label::String   # non-numeric: must be ignored by _distinct_parameters
+end
+
+@testset "MomentArray — vcat" begin
+    m1 = TFI.MomentArray([1.0 2.0; 3.0 4.0], (:a, :b), (:x, :y))
+    m2 = TFI.MomentArray([5.0 6.0],           (:c,),    (:x, :y))
+
+    m = vcat(m1, m2)
+
+    @test m isa TFI.MomentArray
+    @test size(m) == (3, 2)
+    @test row_names(m) == (:a, :b, :c)
+    @test col_names(m) == (:x, :y)
+    @test m[1, :] == [1.0, 2.0]
+    @test m[3, :] == [5.0, 6.0]
+
+    # Three-way vcat
+    m3  = TFI.MomentArray([7.0 8.0], (:d,), (:x, :y))
+    m123 = vcat(m1, m2, m3)
+    @test size(m123) == (4, 2)
+    @test row_names(m123) == (:a, :b, :c, :d)
+end
+
+@testset "MomentArray — hcat" begin
+    m1 = TFI.MomentArray([1.0 2.0; 3.0 4.0],        (:a, :b), (:x, :y))
+    m2 = TFI.MomentArray(reshape([5.0, 6.0], 2, 1),  (:a, :b), (:z,))
+
+    m = hcat(m1, m2)
+
+    @test m isa TFI.MomentArray
+    @test size(m) == (2, 3)
+    @test row_names(m) == (:a, :b)
+    @test col_names(m) == (:x, :y, :z)
+    @test m[:, 1] == [1.0, 3.0]
+    @test m[:, 3] == [5.0, 6.0]
+
+    # Three-way hcat
+    m3   = TFI.MomentArray(reshape([7.0, 8.0], 2, 1), (:a, :b), (:w,))
+    m123 = hcat(m1, m2, m3)
+    @test size(m123) == (2, 4)
+    @test col_names(m123) == (:x, :y, :z, :w)
+end
+
+@testset "_distinct_parameters" begin
+    mdl1 = _TwoParamModel(0.3, 0.99, "base")
+    mdl2 = _TwoParamModel(0.4, 0.99, "alt")
+    models = (baseline = mdl1, alt = mdl2)
+
+    params = TFI._distinct_parameters(models)
+
+    @test :alpha in params      # differs across models
+    @test :beta  ∉ params       # identical across models
+    @test :label ∉ params       # non-numeric, always excluded
+
+    # All numeric parameters identical → empty
+    mdl3 = _TwoParamModel(0.3, 0.99, "dup")
+    same_models = (baseline = mdl1, dup = mdl3)
+    @test isempty(TFI._distinct_parameters(same_models))
+end
+
+@testset "_compare_parameters" begin
+    mdl1 = _TwoParamModel(0.3, 0.99, "base")
+    mdl2 = _TwoParamModel(0.4, 0.98, "alt")
+    models = (baseline = mdl1, alt = mdl2)
+
+    # Explicit param list
+    ptable = TFI._compare_parameters((:alpha, :beta), models)
+    @test ptable isa TFI.MomentArray
+    @test size(ptable) == (2, 2)
+    @test row_names(ptable) == (:alpha, :beta)
+    @test col_names(ptable) == (:baseline, :alt)
+    @test ptable(:alpha, :baseline) ≈ 0.3
+    @test ptable(:alpha, :alt)      ≈ 0.4
+    @test ptable(:beta,  :baseline) ≈ 0.99
+    @test ptable(:beta,  :alt)      ≈ 0.98
+
+    # Auto-detect distinct params via single-arg overload (both differ here)
+    ptable2 = TFI._compare_parameters(models)
+    @test row_names(ptable2) == (:alpha, :beta)
+    @test ptable2(:alpha, :alt) ≈ 0.4
+end
+
+@testset "compare_economies — with models" begin
+    N_runs, N_periods = 3, 15
+    Random.seed!(2)
+
+    function _make_panel2(scale)
+        data = StructArray([(C = scale*(1 + 0.1*randn()), K = scale*(2 + 0.1*randn()))
+                             for _ in 1:N_runs, _ in 1:N_periods])
+        SimulationPanel(data, (:K,))
+    end
+
+    d1 = describe(_make_panel2(1.0))
+    d2 = describe(_make_panel2(2.0))
+    economies = (baseline = d1.moments, scaled = d2.moments)
+
+    moment_defs = (
+        mean_C = ReportedMoment(var=:C),
+        mean_K = ReportedMoment(var=:K, stat=:mean),
+    )
+
+    # alpha differs, beta is the same → only alpha appears as a parameter row
+    models = (
+        baseline = _TwoParamModel(0.3, 0.99, "base"),
+        scaled   = _TwoParamModel(0.4, 0.99, "alt"),
+    )
+
+    table = compare_economies(moment_defs, economies; models=models)
+
+    # 1 param row + 2 moment rows, 2 economy columns
+    @test table isa TFI.MomentArray
+    @test size(table) == (3, 2)
+    @test col_names(table) == (:baseline, :scaled)
+
+    all_rows = row_names(table)
+    @test :alpha  in all_rows
+    @test :mean_C in all_rows
+    @test :mean_K in all_rows
+
+    # Parameter rows are prepended before moment rows
+    @test all_rows[1]   == :alpha
+    @test all_rows[2:3] == (:mean_C, :mean_K)
+
+    # Parameter values are correct
+    @test table(:alpha, :baseline) ≈ 0.3
+    @test table(:alpha, :scaled)   ≈ 0.4
+
+    # Moment values are unchanged vs. no-models call
+    plain = compare_economies(moment_defs, economies)
+    @test table(:mean_C, :baseline) ≈ plain(:mean_C, :baseline)
+    @test table(:mean_K, :scaled)   ≈ plain(:mean_K, :scaled)
+end
