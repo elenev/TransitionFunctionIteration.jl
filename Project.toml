@@ -1,6 +1,6 @@
 name = "TransitionFunctionIteration"
 uuid = "7ca8190d-a0e2-4989-8875-c3198677b17d"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Vadim Elenev <47358678+elenev@users.noreply.github.com>"]
 
 [deps]
