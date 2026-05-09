@@ -52,6 +52,8 @@ nonsingletons(::StateSpaceGrid{NAMES,S}) where {NAMES,S} = filter(n -> n ∉ S, 
 "Return the named state dimensions of a grid, or the named output variables of an interpolant."
 @inline varnames(ssg::AbstractStateSpaceGrid) = keys(unigrids(ssg))
 
+@inline varindex(::StateSpaceGrid{NAMES}, var::Symbol) where NAMES = findfirst(==(var), NAMES)
+
 _points(grids::NamedTuple{NAMES,T}) where {NAMES,T} = (NamedTuple{NAMES}(x) for x in Iterators.product(grids...))
 
 """
@@ -247,6 +249,30 @@ end
 
 "Return interpolation coefficients shaped as an array matching `dims(statespacegrid(fct))`. Each element is a vector of length `nof(fct)`."
 @inline coefficients(fct::Interpolant) = reshape(coefficients(fct.itp), values(dims(fct.ssg)))
+
+
+function named_coefficients(fct::Interpolant, fixedstates::NamedTuple)
+    ugrids = unigrids(statespacegrid(fct))
+    state_variables = varnames(statespacegrid(fct))
+    function dim_selector(i)
+        this_state = state_variables[i]
+        if this_state ∈ keys(fixedstates)
+            this_value = fixedstates[this_state]
+            idx = findfirst(x -> x == this_value, ugrids[i])
+            if isnothing(idx)
+                throw(ArgumentError("$this_state = $this_value not found in the grid."))
+            end
+            return idx
+        else
+            return Colon()
+        end
+    end
+
+    select_idx = ntuple(dim_selector, ndims(statespacegrid(fct)))
+    data = view(coefficients(fct), select_idx...)
+    return StructArray(name_values(y, fct) for y in data)
+end
+named_coefficients(fct::Interpolant; kwargs...) = named_coefficients(fct, NamedTuple(kwargs))
 
 @inline knots(itp::Interpolations.GriddedInterpolation) = itp.knots
 @inline knots(itp::Interpolations.Extrapolation) = knots(itp.itp)

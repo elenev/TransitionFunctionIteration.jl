@@ -45,3 +45,19 @@
     @test dims(ssg_from_exog)     == (exst=3, K=4)
 
 end
+
+@testset "StateSpaceGrid — varindex" begin
+
+    # 1D: only axis is :x at position 1
+    @test TFI.varindex(ssg1, :x) == 1
+
+    # 2D: :x is first, :y is second
+    @test TFI.varindex(ssg2, :x) == 1
+    @test TFI.varindex(ssg2, :y) == 2
+
+    # Grid with exogenous + endogenous axes
+    ssg_vi = StateSpaceGrid(; exst=1:3, K=1.0:4.0)
+    @test TFI.varindex(ssg_vi, :exst) == 1
+    @test TFI.varindex(ssg_vi, :K)    == 2
+
+end
