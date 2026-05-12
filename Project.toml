@@ -1,7 +1,7 @@
 name = "TransitionFunctionIteration"
 uuid = "7ca8190d-a0e2-4989-8875-c3198677b17d"
 version = "0.2.2"
-authors = ["Vadim Elenev <47358678+elenev@users.noreply.github.com>"]
+
 
 [deps]
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
