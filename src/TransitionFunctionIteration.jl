@@ -11,7 +11,7 @@ export StateSpaceGrid, Interpolant, Exogenv, ModelSolution, SteadyState, NextPer
 export EvaluationMode, SolveMode, IterateMode, SimulateMode
 export SteadyStateMode, AnalyticalSteadyStateMode, SystemSteadyStateMode, FixedPointSteadyStateMode
 export points, dims, npt, nof, elsize, varnames, unigrids, singletons
-export coefficients, knots, statespacegrid, name_values
+export coefficients, knots, statespacegrid, name_values, named_coefficients
 
 # Interface stub: model packages extend this
 export calc_eqm, compute_next_period_values, steadystate, define_endog_grids

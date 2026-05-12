@@ -52,6 +52,8 @@ nonsingletons(::StateSpaceGrid{NAMES,S}) where {NAMES,S} = filter(n -> n ∉ S, 
 "Return the named state dimensions of a grid, or the named output variables of an interpolant."
 @inline varnames(ssg::AbstractStateSpaceGrid) = keys(unigrids(ssg))
 
+@inline varindex(::StateSpaceGrid{NAMES}, var::Symbol) where NAMES = findfirst(==(var), NAMES)
+
 _points(grids::NamedTuple{NAMES,T}) where {NAMES,T} = (NamedTuple{NAMES}(x) for x in Iterators.product(grids...))
 
 """
@@ -103,13 +105,30 @@ end
     Interpolant(ssg, returnvals::NamedTuple)
     Interpolant(ssg, returnvals::StructArray)
 
-Gridded interpolation of multiple functions over a `StateSpaceGrid`.
+Gridded interpolation of multiple named functions over a `StateSpaceGrid`.
 
-The NamedTuple constructor fills every grid point with the same constant values.
-The StructArray constructor uses per-point values; its shape must match `dims(ssg)`.
+The `NamedTuple` constructor initializes every grid point to the same constant values.
+The `StructArray` constructor uses per-point values; its shape must match `dims(ssg)`.
 
 Uses `Gridded(Linear())` for endogenous dimensions and `NoInterp()` for `:exst`.
 Extrapolation is `Flat()` for endogenous axes and `Throw()` for `:exst`.
+
+## Evaluation
+
+Call the interpolant like a function to evaluate it at a state point or collection:
+
+```julia
+# Single point -- returns a NamedTuple with one field per output variable
+vals = fct((exst=1, K=0.5))
+vals = fct(exst=1, K=0.5)          # kwargs form
+
+# Collection -- returns a StructArray
+vals = fct(points(ssg))
+vals = fct((exst=i, K=k) for (i,k) in zip(states, capitals))
+```
+
+The state NamedTuple may contain any subset of `ssg` dimensions; singleton dimensions
+are silently dropped before interpolation. Output field names match `varnames(fct)`.
 """
 struct Interpolant{SSG, ITP<:Interpolations.AbstractInterpolation, NAMES} <: AbstractInterpolant
     ssg::SSG
@@ -186,15 +205,6 @@ end
             all(∈(itp_keys), keys(statevars))
 end
 
-"""
-    (fct::Interpolant)(state::NamedTuple) -> NamedTuple
-    (fct::Interpolant)(; kwargs...) -> NamedTuple
-    (fct::Interpolant)(pts) -> StructArray
-
-Evaluate the interpolant at one state point or a collection of points.
-Singleton dimensions in the state are silently dropped before evaluation.
-Calling on a collection returns a StructArray.
-"""
 @inline function (fct::AbstractInterpolant)(; x...)
     return fct((;x...))
 end
@@ -247,6 +257,48 @@ end
 
 "Return interpolation coefficients shaped as an array matching `dims(statespacegrid(fct))`. Each element is a vector of length `nof(fct)`."
 @inline coefficients(fct::Interpolant) = reshape(coefficients(fct.itp), values(dims(fct.ssg)))
+
+
+"""
+    named_coefficients(fct::Interpolant, fixedstates::NamedTuple)
+    named_coefficients(fct::Interpolant; kwargs...)
+
+Return a `StructArray` of interpolation coefficients for `fct`, sliced at the
+grid values specified in `fixedstates`. Each field of the `StructArray`
+corresponds to one output of `fct` (matching `varnames(fct)`), and the array
+dimensions correspond to the state variables not fixed by `fixedstates`.
+
+`fixedstates` must map state variable names to values that are exact grid points;
+a non-grid value raises an `ArgumentError`.
+
+# Example
+```julia
+# Fix exst = 1 and retrieve coefficients over all endogenous state dimensions
+coefs = named_coefficients(obj.Pfct; exst = 1)
+```
+"""
+function named_coefficients(fct::Interpolant, fixedstates::NamedTuple)
+    ugrids = unigrids(statespacegrid(fct))
+    state_variables = varnames(statespacegrid(fct))
+    function dim_selector(i)
+        this_state = state_variables[i]
+        if this_state ∈ keys(fixedstates)
+            this_value = fixedstates[this_state]
+            idx = findfirst(x -> x == this_value, ugrids[i])
+            if isnothing(idx)
+                throw(ArgumentError("$this_state = $this_value not found in the grid."))
+            end
+            return idx
+        else
+            return Colon()
+        end
+    end
+
+    select_idx = ntuple(dim_selector, ndims(statespacegrid(fct)))
+    data = view(coefficients(fct), select_idx...)
+    return StructArray(name_values(y, fct) for y in data)
+end
+named_coefficients(fct::Interpolant; kwargs...) = named_coefficients(fct, NamedTuple(kwargs))
 
 @inline knots(itp::Interpolations.GriddedInterpolation) = itp.knots
 @inline knots(itp::Interpolations.Extrapolation) = knots(itp.itp)

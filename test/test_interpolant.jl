@@ -93,6 +93,62 @@ end
 
 end
 
+@testset "Interpolant — varindex" begin
+
+    # Output variable positions in fct1 (:y, :z)
+    @test TFI.varindex(fct1, :y) == 1
+    @test TFI.varindex(fct1, :z) == 2
+
+    # Single-output interpolant
+    @test TFI.varindex(fct2, :f) == 1
+
+    # Interpolant with exogenous state
+    @test TFI.varindex(fct_ex, :y) == 1
+
+end
+
+@testset "Interpolant — named_coefficients" begin
+
+    # ── NamedTuple form ───────────────────────────────────────────────────────
+    # Fix x=2.0 in the 2D grid; f(x,y)=x+y so the slice has values 12, 22, 32
+    nc = named_coefficients(fct2, (x=2.0,))
+    @test nc isa StructArray
+    @test length(nc) == 3
+    @test nc[1].f ≈ 12.0   # y=10
+    @test nc[2].f ≈ 22.0   # y=20
+    @test nc[3].f ≈ 32.0   # y=30
+
+    # Fix y=20.0; slice has values 11, 21, 31
+    nc_y = named_coefficients(fct2, (y=20.0,))
+    @test length(nc_y) == 3
+    @test nc_y[1].f ≈ 21.0   # x=1
+    @test nc_y[2].f ≈ 22.0   # x=2
+    @test nc_y[3].f ≈ 23.0   # x=3
+
+    # ── Kwargs form ───────────────────────────────────────────────────────────
+    nc_kw = named_coefficients(fct2; x=2.0)
+    @test nc_kw isa StructArray
+    @test length(nc_kw) == 3
+    @test nc_kw[1].f ≈ nc[1].f
+    @test nc_kw[3].f ≈ nc[3].f
+
+    # ── Exogenous (NoInterp) axis ─────────────────────────────────────────────
+    # y(exst, x) = exst*x; fix exst=2 → values 2, 4, 6
+    nc_ex = named_coefficients(fct_ex, (exst=2,))
+    @test length(nc_ex) == 3
+    @test nc_ex[1].y ≈ 2.0
+    @test nc_ex[2].y ≈ 4.0
+    @test nc_ex[3].y ≈ 6.0
+
+    # Kwargs form for exogenous axis
+    @test named_coefficients(fct_ex; exst=2)[2].y ≈ named_coefficients(fct_ex, (exst=2,))[2].y
+
+    # ── ArgumentError when value is not on the grid ───────────────────────────
+    @test_throws ArgumentError named_coefficients(fct2, (x=99.0,))
+    @test_throws ArgumentError named_coefficients(fct2; x=99.0)
+
+end
+
 @testset "Interpolant — equality and isapprox" begin
 
     @test fct1 == fct1

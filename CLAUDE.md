@@ -146,7 +146,7 @@ result = solve_and_simulate(model)
 test/runtests.jl   -- loads all test_*.jl files
 ```
 
-Run with `julia --project=test test/runtests.jl` or `]test` in the package REPL.
+Run with `julia --project -e "using Pkg; Pkg.test()"` or `]test` in the package REPL.
 Each test file covers one subsystem (statespace, exogenv, bounded, economics, interpolant,
 execution, simulation, momentarray, logging, plotting, irfplotting, linearize, ngm).
 
