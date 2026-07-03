@@ -27,8 +27,9 @@ end
     @test !isnothing(hist)
     @test hist isa StructArrays.StructVector
 
-    # One slot pre-allocated per iteration (length == maxiter)
-    @test length(hist) == 3
+    # History is trimmed to however many iterations actually ran (may be less
+    # than maxiter if convergence happens early).
+    @test length(hist) == result.iter
 
     # The config key :v_trace becomes the field name
     @test hasproperty(hist, :v_trace)

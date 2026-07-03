@@ -266,9 +266,27 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bo
     Vfct_coeffs = coefficients(obj.Vfct)
     Tfct_coeffs = coefficients(obj.Tfct)
 
-    new_Pfct = deepcopy(Pfct_coeffs)
-    new_Tfct = deepcopy(Tfct_coeffs)
-    new_Vfct = deepcopy(Vfct_coeffs)    
+    # Scratch write buffers, pre-allocated once in IterationDiagnostics and
+    # reused every iteration (no per-iteration allocation): every point gets
+    # written in pass 1 below regardless of success (success is reset to
+    # all-false just below), so nothing needs to be copied in first.
+    new_Pfct = diag.next_pfct
+    new_Tfct = diag.next_tfct
+    new_Vfct = diag.next_vfct
+
+    # "Old" reference for the damping recursion: the raw (undamped) solve from
+    # the *previous* iteration only, matching the reference MATLAB
+    # implementation's `VF = VFnext` bookkeeping (main_execute_update.m).
+    # Deliberately distinct from Vfct_coeffs/Tfct_coeffs above (the current,
+    # already-damped interpolant), which remain the expectations input to
+    # solve_at_point below. Using Vfct_coeffs/Tfct_coeffs for the damping "old"
+    # instead (as before) turns the recursion into an exponentially-weighted
+    # average over the *entire* iteration history rather than a one-step blend,
+    # and the two diverge starting at iteration 2 (verified against MATLAB).
+    prev_vfct = diag.prev_vfct
+    prev_tfct = diag.prev_tfct
+    new_raw_Vfct = diag.next_raw_vfct
+    new_raw_Tfct = diag.next_raw_tfct
 
     distances = diag.value_distances
     distancesT = diag.transition_distances
@@ -300,10 +318,12 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bo
             end
 
             new_Pfct[i] = new.pfct
-            distances[i] .= new.vfct - values
-            new_Vfct[i] = @. damp * values + (1-damp) * new.vfct
-            distancesT[i] .= new.tfct - trans
-            new_Tfct[i] = @. damp * trans + (1-damp) * new.tfct
+            distances[i] .= new.vfct - prev_vfct[i]
+            new_Vfct[i] = @. damp * prev_vfct[i] + (1-damp) * new.vfct
+            distancesT[i] .= new.tfct - prev_tfct[i]
+            new_Tfct[i] = @. damp * prev_tfct[i] + (1-damp) * new.tfct
+            new_raw_Vfct[i] = new.vfct
+            new_raw_Tfct[i] = new.tfct
         end
 
         if use_threads
@@ -343,6 +363,8 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bo
 
     Vfct_coeffs .= new_Vfct
     Tfct_coeffs .= new_Tfct
+    prev_vfct .= new_raw_Vfct
+    prev_tfct .= new_raw_Tfct
 
     # println(coefficients(obj.Vfct)[5,1,1])
     # println(coefficients(obj.Vfct)[5,5,1])
@@ -379,10 +401,17 @@ function summarize_distances(distances, Fct)
 end
 
 
-struct IterationDiagnostics{B,V,T}
-    success::B    
-    value_distances::V 
+struct IterationDiagnostics{B,V,T,PV,PT,NP,NV,NT2,RV,RT}
+    success::B
+    value_distances::V
     transition_distances::T
+    prev_vfct::PV
+    prev_tfct::PT
+    next_pfct::NP
+    next_vfct::NV
+    next_tfct::NT2
+    next_raw_vfct::RV
+    next_raw_tfct::RT
 end
 
 function IterationDiagnostics(obj)
@@ -393,9 +422,29 @@ function IterationDiagnostics(obj)
     tcoefs = coefficients(obj.Tfct)
     tdistances = [similar_to_coef(obj.Tfct) for _ in tcoefs]
 
+    pcoefs = coefficients(obj.Pfct)
+
     success = falses(npt(obj.Vfct))
 
-    return IterationDiagnostics(success, vdistances, tdistances)
+    # Seeded with the initial guess, matching MATLAB's `VF = obj.Vfct.evaluateAt(gridSt)`
+    # before its iteration loop starts (main_execute_update.m).
+    prev_vfct = deepcopy(vcoefs)
+    prev_tfct = deepcopy(tcoefs)
+
+    # Scratch write buffers for perform_iteration!, pre-allocated once and
+    # reused (mutated in place) every iteration for the life of this
+    # IterationDiagnostics. Safe uninitialized (`similar`, not `deepcopy`):
+    # every point is written to exactly once in pass 1 of every iteration
+    # (success resets to all-false each iteration), so no prior contents ever
+    # need to be copied in.
+    next_pfct = similar(pcoefs)
+    next_vfct = similar(vcoefs)
+    next_tfct = similar(tcoefs)
+    next_raw_vfct = similar(vcoefs)
+    next_raw_tfct = similar(tcoefs)
+
+    return IterationDiagnostics(success, vdistances, tdistances, prev_vfct, prev_tfct,
+        next_pfct, next_vfct, next_tfct, next_raw_vfct, next_raw_tfct)
 end
 
 # Construct a logger from either a LogLevel (builds TerminalLogger) or a pre-built ExecutionLogger.
