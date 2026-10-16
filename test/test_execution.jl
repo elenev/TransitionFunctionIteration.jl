@@ -51,3 +51,31 @@ end
     @test isnothing(result.history)   # no track_history set
 
 end
+
+@testset "main_execute! — damping modes" begin
+
+    # Same first iteration: both modes blend against the initial guess
+    o1, o2 = deepcopy(obj), deepcopy(obj)
+    main_execute!(o1; maxiter=1, damp=0.5, damping=:damped_iterate, logging=COMPLETE)
+    main_execute!(o2; maxiter=1, damp=0.5, damping=:previous_solve, logging=COMPLETE)
+    @test TFI.coefficients(o1.Vfct) ≈ TFI.coefficients(o2.Vfct)
+
+    # Both reach the same fixed point
+    o1, o2 = deepcopy(obj), deepcopy(obj)
+    r1 = main_execute!(o1; maxiter=2000, tol=-8, damp=0.5, damping=:damped_iterate, logging=COMPLETE)
+    r2 = main_execute!(o2; maxiter=2000, tol=-8, damp=0.5, damping=:previous_solve, logging=COMPLETE)
+    @test r1.damping === :damped_iterate && r2.damping === :previous_solve
+    @test r1.distV < -8 && r2.distV < -8
+    @test all(isapprox.(TFI.coefficients(o1.Vfct), TFI.coefficients(o2.Vfct); atol=1e-6))
+
+    # A fresh call per iteration under :previous_solve equals :damped_iterate
+    o1, o2 = deepcopy(obj), deepcopy(obj)
+    main_execute!(o1; maxiter=5, damp=0.5, damping=:damped_iterate, logging=COMPLETE)
+    for _ in 1:5
+        main_execute!(o2; maxiter=1, damp=0.5, damping=:previous_solve, logging=COMPLETE)
+    end
+    @test TFI.coefficients(o1.Vfct) ≈ TFI.coefficients(o2.Vfct)
+
+    @test_throws ArgumentError main_execute!(deepcopy(obj); maxiter=1, damping=:unknown, logging=COMPLETE)
+
+end
