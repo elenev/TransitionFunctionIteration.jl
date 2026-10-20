@@ -4,6 +4,11 @@ on:
     branches: [main]
 #  push:
 #    branches: [main]
+# Cancel the previous run when a PR is updated
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }}
@@ -18,8 +23,21 @@ jobs:
           - ubuntu-latest
           - windows-latest
           - macos-latest
+        exclude:
+          # Oldest supported Julia only on Linux; the slow platforms test the latest release
+          - {version: 'min', os: windows-latest}
+          - {version: 'min', os: macos-latest}
     steps:
       - uses: actions/checkout@v4
+      # Defender scanning slows precompilation (many small file writes) on Windows runners
+      - name: Exclude Julia paths from Windows Defender
+        if: runner.os == 'Windows'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          foreach ($p in @("$HOME\.julia", $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP, $env:RUNNER_TOOL_CACHE)) {
+            Add-MpPreference -ExclusionPath $p
+          }
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}

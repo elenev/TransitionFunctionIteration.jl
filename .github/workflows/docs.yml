@@ -9,6 +9,10 @@ on:
   pull_request:
   workflow_dispatch:  # run on a release tag to deploy: gh workflow run docs.yml --ref vX.Y.Z
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   actions: write
   contents: write
