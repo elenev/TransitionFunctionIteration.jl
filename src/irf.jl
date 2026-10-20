@@ -118,7 +118,7 @@ function simulate_irf_shock(obj::ModelSolution,
                 report_bounds=false, dynamic_align=:nan)
 
     # Summarize
-    _f(fcn, var) = map(fcn, eachcol(var))
+    _f(fcn, var) = map(fcn, eachrow(var))
     _summarize_stat(fcn)= StructArray(map(s -> _f(fcn, s), components(sim.data)))
     lines = map(fcn -> _summarize_stat(fcn), stat_fcns)
 

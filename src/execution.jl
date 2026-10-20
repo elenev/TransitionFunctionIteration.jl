@@ -259,16 +259,35 @@ const THREAD_THRESHOLD = 500  # parallelize when n_points * n_equations exceeds 
 @inline _guess_indices(i, R, ::Val{1}) = @SVector[R[i]]
 @inline _guess_indices(i, R, ::Val)    = find_neighbors_with_diagonals(i, R)
 
-function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bool)
+function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bool, damping::Symbol=:damped_iterate)
 
     #states = collect(points(obj.ssg))
     Pfct_coeffs = coefficients(obj.Pfct)
     Vfct_coeffs = coefficients(obj.Vfct)
     Tfct_coeffs = coefficients(obj.Tfct)
 
-    new_Pfct = deepcopy(Pfct_coeffs)
-    new_Tfct = deepcopy(Tfct_coeffs)
-    new_Vfct = deepcopy(Vfct_coeffs)    
+    # Scratch write buffers, pre-allocated once in IterationDiagnostics and
+    # reused every iteration (no per-iteration allocation): every point gets
+    # written in pass 1 below regardless of success (success is reset to
+    # all-false just below), so nothing needs to be copied in first.
+    new_Pfct = diag.next_pfct
+    new_Tfct = diag.next_tfct
+    new_Vfct = diag.next_vfct
+
+    # "Old" reference for the damping recursion, set at the end of the previous iteration
+    # (see `damping` in main_execute!):
+    # - :damped_iterate: the current damped functions, so new = damp*x_t + (1-damp)*T(x_t)
+    #   (standard relaxation; distances are fixed-point residuals T(x_t) - x_t).
+    # - :previous_solve: the raw (undamped) solve of the previous iteration, so
+    #   new = damp*T(x_{t-1}) + (1-damp)*T(x_t), matching the MATLAB `VF = VFnext`
+    #   bookkeeping (main_execute_update.m). A one-step blend of two raw solves does not
+    #   damp oscillations of the solution map: a period-2 oscillation in T persists.
+    # Vfct_coeffs/Tfct_coeffs (the current, already-damped interpolant) remain the
+    # expectations input to solve_at_point below in both cases.
+    prev_vfct = diag.prev_vfct
+    prev_tfct = diag.prev_tfct
+    new_raw_Vfct = diag.next_raw_vfct
+    new_raw_Tfct = diag.next_raw_tfct
 
     distances = diag.value_distances
     distancesT = diag.transition_distances
@@ -300,10 +319,12 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bo
             end
 
             new_Pfct[i] = new.pfct
-            distances[i] .= new.vfct - values
-            new_Vfct[i] = @. damp * values + (1-damp) * new.vfct
-            distancesT[i] .= new.tfct - trans
-            new_Tfct[i] = @. damp * trans + (1-damp) * new.tfct
+            distances[i] .= new.vfct - prev_vfct[i]
+            new_Vfct[i] = @. damp * prev_vfct[i] + (1-damp) * new.vfct
+            distancesT[i] .= new.tfct - prev_tfct[i]
+            new_Tfct[i] = @. damp * prev_tfct[i] + (1-damp) * new.tfct
+            new_raw_Vfct[i] = new.vfct
+            new_raw_Tfct[i] = new.tfct
         end
 
         if use_threads
@@ -343,6 +364,13 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bo
 
     Vfct_coeffs .= new_Vfct
     Tfct_coeffs .= new_Tfct
+    if damping === :damped_iterate
+        prev_vfct .= new_Vfct
+        prev_tfct .= new_Tfct
+    else
+        prev_vfct .= new_raw_Vfct
+        prev_tfct .= new_raw_Tfct
+    end
 
     # println(coefficients(obj.Vfct)[5,1,1])
     # println(coefficients(obj.Vfct)[5,5,1])
@@ -379,10 +407,17 @@ function summarize_distances(distances, Fct)
 end
 
 
-struct IterationDiagnostics{B,V,T}
-    success::B    
-    value_distances::V 
+struct IterationDiagnostics{B,V,T,PV,PT,NP,NV,NT2,RV,RT}
+    success::B
+    value_distances::V
     transition_distances::T
+    prev_vfct::PV
+    prev_tfct::PT
+    next_pfct::NP
+    next_vfct::NV
+    next_tfct::NT2
+    next_raw_vfct::RV
+    next_raw_tfct::RT
 end
 
 function IterationDiagnostics(obj)
@@ -393,9 +428,29 @@ function IterationDiagnostics(obj)
     tcoefs = coefficients(obj.Tfct)
     tdistances = [similar_to_coef(obj.Tfct) for _ in tcoefs]
 
+    pcoefs = coefficients(obj.Pfct)
+
     success = falses(npt(obj.Vfct))
 
-    return IterationDiagnostics(success, vdistances, tdistances)
+    # Seeded with the initial guess, matching MATLAB's `VF = obj.Vfct.evaluateAt(gridSt)`
+    # before its iteration loop starts (main_execute_update.m).
+    prev_vfct = deepcopy(vcoefs)
+    prev_tfct = deepcopy(tcoefs)
+
+    # Scratch write buffers for perform_iteration!, pre-allocated once and
+    # reused (mutated in place) every iteration for the life of this
+    # IterationDiagnostics. Safe uninitialized (`similar`, not `deepcopy`):
+    # every point is written to exactly once in pass 1 of every iteration
+    # (success resets to all-false each iteration), so no prior contents ever
+    # need to be copied in.
+    next_pfct = similar(pcoefs)
+    next_vfct = similar(vcoefs)
+    next_tfct = similar(tcoefs)
+    next_raw_vfct = similar(vcoefs)
+    next_raw_tfct = similar(tcoefs)
+
+    return IterationDiagnostics(success, vdistances, tdistances, prev_vfct, prev_tfct,
+        next_pfct, next_vfct, next_tfct, next_raw_vfct, next_raw_tfct)
 end
 
 # Construct a logger from either a LogLevel (builds TerminalLogger) or a pre-built ExecutionLogger.
@@ -409,8 +464,9 @@ function _snap_type(fct::AbstractInterpolant, var_names::Tuple)
 end
 
 """
-    main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, logging=ITERATIONFAILED,
-                  track_history=nothing)
+    main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=TFIMethod(),
+                  damping=:damped_iterate, logging=ITERATIONFAILED, track_history=nothing,
+                  multithreaded=nothing)
 
 Iterate policy and value functions of `obj` to convergence.
 
@@ -418,10 +474,19 @@ Solves equilibrium conditions at every grid point, damps the value function upda
 repeats until `log₁₀(max_distance) < tol` or `maxiter` is reached.
 
 - `tol`: convergence threshold as log₁₀ distance (`-5` means 1e-5)
-- `damp`: value function damping in [0,1] (1 = full update, 0 = no update)
+- `damp`: damping weight in [0,1], applied to value and transition functions
+  (0 = full update, 1 = no update)
+- `damping`: what `damp` weights against.
+  `:damped_iterate` (default): the current damped iterate, `x_{t+1} = damp*x_t + (1-damp)*T(x_t)`
+  (standard relaxation; damps oscillations of the solution map, distances are fixed-point
+  residuals). `:previous_solve`: the previous iteration's raw solve,
+  `x_{t+1} = damp*T(x_{t-1}) + (1-damp)*T(x_t)`, as in the MATLAB implementation
+  (main_execute_update.m); a period-2 oscillation of `T` persists under this rule.
 - `npasses`: revisit passes for grid points where the solver failed on the first pass
 - `solmethod`: `TFIMethod()` (default) or `STPFIMethod()`, controls whether to precompute
   expectations (Elenev and Landvoigt) or to add transition functions to the system (Cao et al)
+- `multithreaded`: `nothing` (default) threads over grid points when more than one thread
+  is available and the problem is large enough; `true`/`false` forces the choice
 - `logging`: minimum `LogLevel` to display (`COMPLETE` suppresses iteration logs)
 - `track_history`: `nothing` (default) or `(fct_sym, var_names)` where `fct_sym` is `:Vfct`
   or `:Tfct` and `var_names` is a tuple of variable name Symbols. When set, returns a
@@ -432,14 +497,17 @@ Returns a NamedTuple with convergence info and, when `track_history` is set, a `
 StructVector field.
 """
 function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=TFIMethod(),
+                        damping::Symbol=:damped_iterate,
                         logging=ITERATIONFAILED, track_history=nothing, multithreaded=nothing)
+    damping in (:damped_iterate, :previous_solve) ||
+        throw(ArgumentError("damping must be :damped_iterate or :previous_solve, got :$damping"))
 
     iter = 1
     original_threads = BLAS.get_num_threads()
     BLAS.set_num_threads(1)  # To avoid thread oversubscription
 
     diag = IterationDiagnostics(obj)
-    exec = (; maxiter, tol, damp, npasses, solmethod)
+    exec = (; maxiter, tol, damp, npasses, solmethod, damping)
     if isnothing(track_history)
         history_list = nothing
     else
@@ -464,7 +532,7 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
     with_logger(_make_logger(logging, obj)) do
         while true
 
-            perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads)
+            perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads, damping)
 
             distV, worst_varV, worst_pointV = summarize_distances(diag.value_distances, obj.Vfct)
             distT, worst_varT, worst_pointT, worst_exst = summarize_distances(diag.transition_distances, obj.Tfct)

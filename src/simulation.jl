@@ -177,12 +177,45 @@ function calc_eqm_from_state(state, obj, mode=SimulateMode())
     next = forecast_next(trans, obj)
 
     np = compute_expectations(next, prnext, obj.model, mode)
-    
+
     # Compute equilibrium residuals, next period's transitions and simulated variables
     policies = map( to_constrained, obj.Pfct(state), obj.Pfct_bounds)
     #@debug "Simulated policys at state $state: " policies
     return calc_eqm(fullstate, policies, obj.model, np, mode), trans
 end
+
+"""
+    augment_errors(obj, state, out, trans) -> (scalar_nt, vector_nt)
+
+Compute extra convergence/consistency diagnostics for one state, on top of the standard
+equation (`fx`) and transition (`transerr`) residuals `calc_result` always computes.
+
+- `obj`: the solved `ModelSolution` -- gives access to `obj.Vfct`, `obj.Tfct`, `obj.Pfct`,
+  `obj.model`, `obj.exogenv`, etc., for models that want to interpolate something at `state`
+  (or elsewhere) themselves. None of these are evaluated automatically by this hook -- only
+  whatever a model's own override explicitly calls -- so models that don't override
+  `augment_errors` pay no extra interpolation cost.
+- `state`: the point `calc_result` is currently evaluating.
+- `out`: `calc_eqm`'s own result at `state` (a `NamedTuple` with `fx`, `trans`, and
+  `vals`/`simvars` -- the same object `calc_result` builds `fx_nt`/`transerr` from). A returned
+  `scalar_nt` field name that collides with an existing `fx` name REPLACES it (later `merge` wins)
+  rather than erroring -- useful for a model that wants to rescale/transform an existing
+  residual, but a footgun if the collision is accidental.
+- `trans`: `obj.Tfct(state)`, the interpolated transition at `state` -- already computed by the
+  caller regardless (needed to forecast next-period expectations), so it costs nothing extra to
+  pass along even though it's the same kind of "interpolate this yourself" ingredient as
+  `obj.Vfct`/`obj.Pfct` would be.
+
+Returns `(scalar_nt, vector_nt)`:
+- `scalar_nt`: a `NamedTuple` of scalars, merged into the per-state equation-error output.
+- `vector_nt`: a `NamedTuple` of per-next-exogenous-state vectors (same shape as `transerr` --
+  indexable by next exogenous state index), merged into `transerr` and resolved the same way
+  downstream (`merge_error` picks out the realized next state once it's known in `simulate()`'s
+  loop) -- no separate processing needed.
+
+The default returns `(;), (;)` -- no extra measures, no extra interpolation calls.
+"""
+augment_errors(obj, state, out, trans) = (;), (;)
 
 function calc_result(state, obj)
     # Get exogenous state info
@@ -196,6 +229,11 @@ function calc_result(state, obj)
     #out_trans = obj.Tfct(state)
     fx_nt = _fx_to_nt(out.fx)
     transerr = map(-, out_trans, trans)   # NamedTuple of SVectors, one per exog state
+
+    # Model-specific extra diagnostics (default: none, zero extra cost -- see augment_errors)
+    scalar_nt, vector_nt = augment_errors(obj, state, out, trans)
+    fx_nt = merge(fx_nt, scalar_nt)
+    transerr = merge(transerr, vector_nt)
 
     return StructArray(trans), merge(state, exog, out.simvars), fx_nt, transerr
 end
@@ -248,7 +286,7 @@ function simulate(obj::ModelSolution, stv=nothing;
     # Simulate each run and period
     original_threads = BLAS.get_num_threads()
     BLAS.set_num_threads(1)
-    for r in axes(exog_states, 2)
+    Threads.@threads for r in axes(exog_states, 2)
         exog_run = view(exog_states, :, r)
         trans = endog_start
         for t in axes(exog_states, 1)
@@ -346,13 +384,17 @@ const default_stats = StatisticsSet(
 
 
 @inline function _describe_variable!(outrow, v, simvector, unistat_functions, multistat_functions)
+    if isempty(v)
+        outrow .= NaN
+        return
+    end
+    
     N_uni = length(unistat_functions)
     N_multi = length(multistat_functions)
     N_total = N_uni + N_multi
     outrow[1:N_uni]         .= values(unistat_functions(v))
     outrow[N_uni+1:N_total] .= values(multistat_functions(v, simvector))
 end
-
 
 function _describe_run!(out, simvector, unistat_functions, multistat_functions)
     foreach(eachrow(out), components(simvector)) do outrow, v
@@ -444,7 +486,8 @@ function describe(simseries::SimulationPanel,
     stat_functions = default_stats;
     filters = (;),
     additional_stats = (;),
-    correlation_vars = collect(endog_states(simseries))
+    correlation_vars = collect(endog_states(simseries)),
+    dropnan = false,
     )
 
     simseries = simseries.data
@@ -452,6 +495,11 @@ function describe(simseries::SimulationPanel,
     # Merge user-specified filters  with defaults
     default_filters = (uncond = Returns(true),)
     filters = merge(default_filters, filters)
+
+    # Add dropnan filter to all filters if requested
+    if dropnan
+        filters = map(fcn -> (x -> !unrolled_any(isnan, x) && fcn(x) ), filters)
+    end
 
     # Merge user-specified stats with defaults
     stat_functions = merge(stat_functions, StatisticsSet(additional_stats))

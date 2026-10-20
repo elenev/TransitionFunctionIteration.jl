@@ -22,6 +22,9 @@ Key keyword arguments for `simulate`:
 | `burn` | `200` | Burn-in periods discarded |
 | `seed` | `100` | RNG seed for reproducibility |
 
+Runs are simulated in parallel across threads, so a model's `calc_eqm`, `augment_simulation`
+and `augment_errors` must be thread-safe (no shared mutable state or global RNG use).
+
 ## Computing moments
 
 `describe` summarizes a `SimulationPanel` and returns a `NamedTuple` of `MomentArray`s:
@@ -45,6 +48,9 @@ out = describe(simseries;
 out.moments.uncond   # unconditional MomentArray
 out.moments.crisis   # crisis-regime MomentArray
 ```
+
+Pass `dropnan=true` to exclude every observation containing a NaN from all filters. A filter
+that selects no observations yields NaN moments rather than an error.
 
 ### `MomentArray` access
 

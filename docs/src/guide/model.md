@@ -151,6 +151,7 @@ These functions have sensible defaults but can be overloaded:
 |---|---|
 | `bounds(stv::SteadyState{MyModel})` | Variable bounds for solver transformation (default: all `Unbounded()`) |
 | `augment_simulation(run, mdl)` | Append extra variables to a simulation run |
+| `augment_errors(obj, state, out, trans)` | Add model-specific convergence diagnostics to the error output |
 | `normalize_next_period_values(np, mdl, mode)` | Transform expectations before they enter `calc_eqm` |
 | `normalize_fx_errors(mdl, fx_nt, simvars)` | Normalize residuals for comparability |
 | `initial_guess_from_stv(stv, mdl)` | Adjust the steady-state values before initializing interpolants |
@@ -184,6 +185,21 @@ gross returns):
 function augment_simulation(run, mdl::MyModel)
     R = [run[t].Y / run[t-1].K for t in 2:length(run)]
     return (;), (; R)
+end
+```
+
+### Extra error diagnostics
+
+`augment_errors(obj, state, out, trans)` is called for each simulated state alongside the
+standard equation and transition errors. It returns a `(scalar_nt, vector_nt)` pair: scalars
+are merged into the equation errors, and per-next-exogenous-state vectors are merged into the
+transition errors. The default returns `(;), (;)` and costs nothing. A returned name that
+matches an existing equation error replaces it.
+
+```julia
+function augment_errors(obj, state, out, trans)
+    C_gap = out.simvars.C - obj.Vfct(state).C   # recomputed vs. interpolated
+    return (; C_gap), (;)
 end
 ```
 

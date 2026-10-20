@@ -20,6 +20,7 @@ steadystate
 TransitionFunctionIteration.steadystate_system
 define_endog_grids
 augment_simulation
+augment_errors
 ```
 
 ## Solution types
@@ -143,6 +144,7 @@ Filter = t -> begin
         TransitionFunctionIteration.steadystate_system,
         TransitionFunctionIteration.define_endog_grids,
         TransitionFunctionIteration.augment_simulation,
+        TransitionFunctionIteration.augment_errors,
         TransitionFunctionIteration.ModelSolution,
         TransitionFunctionIteration.SteadyState,
         TransitionFunctionIteration.NextPeriod,

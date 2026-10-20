@@ -158,3 +158,95 @@ end
     @test isfinite(μ_flagged)
 
 end
+
+# ── augment_errors ──────────────────────────────────────────────────────────────
+# DummyModel (defined in runtests.jl, shared `obj`) has no augment_errors override -- used here
+# to confirm the DEFAULT is a true no-op. A SEPARATE model (AugErrModel) below is the only place
+# an override is ever defined, precisely so "default" and "with-override" behavior can't be
+# confused by method-definition ordering -- once an override exists for a type, every call for
+# that type uses it, so keeping them on distinct types sidesteps that entirely.
+
+@testset "augment_errors — default is a true no-op" begin
+    state = obj.ssg[1]
+    out, trans = TFI.calc_eqm_from_state(state, obj)
+
+    @test augment_errors(obj, state, out, trans) == ((;), (;))
+
+    _, _, fx_nt, transerr = TFI.calc_result(state, obj)
+    @test keys(fx_nt) == (:fx1,)              # nothing extra merged in
+    @test propertynames(transerr) == (:x,)    # nothing extra merged in
+end
+
+# A dedicated model with a state-dependent `v` (unlike DummyModel's constant one) and a real
+# augment_errors override -- exercises both the scalar_nt→fx and vector_nt→transerr paths, plus
+# the "override replaces an existing fx field" behavior.
+struct AugErrModel <: AbstractModel end
+
+function TransitionFunctionIteration.compute_next_period_values(next, ::AugErrModel, ::EvaluationMode)
+    expectations = (e = next.v,)
+    continuations = (; c = next.x)
+    NextPeriod(; expectations, continuations)
+end
+
+function TransitionFunctionIteration.calc_eqm(state, policy, ::AugErrModel, np::NextPeriod, mode::EvaluationMode)
+    fx = (fx1 = np.expectations.e - policy.p + state.x,)
+    mode isa SolveMode && return fx
+    trans = (x = 1.0,)
+    v = 2.0 * state.x   # state-dependent, unlike the constant Vfct coefficient below
+    if mode isa IterateMode
+        return (; fx, trans, vals = (; v))
+    elseif mode isa SimulateMode
+        return (; fx, trans, simvars = (; v))
+    end
+end
+
+# Vfct's stored coefficient is a CONSTANT 3.0 everywhere, so it disagrees with the
+# state-dependent exact v=2*state.x above -- makes the diagnostic's value non-trivial to fake.
+function TransitionFunctionIteration.augment_errors(obj::ModelSolution{AugErrModel}, state, out, trans)
+    v_interp = obj.Vfct(state).v
+    scalar_nt = (; v_check = out.simvars.v - v_interp,
+                   fx1 = 1000.0 + out.fx.fx1)   # deliberately collides with the base `fx1` name
+    vector_nt = (; x_check = 2.0 .* trans.x)
+    return scalar_nt, vector_nt
+end
+
+pfct_ec = Interpolant(ssg_ex, (p = 1.0,))
+vfct_ec = Interpolant(ssg_ex, (v = 3.0,))
+tfct_ec = Interpolant(ssg_ex, (x = SVector(0.9, 1.0, 1.1),))
+obj_ec  = ModelSolution(model = AugErrModel(), exogenv = e3, Pfct = pfct_ec, Vfct = vfct_ec, Tfct = tfct_ec, ssg = ssg_ex)
+
+@testset "augment_errors — scalar merges into fx, including a deliberate name collision" begin
+    state = obj_ec.ssg[1]
+    out, trans = TFI.calc_eqm_from_state(state, obj_ec)
+    scalar_nt, vector_nt = augment_errors(obj_ec, state, out, trans)
+
+    @test scalar_nt.v_check ≈ out.simvars.v - obj_ec.Vfct(state).v
+    @test scalar_nt.v_check ≈ 2.0 * state.x - 3.0
+    @test :x_check in propertynames(vector_nt)
+
+    _, _, fx_nt, transerr = TFI.calc_result(state, obj_ec)
+    @test fx_nt.v_check ≈ scalar_nt.v_check
+    @test fx_nt.fx1 ≈ 1000.0 + out.fx.fx1        # override WON, not the original fx1
+    @test :x_check in propertynames(transerr)
+end
+
+@testset "augment_errors — vector merges into transerr and resolves via merge_error" begin
+    state = obj_ec.ssg[1]
+    _, _, fx_nt, transerr = TFI.calc_result(state, obj_ec)
+
+    @test length(transerr.x_check) == 3
+    for next_exst in 1:3
+        merged = TFI.merge_error(fx_nt, transerr, next_exst)
+        @test merged.x_check ≈ transerr.x_check[next_exst]
+    end
+end
+
+@testset "augment_errors — flows through simulate() end to end" begin
+    simseries_ec, errs_ec = simulate(obj_ec; endog_start = (x = 1.0,), sz = 8 => 3, burn = 0,
+                                      report_bounds = false)
+
+    @test :v_check in propertynames(errs_ec)
+    @test :x_check in propertynames(errs_ec)
+    @test all(isfinite, errs_ec.v_check)
+    @test all(isfinite, errs_ec.x_check)
+end

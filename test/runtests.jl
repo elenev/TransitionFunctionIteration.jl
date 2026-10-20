@@ -45,6 +45,11 @@ function TransitionFunctionIteration.calc_eqm(state, policy, ::DummyModel, np::N
         trans = (x = 1.0,)
         vals = (v = 1.0,)
         return (; fx, trans, vals)
+    elseif mode isa SimulateMode
+        # Added for augment_errors/calc_result testing (test_simulation.jl) -- no existing test
+        # exercised SimulateMode on DummyModel before this, so this branch is purely additive.
+        trans = (x = 1.0,)
+        return (; fx, trans, simvars = (v = 1.0,))
     end
 end
 

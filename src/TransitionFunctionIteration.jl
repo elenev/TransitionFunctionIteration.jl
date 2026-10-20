@@ -27,7 +27,7 @@ export ExogenvAR1, ergodic_distro, ssidx, exnpt, nex, transition_matrix, conditi
 export main_setup, main_execute!, make_point, compute_expectations, TFIMethod, STPFIMethod, fisher_burmeister
 
 # Simulation
-export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, augment_simulation
+export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, augment_simulation, augment_errors
 export ReportedMoment, compare_economies
 export SimulationPanel, SimulationErrorPanel, endog_states, states
 

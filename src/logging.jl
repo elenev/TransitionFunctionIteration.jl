@@ -101,6 +101,9 @@ function _fmt_width(grid::AbstractArray{<:Real})
     int_digits = ndigits(floor(Int, max(1.0, maximum(abs, grid))))
     int_digits + (any(<(0), grid) ? 1 : 0) + 4
 end
+# Singleton grid axes are stored as scalars, not arrays.
+_fmt_width(x::Integer) = ndigits(x)
+_fmt_width(x::Real)    = ndigits(floor(Int, max(1.0, abs(x)))) + (x < 0 ? 1 : 0) + 4
 
 _gridpoint_widths(ssg) = map(maximum ∘ _fmt_width, unigrids(ssg))
 

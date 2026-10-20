@@ -154,9 +154,9 @@ end
     legendon  = false)   # which subplot gets the legend (false=none, true=1, integer=that subplot)
 
     legend_subplot = legendon === true ? 1 : legendon
-
+    #page = permutedims(page)
     layout --> size(page)
-    for (i, rv) in enumerate(page)
+    for (i, rv) in enumerate(permutedims(page))
         @series begin
             subplot   := i
             legend    := (i == legend_subplot)
