@@ -384,13 +384,17 @@ const default_stats = StatisticsSet(
 
 
 @inline function _describe_variable!(outrow, v, simvector, unistat_functions, multistat_functions)
+    if isempty(v)
+        outrow .= NaN
+        return
+    end
+    
     N_uni = length(unistat_functions)
     N_multi = length(multistat_functions)
     N_total = N_uni + N_multi
     outrow[1:N_uni]         .= values(unistat_functions(v))
     outrow[N_uni+1:N_total] .= values(multistat_functions(v, simvector))
 end
-
 
 function _describe_run!(out, simvector, unistat_functions, multistat_functions)
     foreach(eachrow(out), components(simvector)) do outrow, v
@@ -482,7 +486,8 @@ function describe(simseries::SimulationPanel,
     stat_functions = default_stats;
     filters = (;),
     additional_stats = (;),
-    correlation_vars = collect(endog_states(simseries))
+    correlation_vars = collect(endog_states(simseries)),
+    dropnan = false,
     )
 
     simseries = simseries.data
@@ -490,6 +495,11 @@ function describe(simseries::SimulationPanel,
     # Merge user-specified filters  with defaults
     default_filters = (uncond = Returns(true),)
     filters = merge(default_filters, filters)
+
+    # Add dropnan filter to all filters if requested
+    if dropnan
+        filters = map(fcn -> (x -> !unrolled_any(isnan, x) && fcn(x) ), filters)
+    end
 
     # Merge user-specified stats with defaults
     stat_functions = merge(stat_functions, StatisticsSet(additional_stats))

@@ -78,6 +78,16 @@ function fmap(nt::NamedTuple{NAMES}, args...) where NAMES
     return NamedTuple{NAMES}(fmap(values(nt), args...))
 end
 
+# Generalization of `any(f, x)` for wide structs/NamedTuples
+@generated function unrolled_any(f, x::T) where T
+    N = fieldcount(T)
+    N == 0 && return :(false)
+    
+    checks = [:(f(getfield(x, $i))) for i in 1:N]
+    return reduce((a, b) -> :($a || $b), checks)
+end
+
+
 # Struct Array Select 
 @inline select(sa::StructArray, vars::NTuple{N,Symbol} where N) = select(sa, Val(vars))
 
