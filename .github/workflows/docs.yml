@@ -7,9 +7,7 @@ on:
 #    tags:
 #      - '*'
   pull_request:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:  # run on a release tag to deploy: gh workflow run docs.yml --ref vX.Y.Z
 
 permissions:
   actions: write
