@@ -1,6 +1,6 @@
 name = "TransitionFunctionIteration"
 uuid = "7ca8190d-a0e2-4989-8875-c3198677b17d"
-version = "0.3.0"
+version = "0.3.1"
 
 [deps]
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"

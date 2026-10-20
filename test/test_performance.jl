@@ -153,3 +153,8 @@ end
     @test res_stpfi.tfct isa SMatrix
 
 end
+
+@testset "Performance — unrolled_any" begin
+    wide = NamedTuple{ntuple(i -> Symbol("v", i), 12)}(ntuple(float, 12))
+    @test allocs_after_warmup(TFI.unrolled_any, isnan, wide) == 0
+end

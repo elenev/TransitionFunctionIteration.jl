@@ -144,3 +144,33 @@ end
     @test isopen(logger_c.io) == false
 
 end
+
+@testset "_fmt_width — scalar methods" begin
+    @test TFI._fmt_width(5)    == 1
+    @test TFI._fmt_width(123)  == 3
+    @test TFI._fmt_width(0)    == 1
+    @test TFI._fmt_width(2.5)  == 5      # 1 integer digit + 4
+    @test TFI._fmt_width(12.3) == 6
+    @test TFI._fmt_width(0.1)  == 5      # integer part floored at 1 digit
+    @test TFI._fmt_width(-2.5) == 6      # extra character for the sign
+
+    # Scalar and one-element-array methods agree
+    for x in (7, 123, 2.5, -2.5, 12.3)
+        @test TFI._fmt_width(x) == TFI._fmt_width([x])
+    end
+end
+
+@testset "_gridpoint_widths and TerminalLogger — singleton grid axis" begin
+    ssg_s = StateSpaceGrid(; exst=1:3, x=collect(1.0:3.0), z=2.5)   # z is a scalar singleton
+    @test singletons(ssg_s) == (:z,)
+
+    widths = TFI._gridpoint_widths(ssg_s)    # used to throw: no _fmt_width method for scalars
+    @test widths == (exst = 1, x = 5, z = 5)
+
+    buf = IOBuffer()
+    logger = TerminalLogger(ITERATION; io=buf, varname_width=10, gridpoint_widths=widths)
+    with_logger(logger) do
+        @logmsg ITERATION "" iter=1 max_vdist=-3.5 max_tdist=-4.2 worst_vvar=:x worst_tvar=:x worst_vpoint=(exst=2, x=1.5, z=2.5) worst_tpoint=(exst=2, x=1.5, z=2.5) worst_texst=2
+    end
+    @test occursin("2.500", String(take!(buf)))
+end

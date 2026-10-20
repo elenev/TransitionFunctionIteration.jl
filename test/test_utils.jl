@@ -95,3 +95,20 @@ end
     @test propertynames(sub1) == (:b,)
     @test sub1.b == sa.b
 end
+
+@testset "unrolled_any — NamedTuple and Tuple" begin
+    @test !TFI.unrolled_any(isnan, (;))                    # no fields: false
+    @test !TFI.unrolled_any(isnan, (a = 1.0, b = 2.0))
+    @test TFI.unrolled_any(isnan, (a = NaN, b = 2.0))      # NaN in first field
+    @test TFI.unrolled_any(isnan, (a = 1.0, b = NaN))      # NaN in last field
+    @test TFI.unrolled_any(isnan, (1.0, NaN, 3))           # plain Tuple, mixed types
+    @test !TFI.unrolled_any(isnan, (1, 2.5, true))         # Int, Float64, Bool
+    @test TFI.unrolled_any(>(2), (a = 1, b = 3))           # arbitrary predicate
+end
+
+@testset "unrolled_any — type stability on a wide NamedTuple" begin
+    wide     = NamedTuple{ntuple(i -> Symbol("v", i), 12)}(ntuple(float, 12))
+    wide_nan = merge(wide, (v12 = NaN,))
+    @test (@inferred TFI.unrolled_any(isnan, wide)) === false
+    @test (@inferred TFI.unrolled_any(isnan, wide_nan)) === true
+end
