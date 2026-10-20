@@ -250,3 +250,69 @@ end
     @test all(isfinite, errs_ec.v_check)
     @test all(isfinite, errs_ec.x_check)
 end
+
+# ── describe: dropnan and empty filtered samples ────────────────────────────────
+
+# 3 runs x 6 periods, x = t + 10r, with NaN at (t=2, run 1) and (t=4, run 3); flag = (t > 2).
+# (2,1) has flag=false, (4,3) has flag=true, so a flag filter alone removes only the first.
+function _nan_panel(; nans=true)
+    data = StructArray([(x = Float64(t + 10r), flag = t > 2) for t in 1:6, r in 1:3])
+    if nans
+        data.x[2, 1] = NaN
+        data.x[4, 3] = NaN
+    end
+    return SimulationPanel(data, (:x,)), data
+end
+
+# Expected moment: mean over runs of the per-run mean of x over rows satisfying `keep`
+_expected_mean(data, keep) = mean(mean(c.x[keep.(c)]) for c in eachcol(data))
+
+@testset "describe — dropnan excludes rows containing NaN" begin
+    panel, data = _nan_panel()
+    out = describe(panel; dropnan=true)
+
+    @test out.moments.uncond(:x, :mean) ≈ _expected_mean(data, r -> !isnan(r.x))  rtol=1e-8
+    @test out.moments.uncond(:x, :minimum) ≈ 21  rtol=1e-8       # mean of per-run minima 11, 21, 31
+    @test isfinite(out.moments.uncond(:x, :std))
+
+    # Without dropnan, the percentile statistics reject NaN input
+    @test_throws ArgumentError describe(panel; dropnan=false)
+end
+
+@testset "describe — dropnan composes with user filters" begin
+    panel, data = _nan_panel()
+    filters = (late = row -> row.flag,)
+
+    out = describe(panel; filters, dropnan=true)
+    @test out.moments.late(:x, :mean) ≈ _expected_mean(data, r -> r.flag && !isnan(r.x))  rtol=1e-8
+    # The unconditional filter is also wrapped
+    @test out.moments.uncond(:x, :mean) ≈ _expected_mean(data, r -> !isnan(r.x))  rtol=1e-8
+
+    # Without dropnan, the (unfiltered) uncond sample contains NaN and describe throws
+    @test_throws ArgumentError describe(panel; filters, dropnan=false)
+end
+
+@testset "describe — empty filtered sample gives NaN moments" begin
+    panel, _ = _nan_panel(nans=false)
+    out = describe(panel; filters=(never = Returns(false),))   # must not throw
+
+    @test all(isnan, values(out.moments.never(:x, (:mean, :std, :minimum, :maximum, :p50))))
+    @test isnan(out.stderrs.never(:x, :mean))
+    @test isfinite(out.moments.uncond(:x, :mean))
+
+    # All-NaN panel with dropnan=true leaves every sample empty
+    data_nan = StructArray([(x = NaN, flag = true) for _ in 1:5, _ in 1:2])
+    out_nan = describe(SimulationPanel(data_nan, (:x,)); dropnan=true)
+    @test all(isnan, values(out_nan.moments.uncond(:x, (:mean, :std, :p50))))
+end
+
+@testset "simulate — reproducible across calls (threaded over runs)" begin
+    kw = (endog_start = (x = 1.0,), sz = 8 => 4, burn = 0, report_bounds = false)
+    s1, e1 = simulate(obj_ec; kw..., seed = 7)
+    s2, e2 = simulate(obj_ec; kw..., seed = 7)
+    s3, _  = simulate(obj_ec; kw..., seed = 8)
+
+    @test all(isequal(getproperty(s1.data, k), getproperty(s2.data, k)) for k in propertynames(s1.data))
+    @test all(isequal(getproperty(e1.data, k), getproperty(e2.data, k)) for k in propertynames(e1.data))
+    @test s1.data.exst != s3.data.exst          # a different seed changes the draws
+end
