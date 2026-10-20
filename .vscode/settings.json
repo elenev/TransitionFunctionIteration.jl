@@ -1,5 +1,4 @@
 {
-    "julia.environmentPath": "${workspaceFolder}",
     "julia.debuggerDefaultCompiled": [
         "ALL_MODULES_EXCEPT_MAIN",
         "-TransitionFunctionIteration.",
