@@ -12,7 +12,8 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.12' # Current stable release
+          - '1'   # Latest stable release
+          - 'min' # Lowest Julia version allowed by [compat]
         os:
           - ubuntu-latest
           - windows-latest
