@@ -464,8 +464,9 @@ function _snap_type(fct::AbstractInterpolant, var_names::Tuple)
 end
 
 """
-    main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, damping=:damped_iterate, logging=ITERATIONFAILED,
-                  track_history=nothing)
+    main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=TFIMethod(),
+                  damping=:damped_iterate, logging=ITERATIONFAILED, track_history=nothing,
+                  multithreaded=nothing)
 
 Iterate policy and value functions of `obj` to convergence.
 
@@ -484,6 +485,8 @@ repeats until `log₁₀(max_distance) < tol` or `maxiter` is reached.
 - `npasses`: revisit passes for grid points where the solver failed on the first pass
 - `solmethod`: `TFIMethod()` (default) or `STPFIMethod()`, controls whether to precompute
   expectations (Elenev and Landvoigt) or to add transition functions to the system (Cao et al)
+- `multithreaded`: `nothing` (default) threads over grid points when more than one thread
+  is available and the problem is large enough; `true`/`false` forces the choice
 - `logging`: minimum `LogLevel` to display (`COMPLETE` suppresses iteration logs)
 - `track_history`: `nothing` (default) or `(fct_sym, var_names)` where `fct_sym` is `:Vfct`
   or `:Tfct` and `var_names` is a tuple of variable name Symbols. When set, returns a
