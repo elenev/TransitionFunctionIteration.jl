@@ -286,7 +286,7 @@ function simulate(obj::ModelSolution, stv=nothing;
     # Simulate each run and period
     original_threads = BLAS.get_num_threads()
     BLAS.set_num_threads(1)
-    for r in axes(exog_states, 2)
+    Threads.@threads for r in axes(exog_states, 2)
         exog_run = view(exog_states, :, r)
         trans = endog_start
         for t in axes(exog_states, 1)
