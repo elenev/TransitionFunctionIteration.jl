@@ -95,5 +95,6 @@ end
     include("test_irf.jl")       # uses obj, stv, simseries from test_ngm.jl
     include("test_linearize.jl") # uses those fixtures
     include("test_setup.jl")     # uses ngm, obj, stv from test_ngm.jl
+    include("test_forecasts.jl") # uses ngm, obj from test_ngm.jl
     include("test_Aqua.jl")
 end

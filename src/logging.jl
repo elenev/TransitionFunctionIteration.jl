@@ -12,6 +12,7 @@ const FAILEDPOINT     = LogLevel(-100)
 
 const CSV_COLUMNS = (:level, :iter, :max_vdist, :max_tdist,
                      :worst_vvar, :worst_tvar, :worst_vpoint, :worst_tpoint, :worst_texst,
+                     :max_fdist, :worst_fvar, :worst_fpoint,
                      :n_failed, :n_total, :pass, :n_solved, :n_unsolved,
                      :fp_state, :fp_retcode, :msg)
 const CSV_HEADER  = join(CSV_COLUMNS, ",")
@@ -152,7 +153,11 @@ function _prepare_message(logger::TerminalLogger, kw, ::Val{ITERATION})
             iter, kw[:max_vdist], vname, _fmt_gridpoint(worst_vpoint, gw))
     tmsg = @sprintf("%4d -- Max T Dist = %7.3f in %s at %s",
             iter, kw[:max_tdist], tname, _fmt_gridpoint(worst_tpoint, gw))
-    return (vmsg, tmsg)
+    haskey(kw, :max_fdist) || return (vmsg, tmsg)
+    fname = rpad(_fmt_invar(get(kw, :worst_fvar, :?), nothing), W)
+    fmsg = @sprintf("%4d -- Max F Dist = %7.3f in %s at %s",
+            iter, kw[:max_fdist], fname, _fmt_gridpoint(get(kw, :worst_fpoint, (;)), gw))
+    return (vmsg, tmsg, fmsg)
 end
 
 function _prepare_message(::TerminalLogger, kw, ::Val{COMPLETE})

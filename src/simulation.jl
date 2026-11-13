@@ -172,14 +172,17 @@ function calc_eqm_from_state(state, obj, mode=SimulateMode())
     prnext = conditional_distro(obj.exogenv, state.exst)
     fullstate = merge(state, exog)
 
+    # Policies at the state; forecasting values implied by them (see forecasts_from_policy)
+    policies = map( to_constrained, obj.Pfct(state), obj.Pfct_bounds)
+    forecasts = forecasts_from_policy(fullstate, policies, obj.model)
+
     # Compute next period's transitions and expectations
     trans = obj.Tfct(state)
-    next = forecast_next(trans, obj)
+    next = forecast_next(trans, obj, forecasts)
 
     np = compute_expectations(next, prnext, obj.model, mode)
 
     # Compute equilibrium residuals, next period's transitions and simulated variables
-    policies = map( to_constrained, obj.Pfct(state), obj.Pfct_bounds)
     #@debug "Simulated policys at state $state: " policies
     return calc_eqm(fullstate, policies, obj.model, np, mode), trans
 end

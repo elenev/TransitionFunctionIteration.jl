@@ -60,7 +60,17 @@ function main_setup(model::AbstractModel,
         Tfct = Interpolant(ssg, initobj.Tfct(points(ssg)))
     end
 
-    obj = ModelSolution(; model, exogenv, ssg, Pfct, Vfct, Tfct, Pfct_bounds, Tfct_bounds)
+    # Forecasting function (only if the model defines forecasting values)
+    forecasts_ss = forecasts_from_policy(state(stv), stv.guess, model)
+    if isempty(forecasts_ss)
+        Ffct = nothing
+    elseif isnothing(initobj) || isnothing(initobj.Ffct)
+        Ffct = Interpolant(ssg, forecasts_ss)
+    else
+        Ffct = Interpolant(ssg, initobj.Ffct(points(ssg)))
+    end
+
+    obj = ModelSolution(; model, exogenv, ssg, Pfct, Vfct, Tfct, Pfct_bounds, Tfct_bounds, Ffct)
     return obj, stv
 end
 
@@ -111,7 +121,8 @@ end
 
 function f_steadystate(policy::NamedTuple, endog::NamedTuple, p)
     state = merge(p.exog, endog)
-    next_nt = merge(p.exog, endog, vals_from_policy(state, policy, p.model))
+    next_nt = merge(p.exog, endog, vals_from_policy(state, policy, p.model),
+                    forecasts_from_policy(state, policy, p.model))
     mode = IterateMode()
     np = compute_next_period_values(next_nt, p.model, mode)
     np = normalize_next_period_values(np, p.model, mode)

@@ -74,6 +74,30 @@ end
 
 
 """
+    forecasts_from_policy(state, policy, model) -> NamedTuple
+
+Forecasting values: current-period quantities, other than the next-period state, that next
+period's expectations depend on (e.g. a portfolio entering a next-period consumption stage).
+`state` is the full current state (exogenous and endogenous variables), `policy` the named,
+constrained policy. Optional: the default returns an empty NamedTuple (no forecasting
+function).
+
+If the model returns a non-empty NamedTuple, `main_setup` builds a forecasting function
+`obj.Ffct` from it, and `forecast_next` attaches the forecasting values to every next-period
+point, so `compute_next_period_values` sees them as fields of `next` (names must not clash
+with state or Vfct names). Which values are attached:
+- `STPFIMethod`, the fixed-point steady state, simulation and IRFs: the values implied by the
+  policy being evaluated;
+- `TFIMethod`: expectations are precomputed before the policy is solved, so they use the stored
+  `obj.Ffct` from the previous iteration, which is then updated (and damped) like `Vfct`.
+  The equilibrium conditions must then depend on the policy other than through the forecasts,
+  or the system is singular in it; models whose choices act only through next period's
+  expectations need `STPFIMethod`.
+"""
+forecasts_from_policy(state, policy, mdl::AbstractModel) = (;)
+
+
+"""
     Exogenv(mdl::AbstractModel) -> Exogenv
 
 Compute the exogenous environment for the given model. Interface stub --

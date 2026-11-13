@@ -56,9 +56,9 @@ test/
 ```
 AbstractModel               -- user subtype; carries all model parameters
 AbstractModelSolution
-  ModelSolution{M,E,S,PF,VF,TF,PB,TB}
+  ModelSolution{M,E,S,PF,VF,TF,PB,TB,FF}
                             -- assembled solution: .model, .exogenv, .ssg, .Pfct, .Vfct, .Tfct,
-                               .Pfct_bounds, .Tfct_bounds
+                               .Pfct_bounds, .Tfct_bounds, .Ffct (forecasting function or nothing)
 AbstractSteadyState
   SteadyState               -- .model, .guess, .endog, .exog, .values
 AbstractStateSpaceGrid
@@ -101,6 +101,7 @@ Implement methods dispatching on `MyModel <: AbstractModel`:
 | `bounds(stv::SteadyState{MyModel})` | No | Return `(Pfct_bounds, Tfct_bounds)` NTs; default is all `Unbounded()` |
 | `augment_simulation(run, mdl)` | No | Return `(static_nt, dynamic_nt)` for extra sim variables |
 | `vals_from_policy(state, policy, mdl)` | No | Needed if Vfct vars ≠ policy vars in FixedPointSteadyState |
+| `forecasts_from_policy(state, policy, mdl)` | No | Forecasting values (current choices next period's expectations depend on); builds `obj.Ffct`, attached to every `next` point by `forecast_next` |
 
 ### `calc_eqm` return contract
 

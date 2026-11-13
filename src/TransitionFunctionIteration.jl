@@ -14,7 +14,7 @@ export points, dims, npt, nof, elsize, varnames, unigrids, singletons
 export coefficients, knots, statespacegrid, name_values, named_coefficients
 
 # Interface stub: model packages extend this
-export calc_eqm, compute_next_period_values, steadystate, define_endog_grids
+export calc_eqm, compute_next_period_values, steadystate, define_endog_grids, forecasts_from_policy
 
 # Logging
 export ExecutionLogger, TerminalLogger, CSVLogger

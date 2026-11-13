@@ -101,6 +101,12 @@ Assembled solution container for an economic model.
 - `ssg`: combined `StateSpaceGrid` (exogenous + endogenous axes)
 - `Pfct`: policy function `Interpolant`
 - `Vfct`: value function `Interpolant`
+- `Tfct`: transition function `Interpolant`
+- `Ffct`: forecasting function `Interpolant`, or `nothing` (default) if the model has none.
+  Forecasting values are current-period choices that next period's expectations depend on
+  beyond the next-period state (e.g. the portfolio entering a next-period consumption stage).
+  Unlike `Vfct`, `Ffct` is evaluated at the current state; its values are attached to every
+  next-period point by `forecast_next`. See `forecasts_from_policy`.
 """
 @kwdef struct ModelSolution{M<:AbstractModel,
             E<:AbstractExogenv,
@@ -109,7 +115,8 @@ Assembled solution container for an economic model.
             VF<:AbstractInterpolant,
             TF<:AbstractInterpolant,
             PB<:NamedTuple,
-            TB<:NamedTuple} <: AbstractModelSolution
+            TB<:NamedTuple,
+            FF<:Union{Nothing,AbstractInterpolant}} <: AbstractModelSolution
     model::M
     exogenv::E
     ssg::S
@@ -118,7 +125,11 @@ Assembled solution container for an economic model.
     Tfct::TF
     Pfct_bounds::PB   = NamedTuple{varnames(Pfct)}(ntuple(_ -> Unbounded(), nof(Pfct)))
     Tfct_bounds::TB   = NamedTuple{varnames(Tfct)}(ntuple(_ -> Unbounded(), nof(Tfct)))
+    Ffct::FF          = nothing
 end
+
+_isapprox_or_nothing(::Nothing, ::Nothing; kwargs...) = true
+_isapprox_or_nothing(a, b; kwargs...) = !isnothing(a) && !isnothing(b) && Base.isapprox(a, b; kwargs...)
 
 function Base.:(==)(obj1::ModelSolution, obj2::ModelSolution)
     return (
@@ -129,7 +140,8 @@ function Base.:(==)(obj1::ModelSolution, obj2::ModelSolution)
         (obj1.Vfct == obj2.Vfct) &&
         (obj1.Tfct == obj2.Tfct) &&
         (obj1.Pfct_bounds == obj2.Pfct_bounds) &&
-        (obj1.Tfct_bounds == obj2.Tfct_bounds)
+        (obj1.Tfct_bounds == obj2.Tfct_bounds) &&
+        (obj1.Ffct == obj2.Ffct)
     )
 end
 
@@ -142,7 +154,8 @@ function Base.isapprox(obj1::ModelSolution, obj2::ModelSolution; kwargs...)
         Base.isapprox(obj1.Vfct, obj2.Vfct; kwargs...) &&
         Base.isapprox(obj1.Tfct, obj2.Tfct; kwargs...) &&
         (obj1.Pfct_bounds == obj2.Pfct_bounds) &&
-        (obj1.Tfct_bounds == obj2.Tfct_bounds)
+        (obj1.Tfct_bounds == obj2.Tfct_bounds) &&
+        _isapprox_or_nothing(obj1.Ffct, obj2.Ffct; kwargs...)
     )
 end
 

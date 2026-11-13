@@ -8,32 +8,40 @@ into a full state point `(; exst, trans...)`.
 @inline make_point(exst, trans) = merge( (; exst,), trans)
 
 """
-    forecast_at_point(i, trans, Vfct) -> NamedTuple
+    forecast_at_point(i, trans, Vfct, exogenv, forecasts=(;)) -> NamedTuple
 
 Evaluate the value function at exogenous state `i` and transition state `trans`,
-returning a merged NamedTuple of state and value outputs.
+returning a merged NamedTuple of state, value outputs and the current-period forecasting
+values `forecasts` (the same at every next-period point).
 """
-function forecast_at_point(i, trans, Vfct, exogenv)
+function forecast_at_point(i, trans, Vfct, exogenv, forecasts::NamedTuple=(;))
     point = make_point(i, trans)
     #point = (exst = 2, K = 3.0)
     #point = make_point(2, (K = 3.0,))
     vals = Vfct(point)
-    return merge((exst = i,), points(exogenv)[i], trans, vals)
+    return merge((exst = i,), points(exogenv)[i], trans, vals, forecasts)
 end
 
 """
-    forecast_next(trans, obj) -> StructArray
+    forecast_next(trans, obj, forecasts=(;)) -> StructArray
 
-Evaluate `obj.Vfct` at `trans` across all exogenous states in `obj.exogenv`.
+Evaluate `obj.Vfct` at `trans` across all exogenous states in `obj.exogenv`, attaching the
+current-period forecasting values `forecasts` (see `forecasts_from_policy`) to every point.
 Returns a StructArray used to form expectations over next-period values.
 """
-function forecast_next(trans, obj)
+function forecast_next(trans, obj, forecasts::NamedTuple=(;))
 
     forecast_tuple = ntuple(
-        i -> forecast_at_point(i, map( t -> t[i], trans), obj.Vfct, obj.exogenv), 
+        i -> forecast_at_point(i, map( t -> t[i], trans), obj.Vfct, obj.exogenv, forecasts), 
         exnpt(obj.exogenv) )
     return  StaticStructArray( SVector(forecast_tuple) )
 end
+
+# Forecasting values as stored in Ffct coefficients (SVector) or `nothing` without an Ffct
+@inline _forecast_svec(f::NamedTuple{()}) = nothing
+@inline _forecast_svec(f::NamedTuple) = SVector(values(f))
+@inline _named_forecasts(::Nothing, obj) = (;)
+@inline _named_forecasts(f, obj) = name_values(f, obj.Ffct)
 
 
 
@@ -100,13 +108,13 @@ function expand_transitions(trans, exogenv::AbstractExogenv)
     return map(expand_deterministic_transitions, trans)
 end
 
-function _compute_expectations_from_trans(trans::AbstractMatrix, prnext, obj::ModelSolution)
+function _compute_expectations_from_trans(trans::AbstractMatrix, prnext, obj::ModelSolution, forecasts::NamedTuple=(;))
     named_trans = name_values(trans, obj.Tfct)
-    return _compute_expectations_from_trans(named_trans, prnext, obj)
+    return _compute_expectations_from_trans(named_trans, prnext, obj, forecasts)
 end
 
-function _compute_expectations_from_trans(named_trans, prnext, obj::ModelSolution)
-    next = forecast_next(named_trans, obj)
+function _compute_expectations_from_trans(named_trans, prnext, obj::ModelSolution, forecasts::NamedTuple=(;))
+    next = forecast_next(named_trans, obj, forecasts)
     return compute_expectations(next, prnext, obj.model, SolveMode()), named_trans
 end
 
@@ -114,12 +122,14 @@ _fx_to_svec(fx::NamedTuple) = SVector(values(fx))
 _fx_to_svec(fx::Tuple) = SVector(fx)
 _fx_to_svec(fx::StaticVector) = fx
 
-struct FunctionValuesAtPoint{S, P,V,T}
+struct FunctionValuesAtPoint{S, P,V,T,F}
     state::S
     pfct::P
     vfct::V    
     tfct::T
+    ffct::F     # forecasting values (SVector), or nothing without an Ffct
 end
+FunctionValuesAtPoint(state, pfct, vfct, tfct) = FunctionValuesAtPoint(state, pfct, vfct, tfct, nothing)
 
 abstract type EquilibriumSystem end
 
@@ -143,7 +153,8 @@ function (sys::TFISystem)(u,p::EvaluationMode)
         out = calc_eqm(fullstate, named_policy, sys.obj.model, sys.np, p)
         #@debug "out.trans: $(out.trans)"
         out_trans = expand_transitions(out.trans, sys.obj.exogenv)
-        return FunctionValuesAtPoint(sys.state, u, SVector(values(out.vals)), hcat(out_trans...)')
+        forecasts = _forecast_svec(forecasts_from_policy(fullstate, named_policy, sys.obj.model))
+        return FunctionValuesAtPoint(sys.state, u, SVector(values(out.vals)), hcat(out_trans...)', forecasts)
     end
 end
 
@@ -169,7 +180,9 @@ function (sys::STPFISystem)(u,p::EvaluationMode)
 
     # Name it
     named_trans = name_values(u_tfct, sys.obj.Tfct)
-    np, _ = _compute_expectations_from_trans(named_trans, sys.prnext, sys.obj)
+    # forecasting values implied by the policy guess (STPFI: consistent within the solve)
+    forecasts = forecasts_from_policy(fullstate, named_policy, sys.obj.model)
+    np, _ = _compute_expectations_from_trans(named_trans, sys.prnext, sys.obj, forecasts)
     out = calc_eqm(fullstate, named_policy, sys.obj.model, np, IterateMode())
     out_trans = expand_transitions(out.trans, sys.obj.exogenv)
 
@@ -178,7 +191,8 @@ function (sys::STPFISystem)(u,p::EvaluationMode)
     if p isa SolveMode
         return vcat(_fx_to_svec(out.fx), transition_residuals...)
     else
-        return FunctionValuesAtPoint(sys.state, SVector{p_nof}(view(u, 1:p_nof)), SVector(values(out.vals)), hcat(out_trans...)')
+        return FunctionValuesAtPoint(sys.state, SVector{p_nof}(view(u, 1:p_nof)), SVector(values(out.vals)), hcat(out_trans...)',
+                                     _forecast_svec(forecasts))
     end
 end
 
@@ -197,7 +211,8 @@ function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
 
     if solmethod isa TFIMethod
         # Pre-compute expectations using old (read-only) init_trans — avoids WAR aliasing with trans writes below
-        np, _ = _compute_expectations_from_trans(SMatrix(init_trans), prnext, obj)
+        # TFI: the forecasting values are the stored ones from the previous iteration
+        np, _ = _compute_expectations_from_trans(SMatrix(init_trans), prnext, obj, _named_forecasts(old.ffct, obj))
         sys = TFISystem(state, exog, np, obj)
     end
 
@@ -265,6 +280,7 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bo
     Pfct_coeffs = coefficients(obj.Pfct)
     Vfct_coeffs = coefficients(obj.Vfct)
     Tfct_coeffs = coefficients(obj.Tfct)
+    Ffct_coeffs = _coefficients_or_nothing(obj.Ffct)
 
     # Scratch write buffers, pre-allocated once in IterationDiagnostics and
     # reused every iteration (no per-iteration allocation): every point gets
@@ -309,11 +325,12 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bo
             guess_indices = _guess_indices(i, R, Val(pass))
             values = Vfct_coeffs[i]
             trans = Tfct_coeffs[i]
+            forecasts = _coef_at(Ffct_coeffs, i)
 
             local new
             for guess_idx in guess_indices
                 oldguess = _make_guess(guess_idx, i, Pfct_coeffs, Tfct_coeffs, solmethod)
-                old = FunctionValuesAtPoint(state, oldguess, values, trans)
+                old = FunctionValuesAtPoint(state, oldguess, values, trans, forecasts)
                 new, success[i] = solve_at_point(old, obj, solmethod)
                 if success[i] break end
             end
@@ -325,6 +342,7 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bo
             new_Tfct[i] = @. damp * prev_tfct[i] + (1-damp) * new.tfct
             new_raw_Vfct[i] = new.vfct
             new_raw_Tfct[i] = new.tfct
+            _update_forecasts_at!(diag, i, new.ffct, damp)
         end
 
         if use_threads
@@ -371,10 +389,32 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bo
         prev_vfct .= new_raw_Vfct
         prev_tfct .= new_raw_Tfct
     end
+    _finish_forecasts!(Ffct_coeffs, diag, damping)
 
     # println(coefficients(obj.Vfct)[5,1,1])
     # println(coefficients(obj.Vfct)[5,5,1])
     # println(coefficients(obj.Vfct)[5,10,1])
+end
+
+# Forecasting function bookkeeping: no-ops when the model has no Ffct
+_coefficients_or_nothing(::Nothing) = nothing
+_coefficients_or_nothing(fct) = coefficients(fct)
+@inline _coef_at(::Nothing, i) = nothing
+@inline _coef_at(coefs, i) = coefs[i]
+
+@inline _update_forecasts_at!(diag, i, ::Nothing, damp) = nothing
+@inline function _update_forecasts_at!(diag, i, newf, damp)
+    diag.forecast_distances[i] .= newf - diag.prev_ffct[i]
+    diag.next_ffct[i] = @. damp * diag.prev_ffct[i] + (1-damp) * newf
+    diag.next_raw_ffct[i] = newf
+    return nothing
+end
+
+_finish_forecasts!(::Nothing, diag, damping) = nothing
+function _finish_forecasts!(Ffct_coeffs, diag, damping)
+    Ffct_coeffs .= diag.next_ffct
+    diag.prev_ffct .= damping === :damped_iterate ? diag.next_ffct : diag.next_raw_ffct
+    return nothing
 end
 
 function summarize_distances(distances, Fct)
@@ -407,7 +447,7 @@ function summarize_distances(distances, Fct)
 end
 
 
-struct IterationDiagnostics{B,V,T,PV,PT,NP,NV,NT2,RV,RT}
+struct IterationDiagnostics{B,V,T,PV,PT,NP,NV,NT2,RV,RT,FD,PF,NF,RF}
     success::B
     value_distances::V
     transition_distances::T
@@ -418,6 +458,11 @@ struct IterationDiagnostics{B,V,T,PV,PT,NP,NV,NT2,RV,RT}
     next_tfct::NT2
     next_raw_vfct::RV
     next_raw_tfct::RT
+    # forecasting function (all nothing without an Ffct)
+    forecast_distances::FD
+    prev_ffct::PF
+    next_ffct::NF
+    next_raw_ffct::RF
 end
 
 function IterationDiagnostics(obj)
@@ -449,8 +494,19 @@ function IterationDiagnostics(obj)
     next_raw_vfct = similar(vcoefs)
     next_raw_tfct = similar(tcoefs)
 
+    if isnothing(obj.Ffct)
+        fdistances = prev_ffct = next_ffct = next_raw_ffct = nothing
+    else
+        fcoefs = coefficients(obj.Ffct)
+        fdistances = [similar_to_coef(obj.Ffct) for _ in fcoefs]
+        prev_ffct = deepcopy(fcoefs)
+        next_ffct = similar(fcoefs)
+        next_raw_ffct = similar(fcoefs)
+    end
+
     return IterationDiagnostics(success, vdistances, tdistances, prev_vfct, prev_tfct,
-        next_pfct, next_vfct, next_tfct, next_raw_vfct, next_raw_tfct)
+        next_pfct, next_vfct, next_tfct, next_raw_vfct, next_raw_tfct,
+        fdistances, prev_ffct, next_ffct, next_raw_ffct)
 end
 
 # Construct a logger from either a LogLevel (builds TerminalLogger) or a pre-built ExecutionLogger.
@@ -536,8 +592,15 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
 
             distV, worst_varV, worst_pointV = summarize_distances(diag.value_distances, obj.Vfct)
             distT, worst_varT, worst_pointT, worst_exst = summarize_distances(diag.transition_distances, obj.Tfct)
+            # forecasting function: its change counts toward convergence like Vfct's
+            distF, worst_varF, worst_pointF = isnothing(obj.Ffct) ? (-Inf, nothing, nothing) :
+                summarize_distances(diag.forecast_distances, obj.Ffct)[1:3]
 
-            @logmsg ITERATION "" iter=iter max_vdist=distV max_tdist=distT worst_vvar=worst_varV worst_tvar=worst_varT worst_vpoint=worst_pointV worst_tpoint=worst_pointT worst_texst=worst_exst
+            if isnothing(obj.Ffct)
+                @logmsg ITERATION "" iter=iter max_vdist=distV max_tdist=distT worst_vvar=worst_varV worst_tvar=worst_varT worst_vpoint=worst_pointV worst_tpoint=worst_pointT worst_texst=worst_exst
+            else
+                @logmsg ITERATION "" iter=iter max_vdist=distV max_tdist=distT worst_vvar=worst_varV worst_tvar=worst_varT worst_vpoint=worst_pointV worst_tpoint=worst_pointT worst_texst=worst_exst max_fdist=distF worst_fvar=worst_varF worst_fpoint=worst_pointF
+            end
 
             # Capture per-iteration snapshot if requested
             if !isnothing(track_history)
@@ -557,13 +620,14 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
                 end
             end
 
-            exec_update = (; iter, distV, worst_varV, worst_pointV, distT, worst_varT, worst_pointT, worst_exst)
+            exec_update = (; iter, distV, worst_varV, worst_pointV, distT, worst_varT, worst_pointT, worst_exst,
+                           distF, worst_varF, worst_pointF)
 
             if iter >= maxiter
                 @logmsg COMPLETE "Maximum iterations reached without convergence." 
                 exec = merge(exec, exec_update)
                 break
-            elseif distV < tol && distT < tol
+            elseif distV < tol && distT < tol && distF < tol
                 @logmsg COMPLETE "Converged."
                 exec = merge(exec, exec_update)
                 break
