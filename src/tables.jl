@@ -10,11 +10,12 @@
 # - Reserved column names: `__row` (MomentArray row names), `__run` and `__period` (panel
 #   indices), `__shock` and `__stat` (IRF keys). Parquet has no Symbol type, so names are
 #   written as Strings and turned back into Symbols when a table is read.
-# - Table-level metadata (DataAPI.jl) has two parts. Structure: "tfi.kind" (the type that wrote
-#   the table), "tfi.rowkey" (MomentArray's row-name column), "tfi.endog" (a SimulationPanel's
-#   endogenous state names, comma-separated). Provenance: "simulate.<field>" for each field of a
-#   panel's SimulationProvenance. Parquet2 writes this metadata into the file and exposes it on
-#   reading.
+# - Table-level metadata (DataAPI.jl) is published as strings, ready for any writer: file
+#   formats such as parquet store string pairs only, and Parquet2 writes `string(value)`. Keys:
+#   "tfi.kind" (the type that wrote the table), "tfi.rowkey" (MomentArray's row-name column),
+#   "tfi.endog" (a SimulationPanel's endogenous state names, a JSON array) and "tfi.provenance"
+#   (a panel's or IRF's Provenance as JSON, written and parsed by JSON.jl from the struct types;
+#   JSON under one key is the parquet convention, and DuckDB reads it with json_extract).
 # - Restoring checks "tfi.kind" when the source has it, so a table of one kind cannot be read as
 #   another. Sources without metadata (CSV files, NamedTuples) restore too; a SimulationPanel then
 #   needs its endogenous state names as an argument.
@@ -24,7 +25,7 @@ const RUN_KEY = :__run
 const PERIOD_KEY = :__period
 const SHOCK_KEY = :__shock
 const STAT_KEY = :__stat
-const PROVENANCE_PREFIX = "simulate."
+const PROVENANCE_KEY = "tfi.provenance"
 
 ## Metadata helpers
 
@@ -42,32 +43,13 @@ function _checked_metadata(table, kind::AbstractString)
     meta
 end
 
-# a tuple of names as one metadata string and back
-_encode_names(names) = join(names, ",")
-_decode_names(s::AbstractString) = Tuple(Symbol(n) for n in eachsplit(s, ","; keepempty = false))
-
-# provenance as metadata entries; fields that are `nothing` are left out
-function _provenance_metadata(p::SimulationProvenance)
-    meta = Dict{String,String}()
-    for f in fieldnames(SimulationProvenance)
-        v = getfield(p, f)
-        isnothing(v) || (meta[PROVENANCE_PREFIX * string(f)] = string(v))
-    end
-    meta
-end
+# provenance as one JSON metadata entry; none for `nothing`
+_provenance_metadata(p::Provenance) = Dict(PROVENANCE_KEY => JSON.json(p))
 _provenance_metadata(::Nothing) = Dict{String,String}()
 
-# provenance from metadata entries; `nothing` if the source has none
-function _provenance_from_metadata(meta)
-    entry(f) = get(meta, PROVENANCE_PREFIX * string(f), nothing)
-    isnothing(entry(:solution)) && return nothing
-    SimulationProvenance(; solution = entry(:solution), tfi_version = entry(:tfi_version),
-                         seed = _parse_or_nothing(Int, entry(:seed)), burn = parse(Int, entry(:burn)),
-                         dynamic_align = Symbol(entry(:dynamic_align)), exog_start = entry(:exog_start),
-                         endog_start = entry(:endog_start))
-end
-_parse_or_nothing(::Type, ::Nothing) = nothing
-_parse_or_nothing(T::Type, s::AbstractString) = parse(T, s)
+# provenance with settings of type S from a source's metadata; `nothing` if the source has none
+_provenance_from_metadata(meta, ::Type{S}) where {S} =
+    haskey(meta, PROVENANCE_KEY) ? JSON.parse(meta[PROVENANCE_KEY], Provenance{S}) : nothing
 
 # the columns of a table other than the reserved ones, as a NamedTuple
 function _value_columns(cols, reserved)
@@ -198,7 +180,7 @@ _run_index(I::CartesianIndex) = I[2]
 
 tfi_metadata(sp::SimulationPanel) =
     merge(_provenance_metadata(sp.provenance),
-          Dict("tfi.kind" => "SimulationPanel", "tfi.endog" => _encode_names(endog_states(sp))))
+          Dict("tfi.kind" => "SimulationPanel", "tfi.endog" => JSON.json(map(String, endog_states(sp)))))
 tfi_metadata(ep::SimulationErrorPanel) =
     merge(_provenance_metadata(ep.provenance), Dict("tfi.kind" => "SimulationErrorPanel"))
 
@@ -207,19 +189,20 @@ SimulationPanel(table, endog_names) = _simulation_panel(table, Tuple(endog_names
 
 function SimulationErrorPanel(table)
     meta = _checked_metadata(table, "SimulationErrorPanel")
-    SimulationErrorPanel(_panel_data(table); provenance = _provenance_from_metadata(meta))
+    SimulationErrorPanel(_panel_data(table); provenance = _provenance_from_metadata(meta, SimulationSettings))
 end
 
 # both SimulationPanel table constructors: endogenous names from the argument, else the metadata
 function _simulation_panel(table, endog)
     meta = _checked_metadata(table, "SimulationPanel")
-    SimulationPanel(_panel_data(table), _endog_names(meta, endog); provenance = _provenance_from_metadata(meta))
+    SimulationPanel(_panel_data(table), _endog_names(meta, endog);
+                    provenance = _provenance_from_metadata(meta, SimulationSettings))
 end
 _endog_names(meta, endog::Tuple) = endog
 function _endog_names(meta, ::Nothing)
     haskey(meta, "tfi.endog") || throw(ArgumentError(
         "the table does not record the endogenous state names; supply them: SimulationPanel(table, endog_names)"))
-    _decode_names(meta["tfi.endog"])
+    Tuple(Symbol(n) for n in JSON.parse(meta["tfi.endog"], Vector{String}))
 end
 
 # periods × runs StructArray from a table with `__run` and `__period` columns
@@ -264,7 +247,7 @@ function Tables.columns(irf::IRFResult)
                                                         mappedarray(I -> stats[I[3]], idx),
                                                         mappedarray(_period_index, idx))), values)
 end
-tfi_metadata(::IRFResult) = Dict("tfi.kind" => "IRFResult")
+tfi_metadata(irf::IRFResult) = merge(_provenance_metadata(irf.provenance), Dict("tfi.kind" => "IRFResult"))
 
 """
     irf_paths(irf::IRFResult)
@@ -280,7 +263,7 @@ struct IRFPaths{I<:IRFResult}
 end
 Tables.istable(::Type{<:IRFPaths}) = true
 Tables.columnaccess(::Type{<:IRFPaths}) = true
-tfi_metadata(::IRFPaths) = Dict("tfi.kind" => "IRFPaths")
+tfi_metadata(p::IRFPaths) = merge(_provenance_metadata(p.irf.provenance), Dict("tfi.kind" => "IRFPaths"))
 
 # All shocks' path panels have the same size, so the columns map the CartesianIndices of
 # (period, run, shock) into the stored panels: rows by period within run within shock.
@@ -302,7 +285,7 @@ end
 IRFResult(::IsTable, stats_table) = IRFResult(IsTable(), stats_table, nothing)
 
 function IRFResult(::IsTable, stats_table, paths_table)
-    _checked_metadata(stats_table, "IRFResult")
+    meta = _checked_metadata(stats_table, "IRFResult")
     cols = Tables.columns(stats_table)
     order, groups = _row_groups(Tables.getcolumn(cols, STAT_KEY), Tables.getcolumn(cols, SHOCK_KEY))
     stats = Tuple(unique(Symbol(stat) for (stat, _) in order))
@@ -316,7 +299,8 @@ function IRFResult(::IsTable, stats_table, paths_table)
     end
     lines = NamedTuple{stats}(map(st -> NamedTuple{shocks}(map(sh -> line(st, sh), shocks)), stats))
     other = Base.structdiff(lines, NamedTuple{(:mean, :std)})
-    IRFResult(lines.mean, lines.std, other, _irf_paths(paths_table, shocks))
+    IRFResult(lines.mean, lines.std, other, _irf_paths(paths_table, shocks),
+              _provenance_from_metadata(meta, IRFSettings))
 end
 
 _irf_paths(::Nothing, shocks) = NamedTuple{shocks}(map(_ -> (;), shocks))

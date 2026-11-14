@@ -316,3 +316,28 @@ end
     @test all(isequal(getproperty(e1.data, k), getproperty(e2.data, k)) for k in propertynames(e1.data))
     @test s1.data.exst != s3.data.exst          # a different seed changes the draws
 end
+
+# AugErrModel with one dynamic augmentation variable, for the period count of simulate
+struct AugSimModel <: AbstractModel end
+TFI.compute_next_period_values(next, ::AugSimModel, mode::EvaluationMode) =
+    TFI.compute_next_period_values(next, AugErrModel(), mode)
+TFI.calc_eqm(state, policy, ::AugSimModel, np::NextPeriod, mode::EvaluationMode) =
+    TFI.calc_eqm(state, policy, AugErrModel(), np, mode)
+TFI.augment_simulation(run::StructVector, ::AugSimModel) = (; dx = diff(run.x))
+obj_as = ModelSolution(model = AugSimModel(), exogenv = e3, Pfct = pfct_ec, Vfct = vfct_ec, Tfct = tfct_ec, ssg = ssg_ex)
+
+@testset "simulate — panels have the requested periods" begin
+    kw = (endog_start = (x = 1.0,), sz = 8 => 3, burn = 2, report_bounds = false)
+    for o in (obj_ec, obj_as), align in (:drop, :nan)
+        s, e = simulate(o; kw..., dynamic_align = align)
+        @test size(s) == (8, 3) == size(e)
+    end
+    # same draws: with a dynamic variable, :drop keeps periods 2-9 of the simulated path, :nan 1-8
+    sd, ed = simulate(obj_as; kw..., dynamic_align = :drop)
+    sn, en = simulate(obj_as; kw..., dynamic_align = :nan)
+    @test sd.x[1:end-1, :] == sn.x[2:end, :]
+    @test all(isnan, sn.dx[1, :]) && sd.dx[1, :] == sd.x[1, :] .- sn.x[1, :]
+    @test isequal(ed.data[1:end-1, :], en.data[2:end, :])        # errors for the same periods
+    # without one, :drop keeps the first periods too (the extra period goes at the end)
+    @test simulate(obj_ec; kw..., dynamic_align = :drop)[1].x == simulate(obj_ec; kw..., dynamic_align = :nan)[1].x
+end

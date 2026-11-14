@@ -1,9 +1,28 @@
 # Tables.jl interfaces, DataAPI.jl metadata and table constructors (MomentArray, simulation and
-# error panels, IRF results), including parquet round trips. Uses obj, stv, simseries, errs
-# from test_ngm.jl.
-using Tables, DataAPI, Parquet2
+# error panels, IRF results), including round trips through a table that keeps metadata. Real
+# files (parquet) are tested in OutputVault. Uses obj, stv, simseries, errs from test_ngm.jl.
+using Tables, DataAPI
 
-parquet_roundtrip(x; dir = mktempdir()) = (path = joinpath(dir, "t.parquet"); Parquet2.writefile(path, x); Parquet2.Dataset(path))
+# A table with table-level DataAPI metadata, standing in for a file format that keeps metadata
+# (e.g. parquet), so that the constructors can be tested without one.
+struct MetaTable{C<:NamedTuple}
+    columns::C
+    metadata::Dict{String,String}
+end
+Tables.istable(::Type{<:MetaTable}) = true
+Tables.columnaccess(::Type{<:MetaTable}) = true
+Tables.columns(t::MetaTable) = t.columns
+DataAPI.metadatasupport(::Type{<:MetaTable}) = (read = true, write = false)
+DataAPI.metadatakeys(t::MetaTable) = keys(t.metadata)
+DataAPI.metadata(t::MetaTable, key::AbstractString; style::Bool = false) =
+    style ? (t.metadata[key], :default) : t.metadata[key]
+DataAPI.metadata(t::MetaTable, key::AbstractString, default; style::Bool = false) =
+    (v = get(t.metadata, key, default); style ? (v, :default) : v)
+
+# what a writer and a reader do together: copy the columns into plain vectors, keep the metadata
+# as strings
+roundtrip(x) = MetaTable(map(collect, Tables.columntable(x)),
+                         Dict(String(k) => string(DataAPI.metadata(x, k)) for k in DataAPI.metadatakeys(x)))
 
 @testset "Tables — MomentArray" begin
     ma = MomentArray([1.0 2.0; 3.0 4.0; 5.0 6.0], (:a, :b, :c), (:mean, :sd))
@@ -29,8 +48,8 @@ parquet_roundtrip(x; dir = mktempdir()) = (path = joinpath(dir, "t.parquet"); Pa
     nt2 = (variable = ["a", "b", "c"], mean = [1.0, 3.0, 5.0], sd = [2.0, 4.0, 6.0])
     @test MomentArray(nt2; rowkey = :variable) == ma
 
-    # parquet keeps the row key and kind in its metadata
-    ds = parquet_roundtrip(ma)
+    # the row key and kind travel in the metadata
+    ds = roundtrip(ma)
     @test DataAPI.metadata(ds, "tfi.kind") == "MomentArray"
     @test MomentArray(ds) == ma
     @test MomentArray{(:a, :b, :c), (:mean, :sd)}(ds) == ma
@@ -40,9 +59,9 @@ end
 @testset "Tables — simulation and error panels" begin
     T, R = size(simseries)
     prov = simseries.provenance
-    @test prov isa SimulationProvenance
+    @test prov isa Provenance{SimulationSettings}
     @test prov.solution == solution_id(obj) && prov.tfi_version == TFI.tfi_version()
-    @test prov.seed == 100 && prov.dynamic_align == :drop && prov.exog_start isa String
+    @test prov.settings.seed == 100 && prov.settings.dynamic_align == :drop && prov.settings.exog_start isa String
     # one provenance object, shared by the error panel and by slices
     @test errs.provenance === prov
     @test simseries[:, 1:2].provenance === prov && view(errs, :, 1).provenance === prov
@@ -54,17 +73,18 @@ end
     @test cols.__run[T] == 1 && cols.__run[T + 1] == 2
     @test cols.K == vec(simseries.K)
     @test eltype(cols.__run) == Int64
-    @test DataAPI.metadata(simseries, "tfi.endog") == "K"
-    @test DataAPI.metadata(simseries, "simulate.solution") == prov.solution
+    @test DataAPI.metadata(simseries, "tfi.endog") == "[\"K\"]"
+    # provenance is one JSON entry, parsed back from the struct types
+    @test TFI.JSON.parse(DataAPI.metadata(simseries, "tfi.provenance"), Provenance{SimulationSettings}) == prov
 
-    # parquet round trip: data, endogenous states, provenance
-    sp = SimulationPanel(parquet_roundtrip(simseries))
+    # round trip: data, endogenous states, provenance
+    sp = SimulationPanel(roundtrip(simseries))
     @test sp.data == simseries.data
     @test endog_states(sp) == endog_states(simseries)
     @test sp.provenance == prov
-    ep = SimulationErrorPanel(parquet_roundtrip(errs))
+    ep = SimulationErrorPanel(roundtrip(errs))
     @test ep.data == errs.data && ep.provenance == prov
-    @test_throws ArgumentError SimulationPanel(parquet_roundtrip(errs))   # wrong kind
+    @test_throws ArgumentError SimulationPanel(roundtrip(errs))   # wrong kind
 
     # sources without metadata need the endogenous names and have no provenance; row order does not matter
     nt = Tables.columntable(simseries)
@@ -79,10 +99,10 @@ end
 @testset "simulate — supplied exogenous path" begin
     exog = fill(TFI.ssidx(obj.exogenv), 30, 2)
     s2, e2 = simulate(obj, exog; endog_start = stv.endog)
-    @test size(s2) == (30, 2)                       # burn = 0: every period of the path is output
-    @test isnothing(s2.provenance.seed) && isnothing(s2.provenance.exog_start)
+    @test size(s2) == (29, 2) == size(e2)           # 30 rows: 29 output periods and the extra one
+    @test isnothing(s2.provenance.settings.seed) && isnothing(s2.provenance.settings.exog_start)
     @test e2.provenance === s2.provenance
-    @test SimulationPanel(parquet_roundtrip(s2)).provenance == s2.provenance
+    @test SimulationPanel(roundtrip(s2)).provenance == s2.provenance
     # the old keywords that conflicted with seed and exog_start are gone
     @test_throws MethodError simulate(obj, stv; exog_states = exog)
     @test_throws MethodError simulate(obj, stv; shocks = rand(30, 2))
@@ -101,19 +121,29 @@ end
     end
     @test same(IRFResult(Tables.columntable(irf), Tables.columntable(irf_paths(irf))), irf)
 
+    # provenance: settings the statistics do not record
+    prov = irf.provenance
+    @test prov isa Provenance{IRFSettings} && prov.solution == solution_id(obj)
+    @test prov.settings.seed == 100 && prov.settings.N == 40
+    @test prov.settings.shocks == repr((pos = 5, neg = 1))
+
     dir = mktempdir()
-    ds_stats = parquet_roundtrip(irf; dir)
-    ds_paths = parquet_roundtrip(irf_paths(irf); dir = mktempdir())
+    ds_stats = roundtrip(irf)
+    ds_paths = roundtrip(irf_paths(irf))
     @test DataAPI.metadata(ds_paths, "tfi.kind") == "IRFPaths"
+    @test DataAPI.metadata(ds_paths, "tfi.provenance") == DataAPI.metadata(ds_stats, "tfi.provenance")
     @test same(IRFResult(ds_stats, ds_paths), irf)
+    @test IRFResult(ds_stats, ds_paths).provenance == prov
+    @test isnothing(IRFResult(Tables.columntable(irf)).provenance)       # no metadata, no provenance
 
     # no saved paths: empty paths table, statistics only
     irf0 = simulate_irf(obj, simseries; shocks = (pos = 5,), T = 8, N = 40)
     p0 = Tables.columntable(irf_paths(irf0))
     @test isempty(p0.__shock)
-    r0 = IRFResult(parquet_roundtrip(irf0), p0)
+    r0 = IRFResult(roundtrip(irf0), p0)
     @test r0.means == irf0.means && all(isempty, r0.paths)
-    @test IRFResult(parquet_roundtrip(irf0)).stdevs == irf0.stdevs
+    @test IRFResult(roundtrip(irf0)).stdevs == irf0.stdevs
+    @test r0.provenance == irf0.provenance
 end
 
 # Allocation checks (allocs_after_warmup from test_performance.jl): wrappers allocate no more
@@ -183,20 +213,6 @@ end
     nt = (__row = collect(map(String, ALLOC_ROWS)), map(j -> ma.data[:, j], NamedTuple{ALLOC_COLS}(1:C))...)
     @test allocs_after_warmup(restore_static, nt) == 0
     @test allocs_after_warmup(restore_dense, nt) == allocs_after_warmup((r, c) -> Matrix{Float64}(undef, r, c), R, C)
-
-    # parquet source: compared with a baseline doing Parquet2's part of the work (metadata
-    # entries, the column table and its names, each column, the row names as Strings). What the
-    # restore adds stays below one matrix (static) or two (dense).
-    matrix_bytes = sizeof(Float64) * R * C
-    ds = parquet_roundtrip(ma)
-    @test restore_static(ds) == ma && restore_dense(ds) == ma
-    function parquet_reads(ds)
-        meta = (DataAPI.metadata(ds, "tfi.kind", ""), DataAPI.metadata(ds, "tfi.rowkey", ""))
-        tbl = Tables.columns(ds)
-        rownames = Tables.getcolumn(tbl, :__row)
-        (meta, Tables.columnnames(tbl), ntuple(i -> Symbol(rownames[i]), 12), map(c -> Tables.getcolumn(tbl, c), ALLOC_COLS))
-    end
-    baseline = allocs_after_warmup(parquet_reads, ds)
-    @test allocs_after_warmup(restore_static, ds) - baseline < matrix_bytes
-    @test allocs_after_warmup(restore_dense, ds) - baseline < 2 * matrix_bytes
+    # a source with metadata: the same restore, values checked (parquet: OutputVault's tests)
+    @test restore_static(roundtrip(ma)) == ma && restore_dense(roundtrip(ma)) == ma
 end

@@ -6,7 +6,7 @@ using Logging, LinearAlgebra, Random, Statistics, StatsBase, PrettyTables
 using Polyester: @batch
 using Tables: Tables
 using MappedArrays: mappedarray
-import DataAPI, SHA
+import DataAPI, JSON, SHA
 
 # Types
 export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant, AbstractSteadyState
@@ -34,8 +34,8 @@ export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_b
 export ReportedMoment, compare_economies
 export SimulationPanel, SimulationErrorPanel, endog_states, states
 
-# Tables, metadata and serialization
-export SimulationProvenance, solution_id, irf_paths, model_metadata, model_from_metadata, save_solution, load_solution
+# Tables and provenance
+export Provenance, SimulationSettings, IRFSettings, solution_id, irf_paths
 
 # IRFs
 export IRFResult, Transformations, ReportedVariable, IRFPage, simulate_irf
@@ -68,12 +68,8 @@ include("template.jl")
 
 include("irf.jl")
 include("irfplotting.jl")
-include("metadata.jl")
+include("provenance.jl")
 include("tables.jl")
-
-function __init__()
-    Base.Experimental.register_error_hint(_jld2_hint, MethodError)
-end
 
 
 """

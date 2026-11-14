@@ -182,15 +182,27 @@ end
 (m::MomentArray)(vars,stats) = getmoment(m, vars, stats)
 
 
-## Simulation provenance
+## Provenance
 """
-    SimulationProvenance
+    Provenance{S}
 
-What is needed to reproduce a simulation from the solution that produced it, as recorded by
-`simulate`:
+What is needed to reproduce a simulation or an IRF from the solution that produced it:
 
 - `solution`: `solution_id` of the solution
-- `tfi_version`: TFI version that ran the simulation
+- `tfi_version`: TFI version that produced the result
+- `settings`: a `SimulationSettings` (from `simulate`) or an `IRFSettings` (from `simulate_irf`)
+"""
+struct Provenance{S}
+    solution::String
+    tfi_version::String
+    settings::S
+end
+
+"""
+    SimulationSettings
+
+Settings of a `simulate` call that the simulated data do not record:
+
 - `seed`: seed of the random draws, or `nothing` if the exogenous path was supplied
 - `burn`: burn-in periods dropped from the output
 - `dynamic_align`: `:drop` or `:nan` (see `simulate`)
@@ -199,13 +211,31 @@ What is needed to reproduce a simulation from the solution that produced it, as 
 
 The starting states are stored as their `repr`.
 """
-@kwdef struct SimulationProvenance
-    solution::String
-    tfi_version::String
+@kwdef struct SimulationSettings
     seed::Union{Int,Nothing}
     burn::Int
     dynamic_align::Symbol
     exog_start::Union{String,Nothing}
+    endog_start::String
+end
+
+"""
+    IRFSettings
+
+Settings of a `simulate_irf` call that the IRF statistics do not record:
+
+- `seed`: seed of the random draws
+- `N`: number of draws per shock
+- `shocks`: the forced exogenous paths, e.g. `(uncond = Int64[], shock_2 = [2])`
+- `endog_start`: starting endogenous states (the means, if a panel was passed)
+
+`shocks` and `endog_start` are stored as their `repr`. The number of periods and the starting
+exogenous state are in the statistics themselves (line length, period-1 `exst`).
+"""
+@kwdef struct IRFSettings
+    seed::Int
+    N::Int
+    shocks::String
     endog_start::String
 end
 
@@ -217,13 +247,13 @@ end
 Thin wrapper around a 2-D `StructArray` (periods × runs) of equation residuals produced by
 `simulate`. Each named field is one residual series (e.g., `:euler`). Passed to
 `calc_error_stats` for summary statistics. `provenance` is the simulation's
-`SimulationProvenance`, or `nothing`.
+`Provenance{SimulationSettings}`, or `nothing`.
 
 The second form restores a panel from a table written from one, e.g. a parquet file.
 """
 struct SimulationErrorPanel{T, N, A<:StructArray{T, N}} <: AbstractArray{T,N}
     data::A
-    provenance::Union{Nothing,SimulationProvenance}
+    provenance::Union{Nothing,Provenance{SimulationSettings}}
 end
 SimulationErrorPanel(data::StructArray; provenance = nothing) =
     SimulationErrorPanel{eltype(data), ndims(data), typeof(data)}(data, provenance)
@@ -255,14 +285,14 @@ end
 Thin wrapper around a 2-D `StructArray` (periods × runs) of simulated variables. The
 `NAMES` type parameter records which fields are endogenous states (used by `linearize` and
 `endog_states`). All fields are accessible via `panel.varname`. `provenance` is the
-simulation's `SimulationProvenance`, or `nothing`.
+simulation's `Provenance{SimulationSettings}`, or `nothing`.
 
 The table forms restore a panel from a table, e.g. a parquet file. A table written from a
 panel carries the endogenous state names; for other tables, supply them as `endog_names`.
 """
 struct SimulationPanel{T, N, NAMES, A<:StructArray{T, N}} <: AbstractArray{T,N}
     data::A
-    provenance::Union{Nothing,SimulationProvenance}
+    provenance::Union{Nothing,Provenance{SimulationSettings}}
 end
 SimulationPanel(data::StructArray, endog_names; provenance = nothing) =
     SimulationPanel{eltype(data), ndims(data), Tuple(endog_names), typeof(data)}(data, provenance)

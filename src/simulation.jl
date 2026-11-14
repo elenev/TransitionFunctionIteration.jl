@@ -69,10 +69,10 @@ Compute extra variables for one simulation run after `simulate()` finishes.
 - `dynamic_nt`: `NamedTuple` of (T-1)-element vectors (e.g., one-period returns computed
   from consecutive pairs), or `(;)` if no dynamic variables are needed
 
-For `dynamic_align=:drop` in `simulate()`, burn is incremented by 1 so that `run` covers one
-extra period at the start; static results trim that first element and dynamic results align
-directly with the output panel. For `dynamic_align=:nan`, static results are used as-is and
-dynamic results receive a leading `NaN`.
+`run` covers the output periods plus one extra period. For `dynamic_align=:drop`, static
+results trim the first element and dynamic results align directly with the panel, whose first
+period is then dropped. For `dynamic_align=:nan`, static results are used as-is and dynamic
+results receive a leading `NaN`; the extra period is dropped at the end.
 
 The default returns empty NamedTuples (no augmentation).
 """
@@ -242,7 +242,7 @@ function calc_result(state, obj)
 end
 
 """
-    simulate(obj, stv=nothing; sz=10_001=>12, seed=100, burn=500,
+    simulate(obj, stv=nothing; sz=10_000=>12, seed=100, burn=500,
              exog_start=ssidx(obj.exogenv), endog_start=stv.endog,
              dynamic_align=:drop, report_bounds=true)
     simulate(obj, exog_states::AbstractMatrix{<:Integer}; endog_start, burn=0,
@@ -250,42 +250,46 @@ end
 
 Simulate the solved model along stochastic paths.
 
-The first form draws the exogenous path from `seed`: `sz = N_periods => N_runs` (output
-periods, burn-in excluded), starting from exogenous state `exog_start`. The second form takes
-the exogenous path as given: a periods × runs matrix of exogenous state indices, burn-in
-included, whose first row is the starting state.
+The first form draws the exogenous path from `seed`: `sz = N_periods => N_runs` output periods
+and runs, starting from exogenous state `exog_start`. The second form takes the exogenous path
+as given: a matrix of exogenous state indices with `burn + N_periods + 1` rows (burn-in, output
+periods, one extra period) and one column per run, whose first row is the starting state.
 
-Returns `(simseries, errs)`:
-- `simseries`: periods × runs `SimulationPanel` of state and output variables
-- `errs`: matching `SimulationErrorPanel` of equation and transition errors
+Returns `(simseries, errs)`, both `N_periods × N_runs`:
+- `simseries`: `SimulationPanel` of state and output variables
+- `errs`: `SimulationErrorPanel` of equation and transition errors
 
-Both carry the same `SimulationProvenance`. Burn-in periods are simulated but excluded from
-the output. `dynamic_align` controls how dynamic augmentation variables (length T-1) are
-aligned with the output panel: `:drop` drops the first output period (burn incremented by 1
-internally; the default `sz` adds that period); `:nan` prepends `NaN` to each dynamic series.
+Both carry the same `Provenance{SimulationSettings}`. Burn-in periods are simulated but excluded
+from the output. One period beyond the output is always simulated: with `dynamic_align = :drop`
+and dynamic augmentation variables (length T-1, see `augment_simulation`), the first period is
+dropped so that they align with the panel; otherwise the last. `dynamic_align = :nan` keeps the
+first period and gives dynamic variables a leading `NaN`.
 """
 function simulate(obj::ModelSolution, stv=nothing;
                   dynamic_align=:drop,
-                  sz::Pair=(10_000+(dynamic_align == :drop ? 1 : 0))=>12,
+                  sz::Pair=10_000=>12,
                   seed=100,
                   burn=500,
                   exog_start=ssidx(obj.exogenv),
                   endog_start=stv.endog,
                   report_bounds=true)
     exog_states, _ = simulate_markov_chain(obj.exogenv, exog_start, sample_shocks(sz, seed, burn))
-    provenance = SimulationProvenance(; solution = solution_id(obj), tfi_version = tfi_version(), seed, burn,
-                                      dynamic_align, exog_start = repr(exog_start), endog_start = repr(endog_start))
+    provenance = Provenance(solution_id(obj), tfi_version(),
+                            SimulationSettings(; seed, burn, dynamic_align, exog_start = repr(exog_start),
+                                               endog_start = repr(endog_start)))
     _simulate(obj, exog_states, endog_start, burn, dynamic_align, report_bounds, provenance)
 end
 
 function simulate(obj::ModelSolution, exog_states::AbstractMatrix{<:Integer};
                   endog_start, burn=0, dynamic_align=:drop, report_bounds=true)
-    provenance = SimulationProvenance(; solution = solution_id(obj), tfi_version = tfi_version(), seed = nothing,
-                                      burn, dynamic_align, exog_start = nothing, endog_start = repr(endog_start))
+    provenance = Provenance(solution_id(obj), tfi_version(),
+                            SimulationSettings(; seed = nothing, burn, dynamic_align, exog_start = nothing,
+                                               endog_start = repr(endog_start)))
     _simulate(obj, exog_states, endog_start, burn, dynamic_align, report_bounds, provenance)
 end
 
-# the simulation itself, given the exogenous path (periods × runs, burn-in included)
+# the simulation itself, given the exogenous path (burn-in, output periods and one extra period ×
+# runs)
 function _simulate(obj::ModelSolution, exog_states, endog_start, burn, dynamic_align, report_bounds, provenance)
     dynamic_align ∈ (:drop, :nan) || throw(ArgumentError("dynamic_align must be :drop or :nan, got $dynamic_align"))
 
@@ -320,20 +324,23 @@ function _simulate(obj::ModelSolution, exog_states, endog_start, burn, dynamic_a
     end
     BLAS.set_num_threads(original_threads)
 
-    # Remove burn-in and package into StructArrays
+    # Remove burn-in (the rows left are the output periods and the extra period)
     t_range = (burn+1):(N_periods-1)
     simseries = StructArray(view(sim_raw, t_range, :))
 
     # Check bounds
     report_bounds && check_bounds(simseries, obj)
 
-    # Augment with extra variables and align as needed
-    simseries = _update_simseries_with_augmented(simseries, obj, dynamic_align)
-    simseries = SimulationPanel(simseries, propertynames(endog_start); provenance)
+    # Output periods: under :drop with augmentation variables, all but the first (augmentation
+    # drops it); otherwise all but the extra period at the end, dropped before augmenting
+    drop_first = dynamic_align === :drop && augment_simulation(first(eachcol(simseries)), obj.model) !== nothing
+    out = drop_first ? (2:length(t_range)) : (1:length(t_range) - 1)
+    kept = drop_first ? simseries : StructArray(view(sim_raw, t_range[out], :))
+    simseries = SimulationPanel(_update_simseries_with_augmented(kept, obj, dynamic_align),
+                                propertynames(endog_start); provenance)
 
-    # Errors
-    err_range = (burn+(dynamic_align === :drop ? 1 : 0) + 1):(N_periods-1)
-    errs      = SimulationErrorPanel(StructArray(@view err_raw[err_range, :]); provenance)
+    # Errors for the same periods
+    errs = SimulationErrorPanel(StructArray(@view err_raw[t_range[out], :]); provenance)
 
     return simseries, errs
 end
