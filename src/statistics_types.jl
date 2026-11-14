@@ -96,10 +96,17 @@ find_ma(::Tuple{}) = nothing
 find_ma(a::MomentArray, rest) = a
 find_ma(::Any, rest) = find_ma(rest)
 
-function Base.similar(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{MomentArray}}, ::Type{T}) where {T}
-    ma = find_ma(bc)
-    return MomentArray(similar(Array{T}, axes(bc)), row_names(ma), col_names(ma))
-end
+# Broadcasting runs on the wrapped matrices, so the result has their type (an SMatrix stays an
+# SMatrix, without allocating), and is rewrapped with the names of the first MomentArray.
+Base.copy(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{MomentArray}}) =
+    _rewrap_ma(find_ma(bc), Broadcast.materialize(_unwrap_ma(bc)))
+
+# names from the type, so that the result type is inferred
+_rewrap_ma(::MomentArray{ROWS,COLS}, data) where {ROWS,COLS} = MomentArray{ROWS,COLS}(data)
+
+_unwrap_ma(bc::Broadcast.Broadcasted) = Broadcast.broadcasted(bc.f, map(_unwrap_ma, bc.args)...)
+_unwrap_ma(m::MomentArray) = m.data
+_unwrap_ma(x) = x
 
 function Base.vcat(arrs::MomentArray...)
     data = vcat(map(a -> a.data, arrs)...)
@@ -175,28 +182,63 @@ end
 (m::MomentArray)(vars,stats) = getmoment(m, vars, stats)
 
 
+## Simulation provenance
+"""
+    SimulationProvenance
+
+What is needed to reproduce a simulation from the solution that produced it, as recorded by
+`simulate`:
+
+- `solution`: `solution_id` of the solution
+- `tfi_version`: TFI version that ran the simulation
+- `seed`: seed of the random draws, or `nothing` if the exogenous path was supplied
+- `burn`: burn-in periods dropped from the output
+- `dynamic_align`: `:drop` or `:nan` (see `simulate`)
+- `exog_start`: starting exogenous state, or `nothing` if the exogenous path was supplied
+- `endog_start`: starting endogenous states
+
+The starting states are stored as their `repr`.
+"""
+@kwdef struct SimulationProvenance
+    solution::String
+    tfi_version::String
+    seed::Union{Int,Nothing}
+    burn::Int
+    dynamic_align::Symbol
+    exog_start::Union{String,Nothing}
+    endog_start::String
+end
+
 ## Equation Errors
 """
-    SimulationErrorPanel(data::StructArray)
+    SimulationErrorPanel(data::StructArray; provenance = nothing)
+    SimulationErrorPanel(table)
 
 Thin wrapper around a 2-D `StructArray` (periods × runs) of equation residuals produced by
 `simulate`. Each named field is one residual series (e.g., `:euler`). Passed to
-`calc_error_stats` for summary statistics.
+`calc_error_stats` for summary statistics. `provenance` is the simulation's
+`SimulationProvenance`, or `nothing`.
+
+The second form restores a panel from a table written from one, e.g. a parquet file.
 """
 struct SimulationErrorPanel{T, N, A<:StructArray{T, N}} <: AbstractArray{T,N}
     data::A
+    provenance::Union{Nothing,SimulationProvenance}
 end
+SimulationErrorPanel(data::StructArray; provenance = nothing) =
+    SimulationErrorPanel{eltype(data), ndims(data), typeof(data)}(data, provenance)
 
 # --- AbstractMatrix Interface ---
 Base.size(sp::SimulationErrorPanel) = size(sp.data)
 Base.getindex(sp::SimulationErrorPanel, I::Int...) = getindex(sp.data, I...)
-Base.getindex(sp::SimulationErrorPanel, I...) = SimulationErrorPanel(sp.data[I...])
-Base.view(sp::SimulationErrorPanel, I...) = SimulationErrorPanel(view(sp.data, I...))
+Base.getindex(sp::SimulationErrorPanel, I...) = SimulationErrorPanel(sp.data[I...]; sp.provenance)
+Base.view(sp::SimulationErrorPanel, I...) = SimulationErrorPanel(view(sp.data, I...); sp.provenance)
 Base.IndexStyle(::Type{<:SimulationErrorPanel}) = IndexLinear()
 
 # --- Property Access Delegation ---
 Base.propertynames(sp::SimulationErrorPanel) = propertynames(getfield(sp, :data))
-Base.getproperty(sp::SimulationErrorPanel, s::Symbol) = (s === :data) ? getfield(sp, :data) : getproperty(getfield(sp, :data), s)
+Base.getproperty(sp::SimulationErrorPanel, s::Symbol) =
+    (s === :data || s === :provenance) ? getfield(sp, s) : getproperty(getfield(sp, :data), s)
 
 # --- REPL Visualization ---
 function Base.summary(io::IO, sp::SimulationErrorPanel{T,N}) where {T,N}
@@ -206,30 +248,39 @@ end
 
 ### Simulated output
 """
-    SimulationPanel(data::StructArray, endog_names)
+    SimulationPanel(data::StructArray, endog_names; provenance = nothing)
+    SimulationPanel(table)
+    SimulationPanel(table, endog_names)
 
 Thin wrapper around a 2-D `StructArray` (periods × runs) of simulated variables. The
 `NAMES` type parameter records which fields are endogenous states (used by `linearize` and
-`endog_states`). All fields are accessible via `panel.varname`.
+`endog_states`). All fields are accessible via `panel.varname`. `provenance` is the
+simulation's `SimulationProvenance`, or `nothing`.
+
+The table forms restore a panel from a table, e.g. a parquet file. A table written from a
+panel carries the endogenous state names; for other tables, supply them as `endog_names`.
 """
 struct SimulationPanel{T, N, NAMES, A<:StructArray{T, N}} <: AbstractArray{T,N}
     data::A
+    provenance::Union{Nothing,SimulationProvenance}
 end
-SimulationPanel(data::A, endog_names) where {T, N, A<:StructArray{T, N}} = SimulationPanel{T, N, Tuple(endog_names), A}(data)
+SimulationPanel(data::StructArray, endog_names; provenance = nothing) =
+    SimulationPanel{eltype(data), ndims(data), Tuple(endog_names), typeof(data)}(data, provenance)
 
 # --- AbstractMatrix Interface ---
 Base.size(sp::SimulationPanel) = size(sp.data)
 Base.getindex(sp::SimulationPanel, I::Int...) = getindex(sp.data, I...)
 # Slice indexing: delegate to StructArray (returns StructArray) then rewrap
 Base.getindex(sp::SimulationPanel{T,N,NAMES}, I...) where {T,N,NAMES} =
-    SimulationPanel(sp.data[I...], NAMES)
+    SimulationPanel(sp.data[I...], NAMES; sp.provenance)
 Base.view(sp::SimulationPanel{T,N,NAMES}, I...) where {T,N,NAMES} =
-    SimulationPanel(view(sp.data, I...), NAMES)
+    SimulationPanel(view(sp.data, I...), NAMES; sp.provenance)
 Base.IndexStyle(::Type{<:SimulationPanel}) = IndexLinear()
 
 # --- Property Access Delegation ---
 Base.propertynames(sp::SimulationPanel) = propertynames(getfield(sp, :data))
-Base.getproperty(sp::SimulationPanel, s::Symbol) = (s === :data) ? getfield(sp, :data) : getproperty(getfield(sp, :data), s)
+Base.getproperty(sp::SimulationPanel, s::Symbol) =
+    (s === :data || s === :provenance) ? getfield(sp, s) : getproperty(getfield(sp, :data), s)
 
 # --- REPL Visualization ---
 function Base.summary(io::IO, sp::SimulationPanel{T,N}) where {T,N}

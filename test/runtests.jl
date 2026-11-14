@@ -97,5 +97,7 @@ end
     include("test_setup.jl")     # uses ngm, obj, stv from test_ngm.jl
     include("test_forecasts.jl") # uses ngm, obj from test_ngm.jl
     include("test_eqmvalguesses.jl") # uses ngm from test_ngm.jl
+    include("test_tables.jl")    # uses obj, stv, simseries, errs from test_ngm.jl
+    include("test_serialization.jl") # uses ngm, obj (test_ngm.jl), ForecastNGM (test_forecasts.jl)
     include("test_Aqua.jl")
 end

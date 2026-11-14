@@ -341,3 +341,21 @@ end
     @test table(:mean_C, :baseline) ≈ plain(:mean_C, :baseline)
     @test table(:mean_K, :scaled)   ≈ plain(:mean_K, :scaled)
 end
+
+@testset "MomentArray — broadcasting keeps the wrapped matrix type" begin
+    ma = MomentArray([1.0 2.0; 3.0 4.0], (:a, :b), (:mean, :sd))
+    ms = MomentArray(SMatrix{2,2}(ma.data), (:a, :b), (:mean, :sd))
+    for m in (ma, ms)
+        r = m .* 2.0 .+ m                                  # fused, two MomentArray arguments
+        @test r isa MomentArray && typeof(r.data) == typeof(m.data)
+        @test r.data == 3 .* m.data
+        @test row_names(r) == (:a, :b) && col_names(r) == (:mean, :sd)
+        @test (m .+ [10.0, 20.0]).data == m.data .+ [10.0, 20.0]   # with a plain vector
+        @test (m .> 2.0).data == (m.data .> 2.0)                    # element type changes
+        @test typeof((m .> 2.0).data) == typeof(m.data .> 2.0)
+    end
+    @test typeof((ma .+ ms).data) == typeof(ma.data .+ ms.data)   # mixed: the matrices' own rule
+    dest = MomentArray(zeros(2, 2), (:a, :b), (:mean, :sd))
+    dest .= ma .* 2.0                                      # in place
+    @test dest.data == 2 .* ma.data
+end

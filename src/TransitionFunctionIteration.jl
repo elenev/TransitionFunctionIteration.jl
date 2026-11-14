@@ -4,6 +4,9 @@ using Interpolations, NonlinearSolve, ForwardDiff, StaticArrays, StructArrays
 using RecipesBase
 using Logging, LinearAlgebra, Random, Statistics, StatsBase, PrettyTables
 using Polyester: @batch
+using Tables: Tables
+using MappedArrays: mappedarray
+import DataAPI, SHA
 
 # Types
 export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant, AbstractSteadyState
@@ -30,6 +33,9 @@ export main_setup, main_execute!, make_point, compute_expectations, TFIMethod, S
 export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, augment_simulation, augment_errors
 export ReportedMoment, compare_economies
 export SimulationPanel, SimulationErrorPanel, endog_states, states
+
+# Tables, metadata and serialization
+export SimulationProvenance, solution_id, irf_paths, model_metadata, model_from_metadata, save_solution, load_solution
 
 # IRFs
 export IRFResult, Transformations, ReportedVariable, IRFPage, simulate_irf
@@ -62,6 +68,12 @@ include("template.jl")
 
 include("irf.jl")
 include("irfplotting.jl")
+include("metadata.jl")
+include("tables.jl")
+
+function __init__()
+    Base.Experimental.register_error_hint(_jld2_hint, MethodError)
+end
 
 
 """

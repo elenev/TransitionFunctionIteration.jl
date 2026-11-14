@@ -242,35 +242,54 @@ function calc_result(state, obj)
 end
 
 """
-    simulate(obj, stv=nothing; sz=10_000=>12, seed=100, burn=500,
+    simulate(obj, stv=nothing; sz=10_001=>12, seed=100, burn=500,
              exog_start=ssidx(obj.exogenv), endog_start=stv.endog,
-             shocks=sample_shocks(sz, seed, burn))
+             dynamic_align=:drop, report_bounds=true)
+    simulate(obj, exog_states::AbstractMatrix{<:Integer}; endog_start, burn=0,
+             dynamic_align=:drop, report_bounds=true)
 
 Simulate the solved model along stochastic paths.
 
+The first form draws the exogenous path from `seed`: `sz = N_periods => N_runs` (output
+periods, burn-in excluded), starting from exogenous state `exog_start`. The second form takes
+the exogenous path as given: a periods × runs matrix of exogenous state indices, burn-in
+included, whose first row is the starting state.
+
 Returns `(simseries, errs)`:
-- `simseries`: `N_periods × N_runs` `SimulationPanel` of state and output variables
+- `simseries`: periods × runs `SimulationPanel` of state and output variables
 - `errs`: matching `SimulationErrorPanel` of equation and transition errors
 
-`sz = N_periods => N_runs`. Burn-in periods are simulated but excluded from output.
-
-`dynamic_align` controls how dynamic augmentation variables (length T-1) are aligned with the
-output panel: `:drop` drops the first output period (burn incremented by 1 internally);
-`:nan` prepends `NaN` to each dynamic series.
+Both carry the same `SimulationProvenance`. Burn-in periods are simulated but excluded from
+the output. `dynamic_align` controls how dynamic augmentation variables (length T-1) are
+aligned with the output panel: `:drop` drops the first output period (burn incremented by 1
+internally; the default `sz` adds that period); `:nan` prepends `NaN` to each dynamic series.
 """
 function simulate(obj::ModelSolution, stv=nothing;
-                                dynamic_align=:drop,
-                                sz::Pair=(10_000+(dynamic_align == :drop ? 1 : 0))=>12,
-                                seed=100,
-                                burn=500,
-                                exog_start=ssidx(obj.exogenv),
-                                endog_start=stv.endog,
-                                shocks=sample_shocks(sz, seed, burn),
-                                exog_states = simulate_markov_chain(obj.exogenv, exog_start, shocks)[1],
-                                report_bounds=true,
-                    )
+                  dynamic_align=:drop,
+                  sz::Pair=(10_000+(dynamic_align == :drop ? 1 : 0))=>12,
+                  seed=100,
+                  burn=500,
+                  exog_start=ssidx(obj.exogenv),
+                  endog_start=stv.endog,
+                  report_bounds=true)
+    exog_states, _ = simulate_markov_chain(obj.exogenv, exog_start, sample_shocks(sz, seed, burn))
+    provenance = SimulationProvenance(; solution = solution_id(obj), tfi_version = tfi_version(), seed, burn,
+                                      dynamic_align, exog_start = repr(exog_start), endog_start = repr(endog_start))
+    _simulate(obj, exog_states, endog_start, burn, dynamic_align, report_bounds, provenance)
+end
+
+function simulate(obj::ModelSolution, exog_states::AbstractMatrix{<:Integer};
+                  endog_start, burn=0, dynamic_align=:drop, report_bounds=true)
+    provenance = SimulationProvenance(; solution = solution_id(obj), tfi_version = tfi_version(), seed = nothing,
+                                      burn, dynamic_align, exog_start = nothing, endog_start = repr(endog_start))
+    _simulate(obj, exog_states, endog_start, burn, dynamic_align, report_bounds, provenance)
+end
+
+# the simulation itself, given the exogenous path (periods × runs, burn-in included)
+function _simulate(obj::ModelSolution, exog_states, endog_start, burn, dynamic_align, report_bounds, provenance)
     dynamic_align ∈ (:drop, :nan) || throw(ArgumentError("dynamic_align must be :drop or :nan, got $dynamic_align"))
 
+    exog_start = first(exog_states)
     start = make_point(exog_start, endog_start)
 
     # Add another period so that transition errors can be computed
@@ -310,13 +329,11 @@ function simulate(obj::ModelSolution, stv=nothing;
 
     # Augment with extra variables and align as needed
     simseries = _update_simseries_with_augmented(simseries, obj, dynamic_align)
-
-    # Package into SimulationPanel
-    simseries = SimulationPanel(simseries, propertynames(endog_start))
+    simseries = SimulationPanel(simseries, propertynames(endog_start); provenance)
 
     # Errors
     err_range = (burn+(dynamic_align === :drop ? 1 : 0) + 1):(N_periods-1)
-    errs      = SimulationErrorPanel(StructArray(@view err_raw[err_range, :]))
+    errs      = SimulationErrorPanel(StructArray(@view err_raw[err_range, :]); provenance)
 
     return simseries, errs
 end
