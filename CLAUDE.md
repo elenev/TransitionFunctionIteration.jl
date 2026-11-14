@@ -16,6 +16,10 @@ Two solution methods:
 - `TFIMethod` (default): pre-computes expectations from the transition function before solving policy.
 - `STPFIMethod`: solves policy and transition functions simultaneously (Cao, Luo, Nie).
 
+Which method a model needs: `TFIMethod` computes expectations before solving for the policy,
+so it misses any effect of the policy on next period's expectations. Models where a policy acts
+only through those expectations need `STPFIMethod`.
+
 ---
 
 ## Source layout
@@ -100,7 +104,7 @@ Implement methods dispatching on `MyModel <: AbstractModel`:
 | `define_endog_grids(mdl, stv)` | Yes | Return `NamedTuple` of grid vectors |
 | `bounds(stv::SteadyState{MyModel})` | No | Return `(Pfct_bounds, Tfct_bounds)` NTs; default is all `Unbounded()` |
 | `augment_simulation(run, mdl)` | No | Return `(static_nt, dynamic_nt)` for extra sim variables |
-| `vals_from_policy(state, policy, mdl)` | No | Needed if Vfct vars ≠ policy vars in FixedPointSteadyState |
+| `vals_from_policy(state, policy, mdl)` | No | Vfct vars that are functions of the policy but not policies (FixedPointSteadyState); Vfct vars that depend on expectations are `eqmvalguesses` of `FixedPointSteadyStateMode` instead, with residual guess minus `calc_eqm`'s `vals` |
 | `forecasts_from_policy(state, policy, mdl)` | No | Forecasting values (current choices next period's expectations depend on); builds `obj.Ffct`, attached to every `next` point by `forecast_next` |
 
 ### `calc_eqm` return contract
