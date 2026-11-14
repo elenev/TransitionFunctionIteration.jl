@@ -204,8 +204,6 @@ function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
     # Unpack state
     state = old.state
 
-    #policy, trans, vals, guess, state,  , init_trans
-    p_nof = nof(obj.Pfct)
     exog = points(obj.exogenv)[state.exst]  # exogenous state variables
     prnext = conditional_distro(obj.exogenv, state.exst)
 
@@ -238,7 +236,8 @@ function solve_at_point(old::FunctionValuesAtPoint, obj, solmethod)
     #     SimpleTrustRegion(;  autodiff = AutoForwardDiff()),   # more robust globalization
     #     TrustRegion(;  autodiff = AutoForwardDiff()),         # robust globalization
     # ))
-    if p_nof <= 10
+    # Solver by size of the full system (STPFI adds the transitions to the policies)
+    if length(x0) <= 10
         alg = SimpleTrustRegion(;  autodiff = AutoForwardDiff())
     else
         alg = TrustRegion(;  autodiff = AutoForwardDiff())
