@@ -402,5 +402,7 @@ end
 end
 
 function StateSpaceGrid(exogenv::Exogenv, endog_grids::NamedTuple)
-    return StateSpaceGrid(; exst = eachindex(exogenv.pts), endog_grids...)
+    # one exogenous state: exst is a singleton (Interpolations.jl rejects length-1 axes)
+    exst = exnpt(exogenv) == 1 ? 1 : eachindex(exogenv.pts)
+    return StateSpaceGrid(; exst, endog_grids...)
 end

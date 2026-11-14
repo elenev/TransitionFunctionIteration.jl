@@ -10,7 +10,7 @@ Construct an `Exogenv` for a discretized AR(1) process using the Rouwenhorst met
 - `ρ`: persistence
 - `σ`: unconditional standard deviation
 - `μ`: unconditional mean (in levels before transform)
-- `n`: number of grid points
+- `n`: number of grid points; `n = 1` gives a degenerate process with one point at `transform(μ)`
 - `jensen`: if `true`, uses `transform=exp` and applies Jensen correction so that the
   unconditional mean of the transformed process equals `exp(μ)`
 - `shock_volatility`: if `true`, the supplied `σ` is the volatility of the shock rather than the state, so the function adjusts `σ` accordingly
@@ -36,6 +36,13 @@ function ExogenvAR1(;
     else
         σx = σ
         σϵ = σx * sqrt(1 - ρ^2)
+    end
+
+    # Degenerate process: one point at the unconditional mean (no Jensen correction, so the
+    # transformed process still has mean transform(μ)); Rouwenhorst is undefined for n = 1
+    if n == 1
+        return Exogenv(; pts = StructArray((; shock_name => SVector(transform(μ)))),
+                         mtrans = SMatrix{1,1}(1.0), ssidx = 1)
     end
 
     if jensen

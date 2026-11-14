@@ -105,3 +105,15 @@ end
     end
 
 end
+
+@testset "Exogenv — ExogenvAR1 with one state" begin
+    e1 = ExogenvAR1(ρ=0.724, σ=0.0136, μ=0.0335, n=1, shock_volatility=true, shock_name=:r)
+    @test exnpt(e1) == 1
+    @test ssidx(e1) == 1
+    @test points(e1).r[1] == 0.0335
+    @test e1.mtrans == [1.0;;]
+    @test conditional_distro(e1, 1) == [1.0]
+    # no Jensen correction: the single point keeps the transformed mean exp(μ)
+    e1log = ExogenvAR1(σ=0.2, μ=0.1, n=1, jensen=true)
+    @test points(e1log).z[1] ≈ exp(0.1)
+end
