@@ -41,8 +41,9 @@ roundtrip(x) = MetaTable(map(collect, Tables.columntable(x)),
     @test col_names(MomentArray(nt)) == (:mean, :sd)
     @test MomentArray{(:a, :b, :c), (:mean, :sd)}(nt) == ma
     @test_throws ArgumentError MomentArray{(:a, :b), (:mean, :sd)}(nt)
-    restore(t) = MomentArray{(:a, :b, :c), (:mean, :sd), Float64}(t)
+    restore(t) = MomentArray{(:a, :b, :c), (:mean, :sd), Float64, Matrix{Float64}, :__row}(t)    # row key in the type: inferred
     @test (@inferred restore(nt)) == ma
+    @test MomentArray{(:a, :b, :c), (:mean, :sd), Float64}(nt) == ma                      # row key from the table, at run time
     @test MomentArray(nt, (:a, :b, :c), (:mean, :sd)) == ma
     # a renamed row key, recorded nowhere: supplied by keyword
     nt2 = (variable = ["a", "b", "c"], mean = [1.0, 3.0, 5.0], sd = [2.0, 4.0, 6.0])
@@ -153,8 +154,8 @@ read_lazy_indices(cols) = sum(cols.__run) + sum(cols.__period)
 # restores with the target type fixed at compile time, as in user code
 const ALLOC_ROWS = ntuple(i -> Symbol("r$i"), 12)
 const ALLOC_COLS = ntuple(j -> Symbol("c$j"), 6)
-restore_static(table) = MomentArray{ALLOC_ROWS, ALLOC_COLS, Float64, SMatrix{12, 6, Float64}}(table)
-restore_dense(table) = MomentArray{ALLOC_ROWS, ALLOC_COLS, Float64}(table)
+restore_static(table) = MomentArray{ALLOC_ROWS, ALLOC_COLS, Float64, SMatrix{12, 6, Float64}, :__row}(table)
+restore_dense(table) = MomentArray{ALLOC_ROWS, ALLOC_COLS, Float64, Matrix{Float64}, :__row}(table)
 
 @testset "Allocations — MomentArray and panel operations" begin
     ma = MomentArray([1.0 2.0; 3.0 4.0; 5.0 6.0], (:a, :b, :c), (:mean, :sd))

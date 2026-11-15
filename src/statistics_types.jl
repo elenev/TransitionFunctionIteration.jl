@@ -32,27 +32,54 @@ varnames(::StatisticsSet{NAMES}) where NAMES = NAMES
 ## Simulation Stats
 
 """
-    MomentArray(data, rows, cols)
+    DEFAULT_ROWKEY
+
+Name of the column that holds the row names when a `MomentArray` is a table (a `MomentArray` that
+does not say otherwise).
+"""
+const DEFAULT_ROWKEY = :__row
+
+"""
+    MomentArray(data, rows, cols; rowkey = :__row)
 
 A labeled matrix of simulation moments. `rows` and `cols` are tuples of unique
 symbols baked into the type, enabling compile-time lookup via `getmoment`.
+
+`rowkey` names the column of row names when the array is a table (Tables.jl), and is part of the
+type like the names: `describe` calls the rows `variable`, `calc_error_stats` `equation`,
+`compare_economies` `moment`. It must differ from the column names.
 """
-struct MomentArray{ROWS, COLS, T, M <: AbstractMatrix{T}} <: AbstractMatrix{T}
+# the checks of the labels against the data, shared by the constructors
+@inline function _check_labels(ROWS, COLS, ROWKEY, data)
+    allunique(ROWS) || throw(ArgumentError("Row names must be unique: $ROWS"))
+    allunique(COLS) || throw(ArgumentError("Column names must be unique: $COLS"))
+    ROWKEY isa Symbol || throw(ArgumentError("the row key must be a Symbol, not $ROWKEY"))
+    ROWKEY in COLS && throw(ArgumentError("the row key $ROWKEY is also a column name"))
+    size(data, 1) == length(ROWS) || throw(DimensionMismatch(
+        "data has $(size(data,1)) rows but $(length(ROWS)) row names"))
+    size(data, 2) == length(COLS) || throw(DimensionMismatch(
+        "data has $(size(data,2)) columns but $(length(COLS)) column names"))
+    nothing
+end
+
+struct MomentArray{ROWS, COLS, T, M <: AbstractMatrix{T}, ROWKEY} <: AbstractMatrix{T}
     data::M
 
-    function MomentArray{ROWS, COLS}(data::M) where {ROWS, COLS, M<:AbstractMatrix}
-        allunique(ROWS) || throw(ArgumentError("Row names must be unique: $ROWS"))
-        allunique(COLS) || throw(ArgumentError("Column names must be unique: $COLS"))
-        size(data, 1) == length(ROWS) || throw(DimensionMismatch(
-            "data has $(size(data,1)) rows but $(length(ROWS)) row names"))
-        size(data, 2) == length(COLS) || throw(DimensionMismatch(
-            "data has $(size(data,2)) columns but $(length(COLS)) column names"))
-        new{ROWS, COLS, eltype(M), M}(data)
+    function MomentArray{ROWS, COLS, T, M, ROWKEY}(data::M) where {ROWS, COLS, T, M<:AbstractMatrix{T}, ROWKEY}
+        _check_labels(ROWS, COLS, ROWKEY, data)
+        new{ROWS, COLS, T, M, ROWKEY}(data)
+    end
+
+    # a static matrix as well as a general one (the more specific method keeps the restore
+    # constructors of tables.jl, which take any table, unambiguous)
+    function MomentArray{ROWS, COLS, T, M, ROWKEY}(data::M) where {ROWS, COLS, T, M<:StaticMatrix{<:Any, <:Any, T}, ROWKEY}
+        _check_labels(ROWS, COLS, ROWKEY, data)
+        new{ROWS, COLS, T, M, ROWKEY}(data)
     end
 end
 
-# MomentArray(data, row_names::Tuple{Vararg{Symbol}}, col_names::Tuple{Vararg{Symbol}}) =
-#     MomentArray(data, Val(row_names), Val(col_names))
+@inline MomentArray{ROWS, COLS}(data::M; rowkey::Symbol = DEFAULT_ROWKEY) where {ROWS, COLS, M<:AbstractMatrix} =
+    MomentArray{ROWS, COLS, eltype(M), M, rowkey}(data)
 
 # Convenience constructors for types whose names are statically known
 const _HasVarnames = Union{StructArray, NamedTuple, StatisticsSet, Tuple{Vararg{Symbol}}, Val{N} where N}
@@ -61,8 +88,8 @@ _varnames(::NamedTuple{N})    where N   = N
 _varnames(::StatisticsSet{N}) where N   = N
 _varnames(::Val{N})           where N   = N
 _varnames(names::Tuple{Vararg{Symbol}}) = names
-MomentArray(data, rows::_HasVarnames, cols::_HasVarnames) =
-    MomentArray{_varnames(rows), _varnames(cols)}(data)
+@inline MomentArray(data, rows::_HasVarnames, cols::_HasVarnames; rowkey::Symbol = DEFAULT_ROWKEY) =
+    MomentArray{_varnames(rows), _varnames(cols)}(data; rowkey)
 
 macro MomentArray(data, rows, cols)
     return :( MomentArray{$(esc(rows)), $(esc(cols))}($(esc(data))) )
@@ -73,6 +100,8 @@ end
 @inline row_names(::MomentArray{ROWS}) where {ROWS} = ROWS
 "Return the column names (statistic names) of a `MomentArray` as a tuple of Symbols."
 @inline col_names(::MomentArray{ROWS, COLS}) where {ROWS, COLS} = COLS
+"Return the name of the column of row names when a `MomentArray` is a table."
+@inline row_key(::MomentArray{ROWS, COLS, T, M, ROWKEY}) where {ROWS, COLS, T, M, ROWKEY} = ROWKEY
 
 # --- AbstractArray Interface ---
 Base.size(m::MomentArray) = size(m.data)
@@ -102,24 +131,28 @@ Base.copy(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{MomentArray}}) =
     _rewrap_ma(find_ma(bc), Broadcast.materialize(_unwrap_ma(bc)))
 
 # names from the type, so that the result type is inferred
-_rewrap_ma(::MomentArray{ROWS,COLS}, data) where {ROWS,COLS} = MomentArray{ROWS,COLS}(data)
+_rewrap_ma(::MomentArray{ROWS,COLS,T,M,ROWKEY}, data) where {ROWS,COLS,T,M,ROWKEY} =
+    MomentArray{ROWS,COLS,eltype(data),typeof(data),ROWKEY}(data)
 
 _unwrap_ma(bc::Broadcast.Broadcasted) = Broadcast.broadcasted(bc.f, map(_unwrap_ma, bc.args)...)
 _unwrap_ma(m::MomentArray) = m.data
 _unwrap_ma(x) = x
 
+# the row key shared by the arrays, or the default if they differ (the rows are of different kinds)
+_common_rowkey(arrs) = allequal(map(row_key, arrs)) ? row_key(first(arrs)) : DEFAULT_ROWKEY
+
 function Base.vcat(arrs::MomentArray...)
     data = vcat(map(a -> a.data, arrs)...)
     cols = col_names(arrs[1])
     rows = Tuple(Iterators.flatten(map(row_names, arrs)))
-    return MomentArray(data, rows, cols)
+    return MomentArray(data, rows, cols; rowkey = _common_rowkey(arrs))
 end
 
 function Base.hcat(arrs::MomentArray...)
     data = hcat(map(a -> a.data, arrs)...)
     rows = row_names(arrs[1])
     cols = Tuple(Iterators.flatten(map(col_names, arrs)))
-    return MomentArray(data, rows, cols)
+    return MomentArray(data, rows, cols; rowkey = row_key(arrs[1]))
 end
 
 
@@ -170,7 +203,7 @@ end
 @inline function getmoment(m::MomentArray, ::Val{VARS}, ::Val{STATS}) where {VARS, STATS}
     row_inds = SVector(map(v -> row_index(m, v), VARS))
     col_inds = SVector(map(s -> col_index(m, s), STATS))
-    return MomentArray(view(m.data, row_inds, col_inds), VARS, STATS)
+    return MomentArray(view(m.data, row_inds, col_inds), VARS, STATS; rowkey = row_key(m))
 end
 
 @inline function getmoment(m::MomentArray, vars::Union{Tuple, AbstractVector, Colon}, stats::Union{Tuple, AbstractVector, Colon})

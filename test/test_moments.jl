@@ -82,13 +82,69 @@ using Tables, DataAPI
     end
 end
 
-@testset "with_rowkey: a MomentArray table with its own row-name column" begin
-    m = TFI.MomentArray([1.0 2.0; 3.0 4.0], (:a, :b), (:mean, :std))
-    k = with_rowkey(m, :variable)
-    @test Tables.columnnames(Tables.columns(k)) == (:variable, :mean, :std)
-    @test Tables.getcolumn(Tables.columns(k), :variable) == ["a", "b"]
-    @test DataAPI.metadata(k, "tfi.rowkey") == "variable"
-    @test DataAPI.metadata(k, "tfi.kind") == "MomentArray"
-    @test TFI.MomentArray(Tables.columntable(k); rowkey = :variable) == m
-    @test Tables.columnnames(Tables.columns(m)) == (:__row, :mean, :std)   # the default is unchanged
+@testset "MomentArray row key" begin
+    allocs(f, x) = (f(x); @allocated f(x))
+    data = [1.0 2.0; 3.0 4.0; 5.0 6.0]
+    plain = TFI.MomentArray(data, (:a, :b, :c), (:mean, :sd))
+    keyed = TFI.MomentArray(data, (:a, :b, :c), (:mean, :sd); rowkey = :variable)
+
+    @testset "default and keyword" begin
+        @test row_key(plain) == :__row && row_key(keyed) == :variable
+        @test Tables.columnnames(Tables.columns(plain)) == (:__row, :mean, :sd)
+        @test Tables.columnnames(Tables.columns(keyed)) == (:variable, :mean, :sd)
+        @test Tables.getcolumn(Tables.columns(keyed), :variable) == ["a", "b", "c"]
+        @test DataAPI.metadata(keyed, "tfi.rowkey") == "variable" && DataAPI.metadata(plain, "tfi.rowkey") == "__row"
+        @test keyed == plain                                              # equal as matrices
+        @test_throws ArgumentError TFI.MomentArray(data, (:a, :b, :c), (:mean, :sd); rowkey = :mean)   # the key is a column name
+        @test TFI.MomentArray{(:a, :b, :c), (:mean, :sd)}(data; rowkey = :equation) isa TFI.MomentArray
+        @test @MomentArray(data, (:a, :b, :c), (:mean, :sd)) isa TFI.MomentArray
+    end
+
+    @testset "the key survives operations" begin
+        @test row_key(keyed .* 2.0) == :variable && row_key(2 .* keyed .+ keyed) == :variable
+        @test row_key(vcat(keyed, keyed[1:1, :] |> m -> TFI.MomentArray(m, (:d,), (:mean, :sd); rowkey = :variable))) == :variable
+        @test row_key(hcat(keyed, TFI.MomentArray(data[:, 1:1], (:a, :b, :c), (:p50,); rowkey = :variable))) == :variable
+        @test row_key(getmoment(keyed, (:a, :b), (:mean,))) == :variable
+        @test row_key(getmoment(keyed, Val((:a,)), Val((:sd,)))) == :variable
+        # arrays of different kinds of rows give the default
+        other = TFI.MomentArray(data, (:x, :y, :z), (:mean, :sd); rowkey = :moment)
+        @test row_key(vcat(keyed, other)) == :__row
+    end
+
+    @testset "creators name their rows" begin
+        p = TFI.SimulationPanel(StructArray([(C = 1.0 + 0.1i, K = 2.0 + 0.1j) for i in 1:3, j in 1:10]), (:K,))
+        d = describe(p)
+        @test row_key(d.moments.uncond) == :variable && row_key(d.stderrs.uncond) == :variable
+        cmp = compare_economies((m = SimulationMoment(:C),), (a = d.moments, b = d.moments))
+        @test row_key(cmp) == :moment
+        tab = compare_economies((m = SimulationMoment(:C),), (:a,), Tables.columntable((economy = ["a"], kind = ["simulation"],
+              group = ["uncond"], variable = ["C"], stat = ["mean"], period = [0], value = [1.0])))
+        @test row_key(tab) == :moment
+    end
+
+    @testset "reading" begin
+        # the key is restored from the table's metadata; a foreign table needs it by keyword
+        @test row_key(TFI.MomentArray(keyed)) == :variable && TFI.MomentArray(keyed) == keyed
+        nt = Tables.columntable(keyed)                                    # no metadata
+        @test_throws ArgumentError TFI.MomentArray(nt)
+        @test row_key(TFI.MomentArray(nt; rowkey = :variable)) == :variable
+        @test row_key(TFI.MomentArray{(:a, :b, :c), (:mean, :sd)}(nt; rowkey = :variable)) == :variable
+        @test row_key(TFI.MomentArray{(:a, :b, :c), (:mean, :sd), Float64}(nt; rowkey = :variable)) == :variable
+        # in the type: inferred, and the wrong key is an error
+        restore(t) = TFI.MomentArray{(:a, :b, :c), (:mean, :sd), Float64, SMatrix{3, 2, Float64}, :variable}(t)
+        @test (@inferred restore(nt)) == keyed && row_key(restore(nt)) == :variable
+        @test_throws ArgumentError TFI.MomentArray{(:a, :b, :c), (:mean, :sd), Float64, Matrix{Float64}, :equation}(nt)
+    end
+
+    @testset "writing allocates nothing" begin
+        for m in (keyed, plain, TFI.MomentArray(SMatrix{3, 2}(data), (:a, :b, :c), (:mean, :sd); rowkey = :equation))
+            @test allocs(Tables.columns, m) == 0
+            @test allocs(Tables.columntable, m) == 0
+            @test allocs(row_key, m) == 0
+        end
+        @test Base.return_types(Tables.columns, (typeof(keyed),))[1] |> isconcretetype
+        k2 = TFI.MomentArray(data, (:a, :b, :c), (:mean, :sd); rowkey = :variable)
+        build(d) = TFI.MomentArray(d, (:a, :b, :c), (:mean, :sd); rowkey = :variable)
+        @test (@inferred build(data)) isa TFI.MomentArray{(:a, :b, :c), (:mean, :sd), Float64, Matrix{Float64}, :variable}
+    end
 end

@@ -364,7 +364,7 @@ function calc_error_stats(errs::SimulationErrorPanel; percentiles=[50, 75, 90, 9
     errvecs = map(c -> vec(abs.(c)), components(errs.data))
     data = [f(v) for v in errvecs, f in values(statfcns)]
 
-    return MomentArray(data, row_names, col_names)
+    return MomentArray(data, row_names, col_names; rowkey = :equation)
 
 end
 
@@ -471,8 +471,8 @@ function _describe_sample(simseries, stat_functions, cor_functions, mask)
     N_runs > 1 && (stderr_stats .= sqrt.(stderr_stats ./ (N_runs - 1)) ./ sqrt(N_runs))
     #return mean_stats, stderr_stats 
     all_stats = merge(stat_functions, cor_functions)
-    return MomentArray(mean_stats,   simseries, all_stats),
-           MomentArray(stderr_stats, simseries, all_stats)
+    return MomentArray(mean_stats,   simseries, all_stats; rowkey = :variable),
+           MomentArray(stderr_stats, simseries, all_stats; rowkey = :variable)
 
 end
 
@@ -568,7 +568,7 @@ function _regress(states, values, valnames; constant = true)
     #return statesmat
     coefs = statesmat \ values  # nof x nvar
     coefs = SMatrix{size(coefs)...}(coefs)  # Convert to static for easier handling
-    return MomentArray(coefs', valnames, components(states))
+    return MomentArray(coefs', valnames, components(states); rowkey = :variable)
 end
 
 function linearize(obj::ModelSolution, stv::SteadyState; loglin=true)
@@ -679,7 +679,7 @@ end
 
 function _compare_parameters(params, models::NamedTuple)
     data = [getproperty(models[econ], p) for p in params, econ in keys(models)]
-    return MomentArray(data, params, keys(models))
+    return MomentArray(data, params, keys(models); rowkey = :parameter)
 end
 
 function _compare_parameters(models::NamedTuple)
@@ -722,7 +722,7 @@ function compare_economies(moment_defs::NamedTuple, economies::NamedTuple;
             for moment in values(moment_defs), econ in econ_names]
 
 
-    stats = MomentArray(data, moment_defs, economies)
+    stats = MomentArray(data, moment_defs, economies; rowkey = :moment)
 
     if models !== nothing
         params = _compare_parameters(parameters, models)
@@ -741,6 +741,6 @@ function compare_economies(moment_defs::NamedTuple, economy_names::Union{Tuple, 
     source = MomentTable(table)
 
     data = [getmoment(source, moment, econ, base) for moment in values(moment_defs), econ in names]
-    return MomentArray(data, keys(moment_defs), names)
+    return MomentArray(data, keys(moment_defs), names; rowkey = :moment)
 end
 

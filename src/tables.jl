@@ -4,12 +4,13 @@
 #
 # Maintainer notes
 # - Every result type is a column table. Building the columns copies no data: data columns are
-#   views of the stored arrays, and index columns (`__row`, `__run`, `__period`) are lazy
+#   views of the stored arrays, and index columns (`__run`, `__period`) are lazy
 #   `mappedarray`s. IRF tables span several stored arrays (one per shock and statistic); their
 #   columns are `mappedarray`s that look values up in those arrays.
-# - Reserved column names: `__row` (MomentArray row names), `__run` and `__period` (panel
-#   indices), `__shock` and `__stat` (IRF keys). Parquet has no Symbol type, so names are
-#   written as Strings and turned back into Symbols when a table is read.
+# - Reserved column names: `__run` and `__period` (panel indices), `__shock` and `__stat` (IRF keys).
+#   A MomentArray's column of row names is named by its ROWKEY type parameter (`__row` unless the
+#   creator says otherwise: `variable`, `equation`, `moment`, `parameter`). Parquet has no Symbol
+#   type, so names are written as Strings and turned back into Symbols when a table is read.
 # - Table-level metadata (DataAPI.jl) is published as strings, ready for any writer: file
 #   formats such as parquet store string pairs only, and Parquet2 writes `string(value)`. Keys:
 #   "tfi.kind" (the type that wrote the table), "tfi.rowkey" (MomentArray's row-name column),
@@ -20,7 +21,6 @@
 #   another. Sources without metadata (CSV files, NamedTuples) restore too; a SimulationPanel then
 #   needs its endogenous state names as an argument.
 
-const ROW_KEY = :__row
 const RUN_KEY = :__run
 const PERIOD_KEY = :__period
 const SHOCK_KEY = :__shock
@@ -61,39 +61,21 @@ end
 
 Tables.istable(::Type{<:MomentArray}) = true
 Tables.columnaccess(::Type{<:MomentArray}) = true
-# `__row` (the row names as Strings), then a view of each data column
-Tables.columns(m::MomentArray{ROWS,COLS}) where {ROWS,COLS} =
-    NamedTuple{(ROW_KEY, COLS...)}((mappedarray(String, SVector(ROWS)),
-                                    ntuple(j -> view(m.data, :, j), Val(length(COLS)))...))
+# the row names as Strings in the column `ROWKEY`, then a view of each data column
+Tables.columns(m::MomentArray{ROWS,COLS,T,M,ROWKEY}) where {ROWS,COLS,T,M,ROWKEY} =
+    NamedTuple{(ROWKEY, COLS...)}((mappedarray(String, SVector(ROWS)),
+                                   ntuple(j -> view(m.data, :, j), Val(length(COLS)))...))
 
-tfi_metadata(::MomentArray) = Dict("tfi.kind" => "MomentArray", "tfi.rowkey" => string(ROW_KEY))
+tfi_metadata(::MomentArray{ROWS,COLS,T,M,ROWKEY}) where {ROWS,COLS,T,M,ROWKEY} =
+    Dict("tfi.kind" => "MomentArray", "tfi.rowkey" => string(ROWKEY))
 
-"""
-    with_rowkey(m::MomentArray, key::Symbol)
+# the column of row names of a table: the argument, else the table's metadata, else the default
+_table_rowkey(table, rowkey) = something(rowkey, Symbol(_metadata_entry(table, "tfi.rowkey", DEFAULT_ROWKEY)))
 
-`m` as a table whose row-name column is `key` instead of `__row`, for writers that want a
-readable column name (e.g. `variable`). The table's metadata records the key (`tfi.rowkey`), so
-`MomentArray(table)` restores it without a `rowkey` argument.
-"""
-with_rowkey(m::MomentArray, key::Symbol) = KeyedMomentArray(m, key)
-
-struct KeyedMomentArray{M<:MomentArray}
-    moments::M
-    key::Symbol
-end
-
-Tables.istable(::Type{<:KeyedMomentArray}) = true
-Tables.columnaccess(::Type{<:KeyedMomentArray}) = true
-function Tables.columns(k::KeyedMomentArray)
-    cols = Tables.columns(k.moments)
-    NamedTuple{(k.key, Base.tail(keys(cols))...)}(values(cols))
-end
-tfi_metadata(k::KeyedMomentArray) = merge(tfi_metadata(k.moments), Dict("tfi.rowkey" => string(k.key)))
-
-# row names, column names and data matrix of a table written from a MomentArray
+# row names, column names and data matrix of a table written from a MomentArray, collecting the
+# table's names (the names are not known at compile time)
 function _moments_from_table(table, rowkey)
     meta = _checked_metadata(table, "MomentArray")
-    rowkey = something(rowkey, Symbol(get(meta, "tfi.rowkey", string(ROW_KEY))))
     cols = Tables.columns(table)
     rowkey in Tables.columnnames(cols) || throw(ArgumentError("table has no row-name column $rowkey"))
     rows = Tuple(Symbol(r) for r in Tables.getcolumn(cols, rowkey))
@@ -107,60 +89,72 @@ end
     MomentArray(table; rowkey = nothing)
     MomentArray{ROWS,COLS}(table; rowkey = nothing)
     MomentArray{ROWS,COLS,T}(table; rowkey = nothing)
-    MomentArray(table, rows, cols)
+    MomentArray{ROWS,COLS,T,M}(table; rowkey = nothing)
+    MomentArray{ROWS,COLS,T,M,ROWKEY}(table)
 
-Restore a `MomentArray` from a table written from one, e.g. a parquet file. A table written
-elsewhere needs a column of row names; `rowkey` names it. With `ROWS` and `COLS`, the table's
-names are checked against them and the result's type is known at compile time; with `T`, its
-element type too.
+Restore a `MomentArray` from a table written from one, e.g. a parquet file. The column of row names
+is `rowkey`, else the one the table's metadata records, else `__row`; it becomes the array's row key.
+With `ROWS` and `COLS`, the table's names are checked against them; with `T`, the element type is
+set; with `M` the matrix type, e.g. `SMatrix{3,2,Float64}`, filled straight from the table's columns
+without an intermediate `Matrix`.
+
+The row key is only known at run time unless it is in the type: with `ROWKEY` the result type is
+known at compile time and restoring allocates little beyond reading the columns (a parquet file
+decodes a column on every read).
 """
 function MomentArray(table; rowkey = nothing)
-    rows, cols, data = _moments_from_table(table, rowkey)
-    MomentArray{rows, cols}(data)
+    key = _table_rowkey(table, rowkey)
+    rows, cols, data = _moments_from_table(table, key)
+    MomentArray{rows, cols}(data; rowkey = key)
 end
 
 function MomentArray{ROWS,COLS}(table; rowkey = nothing) where {ROWS,COLS}
-    rows, cols, data = _moments_from_table(table, rowkey)
+    key = _table_rowkey(table, rowkey)
+    rows, cols, data = _moments_from_table(table, key)
     (rows == ROWS && cols == COLS) ||
         throw(ArgumentError("table has rows $rows and columns $cols, expected $ROWS and $COLS"))
-    MomentArray{ROWS,COLS}(data)
+    MomentArray{ROWS,COLS}(data; rowkey = key)
 end
 
-MomentArray{ROWS,COLS,T}(data::AbstractMatrix) where {ROWS,COLS,T} =
-    MomentArray{ROWS,COLS}(convert(AbstractMatrix{T}, data))
-function MomentArray{ROWS,COLS,T}(table; rowkey = nothing) where {ROWS,COLS,T}
-    cols = _moment_columns(table, rowkey, MomentArray{ROWS,COLS})
+MomentArray{ROWS,COLS,T}(data::AbstractMatrix; rowkey::Symbol = DEFAULT_ROWKEY) where {ROWS,COLS,T} =
+    MomentArray{ROWS,COLS}(convert(AbstractMatrix{T}, data); rowkey)
+MomentArray{ROWS,COLS,T}(table; rowkey = nothing) where {ROWS,COLS,T} =
+    MomentArray{ROWS,COLS,T,Matrix{T}}(table; rowkey)
+
+MomentArray{ROWS,COLS,T,M}(table; rowkey = nothing) where {ROWS,COLS,T,M<:AbstractMatrix{T}} =
+    MomentArray{ROWS,COLS,T,M,_table_rowkey(table, rowkey)}(table)
+
+function MomentArray{ROWS,COLS,T,M,ROWKEY}(table) where {ROWS,COLS,T,M<:AbstractMatrix{T},ROWKEY}
+    cols = _moment_columns(table, Val(ROWKEY), Val(ROWS), Val(COLS))
     data = Matrix{T}(undef, length(ROWS), length(COLS))
     foreach((j, v) -> copyto!(view(data, :, j), v), 1:length(COLS), cols)
-    MomentArray{ROWS,COLS}(data)
+    MomentArray{ROWS,COLS}(_as(M, data); rowkey = ROWKEY)
 end
 
-"""
-    MomentArray{ROWS,COLS,T,M}(table; rowkey = nothing)
+# `data` as a matrix of type M, without copying if it is one already
+_as(::Type{M}, data::M) where {M} = data
+_as(::Type{M}, data) where {M} = M(data)
 
-Restore into the matrix type `M`, e.g. `SMatrix{3,2,Float64}`. A static matrix is filled
-straight from the table's columns, without an intermediate `Matrix`.
-"""
-MomentArray{ROWS,COLS,T,M}(table; rowkey = nothing) where {ROWS,COLS,T,M<:AbstractMatrix{T}} =
-    MomentArray{ROWS,COLS}(M(MomentArray{ROWS,COLS,T}(table; rowkey).data))
-function MomentArray{ROWS,COLS,T,M}(table; rowkey = nothing) where {ROWS,COLS,T,M<:StaticMatrix{<:Any,<:Any,T}}
-    cols = _moment_columns(table, rowkey, MomentArray{ROWS,COLS})
+# a static matrix is filled straight from the columns (written out here, not in a helper: a helper
+# that returns the large matrix is compiled separately and boxes it)
+function MomentArray{ROWS,COLS,T,M,ROWKEY}(table) where {ROWS,COLS,T,M<:StaticMatrix{<:Any,<:Any,T},ROWKEY}
+    cols = _moment_columns(table, Val(ROWKEY), Val(ROWS), Val(COLS))
     R = length(ROWS)
-    MomentArray{ROWS,COLS}(M(ntuple(k -> convert(T, cols[(k - 1) ÷ R + 1][(k - 1) % R + 1]), Val(R * length(COLS)))))
+    MomentArray{ROWS,COLS}(M(ntuple(k -> convert(T, cols[(k - 1) ÷ R + 1][(k - 1) % R + 1]), Val(R * length(COLS))));
+                           rowkey = ROWKEY)
 end
 
-# the value columns of a table written from MomentArray{ROWS,COLS}, each read once (a parquet
-# source decodes a column on every read), after checking the kind and the row and column names
-# in place, without collecting the table's names. The names come as a type so that the
+# the value columns of a table written from a MomentArray with row key ROWKEY, each read once (a
+# parquet source decodes a column on every read), after checking the kind and the row and column
+# names in place, without collecting the table's names. The names come as types so that the
 # columns' types are inferred.
-function _moment_columns(table, rowkey, ::Type{MomentArray{ROWS,COLS}}) where {ROWS,COLS}
+function _moment_columns(table, ::Val{ROWKEY}, ::Val{ROWS}, ::Val{COLS}) where {ROWKEY,ROWS,COLS}
     kind = _metadata_entry(table, "tfi.kind", "MomentArray")
     kind == "MomentArray" || throw(ArgumentError("table holds a $kind, not a MomentArray"))
-    rowkey = something(rowkey, Symbol(_metadata_entry(table, "tfi.rowkey", ROW_KEY)))
     cols = Tables.columns(table)
-    _colnames_match(Tables.columnnames(cols), rowkey, COLS) ||
-        throw(ArgumentError("table columns $(Tuple(Tables.columnnames(cols))) are not $rowkey and $COLS"))
-    rownames = Tables.getcolumn(cols, rowkey)
+    _colnames_match(Tables.columnnames(cols), ROWKEY, COLS) ||
+        throw(ArgumentError("table columns $(Tuple(Tables.columnnames(cols))) are not $ROWKEY and $COLS"))
+    rownames = Tables.getcolumn(cols, ROWKEY)
     (length(rownames) == length(ROWS) && all(i -> Symbol(rownames[i]) === ROWS[i], eachindex(ROWS))) ||
         throw(ArgumentError("table rows $(Tuple(rownames)) are not $ROWS"))
     map(c -> Tables.getcolumn(cols, c), COLS)
@@ -357,7 +351,7 @@ end
 
 ## DataAPI.jl metadata (read-only) for all TFI tables
 
-const _TFITable = Union{MomentArray, KeyedMomentArray, SimulationPanel, SimulationErrorPanel, IRFResult, IRFPaths}
+const _TFITable = Union{MomentArray, SimulationPanel, SimulationErrorPanel, IRFResult, IRFPaths}
 
 DataAPI.metadatasupport(::Type{<:_TFITable}) = (read = true, write = false)
 DataAPI.metadatakeys(x::_TFITable) = keys(tfi_metadata(x))
