@@ -69,10 +69,10 @@ Compute extra variables for one simulation run after `simulate()` finishes.
 - `dynamic_nt`: `NamedTuple` of (T-1)-element vectors (e.g., one-period returns computed
   from consecutive pairs), or `(;)` if no dynamic variables are needed
 
-For `dynamic_align=:drop` in `simulate()`, burn is incremented by 1 so that `run` covers one
-extra period at the start; static results trim that first element and dynamic results align
-directly with the output panel. For `dynamic_align=:nan`, static results are used as-is and
-dynamic results receive a leading `NaN`.
+`run` covers the output periods plus one extra period. For `dynamic_align=:drop`, static
+results trim the first element and dynamic results align directly with the panel, whose first
+period is then dropped. For `dynamic_align=:nan`, static results are used as-is and dynamic
+results receive a leading `NaN`; the extra period is dropped at the end.
 
 The default returns empty NamedTuples (no augmentation).
 """
@@ -172,14 +172,17 @@ function calc_eqm_from_state(state, obj, mode=SimulateMode())
     prnext = conditional_distro(obj.exogenv, state.exst)
     fullstate = merge(state, exog)
 
+    # Policies at the state; forecasting values implied by them (see forecasts_from_policy)
+    policies = map( to_constrained, obj.Pfct(state), obj.Pfct_bounds)
+    forecasts = forecasts_from_policy(fullstate, policies, obj.model)
+
     # Compute next period's transitions and expectations
     trans = obj.Tfct(state)
-    next = forecast_next(trans, obj)
+    next = forecast_next(trans, obj, forecasts)
 
     np = compute_expectations(next, prnext, obj.model, mode)
 
     # Compute equilibrium residuals, next period's transitions and simulated variables
-    policies = map( to_constrained, obj.Pfct(state), obj.Pfct_bounds)
     #@debug "Simulated policys at state $state: " policies
     return calc_eqm(fullstate, policies, obj.model, np, mode), trans
 end
@@ -241,33 +244,56 @@ end
 """
     simulate(obj, stv=nothing; sz=10_000=>12, seed=100, burn=500,
              exog_start=ssidx(obj.exogenv), endog_start=stv.endog,
-             shocks=sample_shocks(sz, seed, burn))
+             dynamic_align=:drop, report_bounds=true)
+    simulate(obj, exog_states::AbstractMatrix{<:Integer}; endog_start, burn=0,
+             dynamic_align=:drop, report_bounds=true)
 
 Simulate the solved model along stochastic paths.
 
-Returns `(simseries, errs)`:
-- `simseries`: `N_periods × N_runs` `SimulationPanel` of state and output variables
-- `errs`: matching `SimulationErrorPanel` of equation and transition errors
+The first form draws the exogenous path from `seed`: `sz = N_periods => N_runs` output periods
+and runs, starting from exogenous state `exog_start`. The second form takes the exogenous path
+as given: a matrix of exogenous state indices with `burn + N_periods + 1` rows (burn-in, output
+periods, one extra period) and one column per run, whose first row is the starting state.
 
-`sz = N_periods => N_runs`. Burn-in periods are simulated but excluded from output.
+Returns `(simseries, errs)`, both `N_periods × N_runs`:
+- `simseries`: `SimulationPanel` of state and output variables
+- `errs`: `SimulationErrorPanel` of equation and transition errors
 
-`dynamic_align` controls how dynamic augmentation variables (length T-1) are aligned with the
-output panel: `:drop` drops the first output period (burn incremented by 1 internally);
-`:nan` prepends `NaN` to each dynamic series.
+Both carry the same `Provenance{SimulationSettings}`. Burn-in periods are simulated but excluded
+from the output. One period beyond the output is always simulated: with `dynamic_align = :drop`
+and dynamic augmentation variables (length T-1, see `augment_simulation`), the first period is
+dropped so that they align with the panel; otherwise the last. `dynamic_align = :nan` keeps the
+first period and gives dynamic variables a leading `NaN`.
 """
 function simulate(obj::ModelSolution, stv=nothing;
-                                dynamic_align=:drop,
-                                sz::Pair=(10_000+(dynamic_align == :drop ? 1 : 0))=>12,
-                                seed=100,
-                                burn=500,
-                                exog_start=ssidx(obj.exogenv),
-                                endog_start=stv.endog,
-                                shocks=sample_shocks(sz, seed, burn),
-                                exog_states = simulate_markov_chain(obj.exogenv, exog_start, shocks)[1],
-                                report_bounds=true,
-                    )
+                  dynamic_align=:drop,
+                  sz::Pair=10_000=>12,
+                  seed=100,
+                  burn=500,
+                  exog_start=ssidx(obj.exogenv),
+                  endog_start=stv.endog,
+                  report_bounds=true)
+    exog_states, _ = simulate_markov_chain(obj.exogenv, exog_start, sample_shocks(sz, seed, burn))
+    provenance = Provenance(solution_id(obj), tfi_version(),
+                            SimulationSettings(; seed, burn, dynamic_align, exog_start = repr(exog_start),
+                                               endog_start = repr(endog_start)))
+    _simulate(obj, exog_states, endog_start, burn, dynamic_align, report_bounds, provenance)
+end
+
+function simulate(obj::ModelSolution, exog_states::AbstractMatrix{<:Integer};
+                  endog_start, burn=0, dynamic_align=:drop, report_bounds=true)
+    provenance = Provenance(solution_id(obj), tfi_version(),
+                            SimulationSettings(; seed = nothing, burn, dynamic_align, exog_start = nothing,
+                                               endog_start = repr(endog_start)))
+    _simulate(obj, exog_states, endog_start, burn, dynamic_align, report_bounds, provenance)
+end
+
+# the simulation itself, given the exogenous path (burn-in, output periods and one extra period ×
+# runs)
+function _simulate(obj::ModelSolution, exog_states, endog_start, burn, dynamic_align, report_bounds, provenance)
     dynamic_align ∈ (:drop, :nan) || throw(ArgumentError("dynamic_align must be :drop or :nan, got $dynamic_align"))
 
+    exog_start = first(exog_states)
     start = make_point(exog_start, endog_start)
 
     # Add another period so that transition errors can be computed
@@ -298,22 +324,23 @@ function simulate(obj::ModelSolution, stv=nothing;
     end
     BLAS.set_num_threads(original_threads)
 
-    # Remove burn-in and package into StructArrays
+    # Remove burn-in (the rows left are the output periods and the extra period)
     t_range = (burn+1):(N_periods-1)
     simseries = StructArray(view(sim_raw, t_range, :))
 
     # Check bounds
     report_bounds && check_bounds(simseries, obj)
 
-    # Augment with extra variables and align as needed
-    simseries = _update_simseries_with_augmented(simseries, obj, dynamic_align)
+    # Output periods: under :drop with augmentation variables, all but the first (augmentation
+    # drops it); otherwise all but the extra period at the end, dropped before augmenting
+    drop_first = dynamic_align === :drop && augment_simulation(first(eachcol(simseries)), obj.model) !== nothing
+    out = drop_first ? (2:length(t_range)) : (1:length(t_range) - 1)
+    kept = drop_first ? simseries : StructArray(view(sim_raw, t_range[out], :))
+    simseries = SimulationPanel(_update_simseries_with_augmented(kept, obj, dynamic_align),
+                                propertynames(endog_start); provenance)
 
-    # Package into SimulationPanel
-    simseries = SimulationPanel(simseries, propertynames(endog_start))
-
-    # Errors
-    err_range = (burn+(dynamic_align === :drop ? 1 : 0) + 1):(N_periods-1)
-    errs      = SimulationErrorPanel(StructArray(@view err_raw[err_range, :]))
+    # Errors for the same periods
+    errs = SimulationErrorPanel(StructArray(@view err_raw[t_range[out], :]); provenance)
 
     return simseries, errs
 end
@@ -337,7 +364,7 @@ function calc_error_stats(errs::SimulationErrorPanel; percentiles=[50, 75, 90, 9
     errvecs = map(c -> vec(abs.(c)), components(errs.data))
     data = [f(v) for v in errvecs, f in values(statfcns)]
 
-    return MomentArray(data, row_names, col_names)
+    return MomentArray(data, row_names, col_names; rowkey = :equation)
 
 end
 
@@ -444,8 +471,8 @@ function _describe_sample(simseries, stat_functions, cor_functions, mask)
     N_runs > 1 && (stderr_stats .= sqrt.(stderr_stats ./ (N_runs - 1)) ./ sqrt(N_runs))
     #return mean_stats, stderr_stats 
     all_stats = merge(stat_functions, cor_functions)
-    return MomentArray(mean_stats,   simseries, all_stats),
-           MomentArray(stderr_stats, simseries, all_stats)
+    return MomentArray(mean_stats,   simseries, all_stats; rowkey = :variable),
+           MomentArray(stderr_stats, simseries, all_stats; rowkey = :variable)
 
 end
 
@@ -541,7 +568,7 @@ function _regress(states, values, valnames; constant = true)
     #return statesmat
     coefs = statesmat \ values  # nof x nvar
     coefs = SMatrix{size(coefs)...}(coefs)  # Convert to static for easier handling
-    return MomentArray(coefs', valnames, components(states))
+    return MomentArray(coefs', valnames, components(states); rowkey = :variable)
 end
 
 function linearize(obj::ModelSolution, stv::SteadyState; loglin=true)
@@ -652,7 +679,7 @@ end
 
 function _compare_parameters(params, models::NamedTuple)
     data = [getproperty(models[econ], p) for p in params, econ in keys(models)]
-    return MomentArray(data, params, keys(models))
+    return MomentArray(data, params, keys(models); rowkey = :parameter)
 end
 
 function _compare_parameters(models::NamedTuple)
@@ -661,15 +688,20 @@ function _compare_parameters(models::NamedTuple)
 end
 
 """
-    compare_economies(moment_defs, economies) -> MomentArray
+    compare_economies(moment_defs, economies; base=1, models=nothing) -> MomentArray
+    compare_economies(moment_defs, economy_names, table; base=1) -> MomentArray
 
 Build a labeled table of moments across multiple economies.
 
-- `moment_defs`: NamedTuple of `ReportedMoment`s (rows of the output table)
-- `economies`: NamedTuple of `describe()` outputs (columns of the output table)
+- `moment_defs`: NamedTuple of [`AbstractMoment`](@ref)s (rows of the output table); a bare
+  variable name is a `SimulationMoment` with default settings
+- `economies`: NamedTuple of the economies' results (columns of the output table), each a
+  `describe()` output (`SimulationMoment`s only) or [`EconomyResults`](@ref)
+- `economy_names`, `table`: the economies' names and a long [`MomentTable`](@ref) (or any table
+  that converts to one) holding their statistics
 
-Returns a `MomentArray` with moment names as rows and economy names as columns.
-Each cell is `economies[econ].moments[moment.sample][moment.var, moment.stat]`.
+Returns a `MomentArray` with moment names as rows and economy names as columns; each cell is
+`getmoment(economies, moment, economy, base)`.
 """
 function compare_economies(moment_defs::NamedTuple, economies::NamedTuple;
     base::Union{Integer,Symbol}=1,
@@ -681,8 +713,8 @@ function compare_economies(moment_defs::NamedTuple, economies::NamedTuple;
         base = keys(economies)[base]
     end
 
-    # Promote any non-ReportedMoment entries in moment_defs to ReportedMoment with default specs
-    moment_defs  = map(v -> v isa ReportedMoment ? v : ReportedMoment(v), moment_defs)
+    # Promote any non-moment entries in moment_defs to SimulationMoment with default specs
+    moment_defs  = map(v -> v isa AbstractMoment ? v : SimulationMoment(v), moment_defs)
     moment_names = keys(moment_defs)
     econ_names   = keys(economies)
 
@@ -690,7 +722,7 @@ function compare_economies(moment_defs::NamedTuple, economies::NamedTuple;
             for moment in values(moment_defs), econ in econ_names]
 
 
-    stats = MomentArray(data, moment_defs, economies)
+    stats = MomentArray(data, moment_defs, economies; rowkey = :moment)
 
     if models !== nothing
         params = _compare_parameters(parameters, models)
@@ -699,3 +731,16 @@ function compare_economies(moment_defs::NamedTuple, economies::NamedTuple;
         return stats
     end
 end
+
+function compare_economies(moment_defs::NamedTuple, economy_names::Union{Tuple, AbstractVector}, table;
+    base::Union{Integer,Symbol} = 1)
+
+    names = Tuple(Symbol.(economy_names))
+    base  = base isa Integer ? names[base] : base
+    moment_defs = map(v -> v isa AbstractMoment ? v : SimulationMoment(v), moment_defs)
+    source = MomentTable(table)
+
+    data = [getmoment(source, moment, econ, base) for moment in values(moment_defs), econ in names]
+    return MomentArray(data, keys(moment_defs), names; rowkey = :moment)
+end
+

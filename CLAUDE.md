@@ -16,6 +16,10 @@ Two solution methods:
 - `TFIMethod` (default): pre-computes expectations from the transition function before solving policy.
 - `STPFIMethod`: solves policy and transition functions simultaneously (Cao, Luo, Nie).
 
+Which method a model needs: `TFIMethod` computes expectations before solving for the policy,
+so it misses any effect of the policy on next period's expectations. Models where a policy acts
+only through those expectations need `STPFIMethod`.
+
 ---
 
 ## Source layout
@@ -28,7 +32,8 @@ src/
                              EvaluationMode subtypes, SolutionMethod subtypes
   stubs.jl                -- Interface stubs (throw MethodNotImplementedError by default)
   transformations.jl      -- Transformations module (Level, Pct, DiffPct, AnnPct, etc.)
-  statistics_types.jl     -- MomentArray, SimulationPanel, SimulationErrorPanel, ReportedMoment
+  statistics_types.jl     -- MomentArray, SimulationPanel, SimulationErrorPanel
+  moments.jl              -- AbstractMoment (SimulationMoment, ImpulseMoment), EconomyResults, MomentTable, getmoment
   setup.jl                -- main_setup, steadystate dispatches, bounds fallback
   execution.jl            -- main_execute!, perform_iteration!, solve_at_point, EquilibriumSystem
   simulation.jl           -- simulate, simulate_markov_chain, describe, linearize, compare_economies
@@ -56,9 +61,9 @@ test/
 ```
 AbstractModel               -- user subtype; carries all model parameters
 AbstractModelSolution
-  ModelSolution{M,E,S,PF,VF,TF,PB,TB}
+  ModelSolution{M,E,S,PF,VF,TF,PB,TB,FF}
                             -- assembled solution: .model, .exogenv, .ssg, .Pfct, .Vfct, .Tfct,
-                               .Pfct_bounds, .Tfct_bounds
+                               .Pfct_bounds, .Tfct_bounds, .Ffct (forecasting function or nothing)
 AbstractSteadyState
   SteadyState               -- .model, .guess, .endog, .exog, .values
 AbstractStateSpaceGrid
@@ -100,7 +105,8 @@ Implement methods dispatching on `MyModel <: AbstractModel`:
 | `define_endog_grids(mdl, stv)` | Yes | Return `NamedTuple` of grid vectors |
 | `bounds(stv::SteadyState{MyModel})` | No | Return `(Pfct_bounds, Tfct_bounds)` NTs; default is all `Unbounded()` |
 | `augment_simulation(run, mdl)` | No | Return `(static_nt, dynamic_nt)` for extra sim variables |
-| `vals_from_policy(state, policy, mdl)` | No | Needed if Vfct vars ≠ policy vars in FixedPointSteadyState |
+| `vals_from_policy(state, policy, mdl)` | No | Vfct vars that are functions of the policy but not policies (FixedPointSteadyState); Vfct vars that depend on expectations are `eqmvalguesses` of `FixedPointSteadyStateMode` instead, with residual guess minus `calc_eqm`'s `vals` |
+| `forecasts_from_policy(state, policy, mdl)` | No | Forecasting values (current choices next period's expectations depend on); builds `obj.Ffct`, attached to every `next` point by `forecast_next` |
 
 ### `calc_eqm` return contract
 
@@ -210,8 +216,8 @@ out.moments.crisis  # MomentArray for crisis filter
 
 # Cross-economy comparison:
 moment_defs = (
-    MeanC = ReportedMoment(:C),
-    StdK  = ReportedMoment(:K; stat=:std),
+    MeanC = SimulationMoment(:C),
+    StdK  = SimulationMoment(:K; stat=:std),
 )
 compare_economies(moment_defs, (; baseline=desc_base, alt=desc_alt))
 ```
@@ -244,6 +250,5 @@ conditional_distro(exogenv, state_idx)
 
 - `examples/intermedap.jl` is an intermediary asset pricing model under active development.
 - `augment_simulation` and related code is being updated and tested.
-- `ReportedMoment` needs to be extended to allow for economy comparisons using transformations.
 
 ---

@@ -82,6 +82,7 @@ end
     include("test_bounded.jl")
     include("test_stubs.jl")
     include("test_momentarray.jl")
+    include("test_moments.jl")
     include("test_economics.jl")
     include("test_simulation.jl")
     include("test_logging.jl")
@@ -95,5 +96,8 @@ end
     include("test_irf.jl")       # uses obj, stv, simseries from test_ngm.jl
     include("test_linearize.jl") # uses those fixtures
     include("test_setup.jl")     # uses ngm, obj, stv from test_ngm.jl
+    include("test_forecasts.jl") # uses ngm, obj from test_ngm.jl
+    include("test_eqmvalguesses.jl") # uses ngm from test_ngm.jl
+    include("test_tables.jl")    # uses obj, stv, simseries, errs from test_ngm.jl
     include("test_Aqua.jl")
 end

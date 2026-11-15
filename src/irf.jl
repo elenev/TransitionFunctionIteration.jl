@@ -9,19 +9,44 @@ Container for impulse-response function results returned by `simulate_irf`.
 - `stdevs`: same structure, per-period standard deviations across simulation draws
 - `other_stats`: additional user-requested statistics (see `other_stats` kwarg of `simulate_irf`)
 - `paths`: per-draw raw simulation paths (non-empty only when `path_vars` is set)
+- `provenance`: the IRF's `Provenance{IRFSettings}`, or `nothing`
 
 Access individual shock paths with `irf.means.shock_name.varname`.
+
+An `IRFResult` is a table of its statistics (`__shock`, `__stat`, `__period`, then one column
+per variable); `irf_paths(irf)` is the table of raw paths. `IRFResult(stats_table)` and
+`IRFResult(stats_table, paths_table)` restore it from these tables, e.g. two parquet files.
 """
 struct IRFResult{M,D,S,P}
     means::M
     stdevs::D
     other_stats::S
     paths::P
+    provenance::Union{Nothing,Provenance{IRFSettings}}
 end
+IRFResult(means, stdevs, other_stats, paths) = IRFResult(means, stdevs, other_stats, paths, nothing)
 
 shock_names(irf::IRFResult) = propertynames(irf.means)
 
-function IRFResult(lines, paths)
+# `IRFResult(x)` and `IRFResult(x, paths)` accept either `simulate_irf`'s per-shock results or
+# tables (restored in tables.jl); the trait on the first argument picks the method.
+abstract type TableStyle end
+struct IsTable <: TableStyle end
+struct NotTable <: TableStyle end
+TableStyle(::Type{T}) where {T} = Tables.istable(T) ? IsTable() : NotTable()
+
+IRFResult(x) = IRFResult(TableStyle(typeof(x)), x)
+IRFResult(x, paths) = IRFResult(TableStyle(typeof(x)), x, paths)
+
+# per-shock (lines, paths) tuples from simulate_irf_shock
+function IRFResult(::NotTable, result; provenance = nothing)
+    lines = map(s -> s[1], result)
+    paths = map(s -> s[2], result)
+    return IRFResult(NotTable(), lines, paths; provenance)
+end
+
+# lines: shock => statistic => StructArray, renested as statistic => shock => StructArray
+function IRFResult(::NotTable, lines, paths; provenance = nothing)
     outer_keys = propertynames(lines)
     inner_keys = propertynames(first(lines))
     renested_lines = NamedTuple{inner_keys}(
@@ -31,13 +56,7 @@ function IRFResult(lines, paths)
     )
     other_keys = Base.structdiff(renested_lines, (; mean = nothing, std = nothing))
     other_lines = NamedTuple{keys(other_keys)}(renested_lines)
-    return IRFResult(renested_lines.mean, renested_lines.std, other_lines, paths)
-end
-
-function IRFResult(result)
-    lines = map(s -> s[1], result)
-    paths = map(s -> s[2], result)
-    return IRFResult(lines, paths)
+    return IRFResult(renested_lines.mean, renested_lines.std, other_lines, paths, provenance)
 end
 
 
@@ -48,13 +67,15 @@ Simulate impulse response functions (IRFs) from a solved model `obj`.
 
 - `endogstart`: initial endogenous state, either a `NamedTuple` of values or a `SimulationPanel`
   (in which case the ergodic mean is used)
-- `shocks`: `NamedTuple` of named shock specifications `(shock_name = (exst_index, exog_override), ...)`
+- `shocks`: `NamedTuple` of forced exogenous paths after the starting period, each an exogenous
+  state index or a vector of indices, e.g. `(hike = 5, hike2 = [5, 5])`; empty (the default) means
+  one shock per other exogenous state plus the unconditional baseline `uncond = Int64[]`
 - `T`: IRF horizon (periods)
 - `N`: number of Monte Carlo draws for expectation/fan charts
 - `seed`: random seed for reproducibility
 
-Returns an `IRFResult` with mean and standard-deviation paths for each shock and for the
-unconditional (`:uncond`) baseline.
+Returns an `IRFResult` with mean and standard-deviation paths for each shock, and its
+`Provenance{IRFSettings}`.
 """
 function simulate_irf(obj::ModelSolution, endogstart;
     exog_start = obj.exogenv.ssidx,
@@ -87,7 +108,9 @@ function simulate_irf(obj::ModelSolution, endogstart;
         endogstart, shockvec, rands, stats, path_vars)
 
     result = map(_simulate_irf_shock, shocks)
-    return IRFResult(result)
+    provenance = Provenance(solution_id(obj), tfi_version(),
+                            IRFSettings(; seed, N, shocks = repr(shocks), endog_start = repr(endogstart)))
+    return IRFResult(NotTable(), result; provenance)
 end
 
 function simulate_irf_shock(obj::ModelSolution, 
@@ -113,9 +136,7 @@ function simulate_irf_shock(obj::ModelSolution,
     end
 
     # Simulate model
-    sim, _ = simulate(obj, burn=0, exog_start=start_exog, 
-                endog_start=start_endog, exog_states=exog,
-                report_bounds=false, dynamic_align=:nan)
+    sim, _ = simulate(obj, exog; endog_start=start_endog, report_bounds=false, dynamic_align=:nan)
 
     # Summarize
     _f(fcn, var) = map(fcn, eachrow(var))

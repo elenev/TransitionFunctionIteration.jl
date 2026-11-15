@@ -101,6 +101,12 @@ Assembled solution container for an economic model.
 - `ssg`: combined `StateSpaceGrid` (exogenous + endogenous axes)
 - `Pfct`: policy function `Interpolant`
 - `Vfct`: value function `Interpolant`
+- `Tfct`: transition function `Interpolant`
+- `Ffct`: forecasting function `Interpolant`, or `nothing` (default) if the model has none.
+  Forecasting values are current-period choices that next period's expectations depend on
+  beyond the next-period state (e.g. the portfolio entering a next-period consumption stage).
+  Unlike `Vfct`, `Ffct` is evaluated at the current state; its values are attached to every
+  next-period point by `forecast_next`. See `forecasts_from_policy`.
 """
 @kwdef struct ModelSolution{M<:AbstractModel,
             E<:AbstractExogenv,
@@ -109,7 +115,8 @@ Assembled solution container for an economic model.
             VF<:AbstractInterpolant,
             TF<:AbstractInterpolant,
             PB<:NamedTuple,
-            TB<:NamedTuple} <: AbstractModelSolution
+            TB<:NamedTuple,
+            FF<:Union{Nothing,AbstractInterpolant}} <: AbstractModelSolution
     model::M
     exogenv::E
     ssg::S
@@ -118,7 +125,11 @@ Assembled solution container for an economic model.
     Tfct::TF
     Pfct_bounds::PB   = NamedTuple{varnames(Pfct)}(ntuple(_ -> Unbounded(), nof(Pfct)))
     Tfct_bounds::TB   = NamedTuple{varnames(Tfct)}(ntuple(_ -> Unbounded(), nof(Tfct)))
+    Ffct::FF          = nothing
 end
+
+_isapprox_or_nothing(::Nothing, ::Nothing; kwargs...) = true
+_isapprox_or_nothing(a, b; kwargs...) = !isnothing(a) && !isnothing(b) && Base.isapprox(a, b; kwargs...)
 
 function Base.:(==)(obj1::ModelSolution, obj2::ModelSolution)
     return (
@@ -129,7 +140,8 @@ function Base.:(==)(obj1::ModelSolution, obj2::ModelSolution)
         (obj1.Vfct == obj2.Vfct) &&
         (obj1.Tfct == obj2.Tfct) &&
         (obj1.Pfct_bounds == obj2.Pfct_bounds) &&
-        (obj1.Tfct_bounds == obj2.Tfct_bounds)
+        (obj1.Tfct_bounds == obj2.Tfct_bounds) &&
+        (obj1.Ffct == obj2.Ffct)
     )
 end
 
@@ -142,7 +154,8 @@ function Base.isapprox(obj1::ModelSolution, obj2::ModelSolution; kwargs...)
         Base.isapprox(obj1.Vfct, obj2.Vfct; kwargs...) &&
         Base.isapprox(obj1.Tfct, obj2.Tfct; kwargs...) &&
         (obj1.Pfct_bounds == obj2.Pfct_bounds) &&
-        (obj1.Tfct_bounds == obj2.Tfct_bounds)
+        (obj1.Tfct_bounds == obj2.Tfct_bounds) &&
+        _isapprox_or_nothing(obj1.Ffct, obj2.Ffct; kwargs...)
     )
 end
 
@@ -162,7 +175,7 @@ _exogenv_from_point(pt) = Exogenv(pts = StaticStructArray(SVector(pt)), mtrans =
 
 
 """
-    FixedPointSteadyStateMode{P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv} <: SteadyStateMode
+    FixedPointSteadyStateMode{P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv, G<:NamedTuple} <: SteadyStateMode
 
 Dispatch tag: steady state is found by iterating on the dynamic model equations and (constant) law of motion 
 for endogenous variables with a starting guess for policy and transition functions."
@@ -171,25 +184,29 @@ for endogenous variables with a starting guess for policy and transition functio
 - `transitions`: `NamedTuple` of transition function values at the steady state (e.g., `(K = 3.2,)`)
 - `exogenv`: `Exogenv` representing the exogenous environment at the steady state. Can also be a 
   `NamedTuple` of exogenous variable values (e.g., `(A = 1.0,)`), which will be converted to a degenerate `Exogenv` with a single point.
+- `eqmvalguesses` (keyword, default empty): guesses for Vfct variables that `vals_from_policy`
+  cannot compute because they depend on expectations (e.g. a value function). They become extra
+  unknowns; their residuals are the guess minus the value `calc_eqm` returns in `vals`.
 """
-struct FixedPointSteadyStateMode{P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv} <: SteadyStateMode
+struct FixedPointSteadyStateMode{P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv, G<:NamedTuple} <: SteadyStateMode
     policies::P
     transitions::T
     exogenv::E
+    eqmvalguesses::G
 
     function FixedPointSteadyStateMode(policies::P,
-        transitions::T, exogenv::E) where {P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv}
+        transitions::T, exogenv::E; eqmvalguesses::G = (;)) where {P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv, G<:NamedTuple}
         N = exnpt(exogenv)
         if N > 1
             exog_mean = mean(exogenv)
             exogenv = _exogenv_from_point(exog_mean)
         end
-        return new{P,T,typeof(exogenv)}(policies, transitions, exogenv)
+        return new{P,T,typeof(exogenv),G}(policies, transitions, exogenv, eqmvalguesses)
     end
 end
 
-function FixedPointSteadyStateMode(policies::NamedTuple, transitions::NamedTuple, exogenv::NamedTuple)
-    return FixedPointSteadyStateMode(policies, transitions, _exogenv_from_point(exogenv))
+function FixedPointSteadyStateMode(policies::NamedTuple, transitions::NamedTuple, exogenv::NamedTuple; eqmvalguesses = (;))
+    return FixedPointSteadyStateMode(policies, transitions, _exogenv_from_point(exogenv); eqmvalguesses)
 end
 
 """

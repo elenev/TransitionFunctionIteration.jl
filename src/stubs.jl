@@ -74,6 +74,17 @@ end
 
 
 """
+    forecasts_from_policy(state, policy, model) -> NamedTuple
+
+Forecasting values implied by `policy` at `state`: current-period quantities, beyond the
+next-period state, that next period's expectations depend on (e.g. a portfolio entering a
+next-period consumption stage). Overload when the model has a forecasting function `Ffct`; the
+names must not clash with state or Vfct names. Default: no forecasting values.
+"""
+forecasts_from_policy(state, policy, mdl::AbstractModel) = (;)
+
+
+"""
     Exogenv(mdl::AbstractModel) -> Exogenv
 
 Compute the exogenous environment for the given model. Interface stub --

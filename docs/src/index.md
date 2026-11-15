@@ -5,6 +5,13 @@ equilibrium models using the Transition Function Iteration (TFI) algorithm of El
 and Van Nieuwerburgh (2021), or optionally the Simultaneous Transition and Policy Function
 Iteration (STPFI) algorithm of Cao, Luo, and Nie (2023).
 
+## Choosing a solution method
+
+`TFIMethod` computes expectations at each grid point before solving for the policy, so it misses
+any effect of the policy on next period's expectations. Models where a policy acts only through
+those expectations (e.g. a portfolio entering a next-period consumption stage) need
+`STPFIMethod`, which recomputes expectations from the solver's current guess.
+
 ## What the package does
 
 A solved model is represented by three sets of functions of the state variables, linearly

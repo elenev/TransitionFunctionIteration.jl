@@ -32,27 +32,54 @@ varnames(::StatisticsSet{NAMES}) where NAMES = NAMES
 ## Simulation Stats
 
 """
-    MomentArray(data, rows, cols)
+    DEFAULT_ROWKEY
+
+Name of the column that holds the row names when a `MomentArray` is a table (a `MomentArray` that
+does not say otherwise).
+"""
+const DEFAULT_ROWKEY = :__row
+
+"""
+    MomentArray(data, rows, cols; rowkey = :__row)
 
 A labeled matrix of simulation moments. `rows` and `cols` are tuples of unique
 symbols baked into the type, enabling compile-time lookup via `getmoment`.
+
+`rowkey` names the column of row names when the array is a table (Tables.jl), and is part of the
+type like the names: `describe` calls the rows `variable`, `calc_error_stats` `equation`,
+`compare_economies` `moment`. It must differ from the column names.
 """
-struct MomentArray{ROWS, COLS, T, M <: AbstractMatrix{T}} <: AbstractMatrix{T}
+# the checks of the labels against the data, shared by the constructors
+@inline function _check_labels(ROWS, COLS, ROWKEY, data)
+    allunique(ROWS) || throw(ArgumentError("Row names must be unique: $ROWS"))
+    allunique(COLS) || throw(ArgumentError("Column names must be unique: $COLS"))
+    ROWKEY isa Symbol || throw(ArgumentError("the row key must be a Symbol, not $ROWKEY"))
+    ROWKEY in COLS && throw(ArgumentError("the row key $ROWKEY is also a column name"))
+    size(data, 1) == length(ROWS) || throw(DimensionMismatch(
+        "data has $(size(data,1)) rows but $(length(ROWS)) row names"))
+    size(data, 2) == length(COLS) || throw(DimensionMismatch(
+        "data has $(size(data,2)) columns but $(length(COLS)) column names"))
+    nothing
+end
+
+struct MomentArray{ROWS, COLS, T, M <: AbstractMatrix{T}, ROWKEY} <: AbstractMatrix{T}
     data::M
 
-    function MomentArray{ROWS, COLS}(data::M) where {ROWS, COLS, M<:AbstractMatrix}
-        allunique(ROWS) || throw(ArgumentError("Row names must be unique: $ROWS"))
-        allunique(COLS) || throw(ArgumentError("Column names must be unique: $COLS"))
-        size(data, 1) == length(ROWS) || throw(DimensionMismatch(
-            "data has $(size(data,1)) rows but $(length(ROWS)) row names"))
-        size(data, 2) == length(COLS) || throw(DimensionMismatch(
-            "data has $(size(data,2)) columns but $(length(COLS)) column names"))
-        new{ROWS, COLS, eltype(M), M}(data)
+    function MomentArray{ROWS, COLS, T, M, ROWKEY}(data::M) where {ROWS, COLS, T, M<:AbstractMatrix{T}, ROWKEY}
+        _check_labels(ROWS, COLS, ROWKEY, data)
+        new{ROWS, COLS, T, M, ROWKEY}(data)
+    end
+
+    # a static matrix as well as a general one (the more specific method keeps the restore
+    # constructors of tables.jl, which take any table, unambiguous)
+    function MomentArray{ROWS, COLS, T, M, ROWKEY}(data::M) where {ROWS, COLS, T, M<:StaticMatrix{<:Any, <:Any, T}, ROWKEY}
+        _check_labels(ROWS, COLS, ROWKEY, data)
+        new{ROWS, COLS, T, M, ROWKEY}(data)
     end
 end
 
-# MomentArray(data, row_names::Tuple{Vararg{Symbol}}, col_names::Tuple{Vararg{Symbol}}) =
-#     MomentArray(data, Val(row_names), Val(col_names))
+@inline MomentArray{ROWS, COLS}(data::M; rowkey::Symbol = DEFAULT_ROWKEY) where {ROWS, COLS, M<:AbstractMatrix} =
+    MomentArray{ROWS, COLS, eltype(M), M, rowkey}(data)
 
 # Convenience constructors for types whose names are statically known
 const _HasVarnames = Union{StructArray, NamedTuple, StatisticsSet, Tuple{Vararg{Symbol}}, Val{N} where N}
@@ -61,8 +88,8 @@ _varnames(::NamedTuple{N})    where N   = N
 _varnames(::StatisticsSet{N}) where N   = N
 _varnames(::Val{N})           where N   = N
 _varnames(names::Tuple{Vararg{Symbol}}) = names
-MomentArray(data, rows::_HasVarnames, cols::_HasVarnames) =
-    MomentArray{_varnames(rows), _varnames(cols)}(data)
+@inline MomentArray(data, rows::_HasVarnames, cols::_HasVarnames; rowkey::Symbol = DEFAULT_ROWKEY) =
+    MomentArray{_varnames(rows), _varnames(cols)}(data; rowkey)
 
 macro MomentArray(data, rows, cols)
     return :( MomentArray{$(esc(rows)), $(esc(cols))}($(esc(data))) )
@@ -73,6 +100,8 @@ end
 @inline row_names(::MomentArray{ROWS}) where {ROWS} = ROWS
 "Return the column names (statistic names) of a `MomentArray` as a tuple of Symbols."
 @inline col_names(::MomentArray{ROWS, COLS}) where {ROWS, COLS} = COLS
+"Return the name of the column of row names when a `MomentArray` is a table."
+@inline row_key(::MomentArray{ROWS, COLS, T, M, ROWKEY}) where {ROWS, COLS, T, M, ROWKEY} = ROWKEY
 
 # --- AbstractArray Interface ---
 Base.size(m::MomentArray) = size(m.data)
@@ -96,23 +125,34 @@ find_ma(::Tuple{}) = nothing
 find_ma(a::MomentArray, rest) = a
 find_ma(::Any, rest) = find_ma(rest)
 
-function Base.similar(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{MomentArray}}, ::Type{T}) where {T}
-    ma = find_ma(bc)
-    return MomentArray(similar(Array{T}, axes(bc)), row_names(ma), col_names(ma))
-end
+# Broadcasting runs on the wrapped matrices, so the result has their type (an SMatrix stays an
+# SMatrix, without allocating), and is rewrapped with the names of the first MomentArray.
+Base.copy(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{MomentArray}}) =
+    _rewrap_ma(find_ma(bc), Broadcast.materialize(_unwrap_ma(bc)))
+
+# names from the type, so that the result type is inferred
+_rewrap_ma(::MomentArray{ROWS,COLS,T,M,ROWKEY}, data) where {ROWS,COLS,T,M,ROWKEY} =
+    MomentArray{ROWS,COLS,eltype(data),typeof(data),ROWKEY}(data)
+
+_unwrap_ma(bc::Broadcast.Broadcasted) = Broadcast.broadcasted(bc.f, map(_unwrap_ma, bc.args)...)
+_unwrap_ma(m::MomentArray) = m.data
+_unwrap_ma(x) = x
+
+# the row key shared by the arrays, or the default if they differ (the rows are of different kinds)
+_common_rowkey(arrs) = allequal(map(row_key, arrs)) ? row_key(first(arrs)) : DEFAULT_ROWKEY
 
 function Base.vcat(arrs::MomentArray...)
     data = vcat(map(a -> a.data, arrs)...)
     cols = col_names(arrs[1])
     rows = Tuple(Iterators.flatten(map(row_names, arrs)))
-    return MomentArray(data, rows, cols)
+    return MomentArray(data, rows, cols; rowkey = _common_rowkey(arrs))
 end
 
 function Base.hcat(arrs::MomentArray...)
     data = hcat(map(a -> a.data, arrs)...)
     rows = row_names(arrs[1])
     cols = Tuple(Iterators.flatten(map(col_names, arrs)))
-    return MomentArray(data, rows, cols)
+    return MomentArray(data, rows, cols; rowkey = row_key(arrs[1]))
 end
 
 
@@ -163,7 +203,7 @@ end
 @inline function getmoment(m::MomentArray, ::Val{VARS}, ::Val{STATS}) where {VARS, STATS}
     row_inds = SVector(map(v -> row_index(m, v), VARS))
     col_inds = SVector(map(s -> col_index(m, s), STATS))
-    return MomentArray(view(m.data, row_inds, col_inds), VARS, STATS)
+    return MomentArray(view(m.data, row_inds, col_inds), VARS, STATS; rowkey = row_key(m))
 end
 
 @inline function getmoment(m::MomentArray, vars::Union{Tuple, AbstractVector, Colon}, stats::Union{Tuple, AbstractVector, Colon})
@@ -175,28 +215,93 @@ end
 (m::MomentArray)(vars,stats) = getmoment(m, vars, stats)
 
 
+## Provenance
+"""
+    Provenance{S}
+
+What is needed to reproduce a simulation or an IRF from the solution that produced it:
+
+- `solution`: `solution_id` of the solution
+- `tfi_version`: TFI version that produced the result
+- `settings`: a `SimulationSettings` (from `simulate`) or an `IRFSettings` (from `simulate_irf`)
+"""
+struct Provenance{S}
+    solution::String
+    tfi_version::String
+    settings::S
+end
+
+"""
+    SimulationSettings
+
+Settings of a `simulate` call that the simulated data do not record:
+
+- `seed`: seed of the random draws, or `nothing` if the exogenous path was supplied
+- `burn`: burn-in periods dropped from the output
+- `dynamic_align`: `:drop` or `:nan` (see `simulate`)
+- `exog_start`: starting exogenous state, or `nothing` if the exogenous path was supplied
+- `endog_start`: starting endogenous states
+
+The starting states are stored as their `repr`.
+"""
+@kwdef struct SimulationSettings
+    seed::Union{Int,Nothing}
+    burn::Int
+    dynamic_align::Symbol
+    exog_start::Union{String,Nothing}
+    endog_start::String
+end
+
+"""
+    IRFSettings
+
+Settings of a `simulate_irf` call that the IRF statistics do not record:
+
+- `seed`: seed of the random draws
+- `N`: number of draws per shock
+- `shocks`: the forced exogenous paths, e.g. `(uncond = Int64[], shock_2 = [2])`
+- `endog_start`: starting endogenous states (the means, if a panel was passed)
+
+`shocks` and `endog_start` are stored as their `repr`. The number of periods and the starting
+exogenous state are in the statistics themselves (line length, period-1 `exst`).
+"""
+@kwdef struct IRFSettings
+    seed::Int
+    N::Int
+    shocks::String
+    endog_start::String
+end
+
 ## Equation Errors
 """
-    SimulationErrorPanel(data::StructArray)
+    SimulationErrorPanel(data::StructArray; provenance = nothing)
+    SimulationErrorPanel(table)
 
 Thin wrapper around a 2-D `StructArray` (periods × runs) of equation residuals produced by
 `simulate`. Each named field is one residual series (e.g., `:euler`). Passed to
-`calc_error_stats` for summary statistics.
+`calc_error_stats` for summary statistics. `provenance` is the simulation's
+`Provenance{SimulationSettings}`, or `nothing`.
+
+The second form restores a panel from a table written from one, e.g. a parquet file.
 """
 struct SimulationErrorPanel{T, N, A<:StructArray{T, N}} <: AbstractArray{T,N}
     data::A
+    provenance::Union{Nothing,Provenance{SimulationSettings}}
 end
+SimulationErrorPanel(data::StructArray; provenance = nothing) =
+    SimulationErrorPanel{eltype(data), ndims(data), typeof(data)}(data, provenance)
 
 # --- AbstractMatrix Interface ---
 Base.size(sp::SimulationErrorPanel) = size(sp.data)
 Base.getindex(sp::SimulationErrorPanel, I::Int...) = getindex(sp.data, I...)
-Base.getindex(sp::SimulationErrorPanel, I...) = SimulationErrorPanel(sp.data[I...])
-Base.view(sp::SimulationErrorPanel, I...) = SimulationErrorPanel(view(sp.data, I...))
+Base.getindex(sp::SimulationErrorPanel, I...) = SimulationErrorPanel(sp.data[I...]; sp.provenance)
+Base.view(sp::SimulationErrorPanel, I...) = SimulationErrorPanel(view(sp.data, I...); sp.provenance)
 Base.IndexStyle(::Type{<:SimulationErrorPanel}) = IndexLinear()
 
 # --- Property Access Delegation ---
 Base.propertynames(sp::SimulationErrorPanel) = propertynames(getfield(sp, :data))
-Base.getproperty(sp::SimulationErrorPanel, s::Symbol) = (s === :data) ? getfield(sp, :data) : getproperty(getfield(sp, :data), s)
+Base.getproperty(sp::SimulationErrorPanel, s::Symbol) =
+    (s === :data || s === :provenance) ? getfield(sp, s) : getproperty(getfield(sp, :data), s)
 
 # --- REPL Visualization ---
 function Base.summary(io::IO, sp::SimulationErrorPanel{T,N}) where {T,N}
@@ -206,30 +311,39 @@ end
 
 ### Simulated output
 """
-    SimulationPanel(data::StructArray, endog_names)
+    SimulationPanel(data::StructArray, endog_names; provenance = nothing)
+    SimulationPanel(table)
+    SimulationPanel(table, endog_names)
 
 Thin wrapper around a 2-D `StructArray` (periods × runs) of simulated variables. The
 `NAMES` type parameter records which fields are endogenous states (used by `linearize` and
-`endog_states`). All fields are accessible via `panel.varname`.
+`endog_states`). All fields are accessible via `panel.varname`. `provenance` is the
+simulation's `Provenance{SimulationSettings}`, or `nothing`.
+
+The table forms restore a panel from a table, e.g. a parquet file. A table written from a
+panel carries the endogenous state names; for other tables, supply them as `endog_names`.
 """
 struct SimulationPanel{T, N, NAMES, A<:StructArray{T, N}} <: AbstractArray{T,N}
     data::A
+    provenance::Union{Nothing,Provenance{SimulationSettings}}
 end
-SimulationPanel(data::A, endog_names) where {T, N, A<:StructArray{T, N}} = SimulationPanel{T, N, Tuple(endog_names), A}(data)
+SimulationPanel(data::StructArray, endog_names; provenance = nothing) =
+    SimulationPanel{eltype(data), ndims(data), Tuple(endog_names), typeof(data)}(data, provenance)
 
 # --- AbstractMatrix Interface ---
 Base.size(sp::SimulationPanel) = size(sp.data)
 Base.getindex(sp::SimulationPanel, I::Int...) = getindex(sp.data, I...)
 # Slice indexing: delegate to StructArray (returns StructArray) then rewrap
 Base.getindex(sp::SimulationPanel{T,N,NAMES}, I...) where {T,N,NAMES} =
-    SimulationPanel(sp.data[I...], NAMES)
+    SimulationPanel(sp.data[I...], NAMES; sp.provenance)
 Base.view(sp::SimulationPanel{T,N,NAMES}, I...) where {T,N,NAMES} =
-    SimulationPanel(view(sp.data, I...), NAMES)
+    SimulationPanel(view(sp.data, I...), NAMES; sp.provenance)
 Base.IndexStyle(::Type{<:SimulationPanel}) = IndexLinear()
 
 # --- Property Access Delegation ---
 Base.propertynames(sp::SimulationPanel) = propertynames(getfield(sp, :data))
-Base.getproperty(sp::SimulationPanel, s::Symbol) = (s === :data) ? getfield(sp, :data) : getproperty(getfield(sp, :data), s)
+Base.getproperty(sp::SimulationPanel, s::Symbol) =
+    (s === :data || s === :provenance) ? getfield(sp, s) : getproperty(getfield(sp, :data), s)
 
 # --- REPL Visualization ---
 function Base.summary(io::IO, sp::SimulationPanel{T,N}) where {T,N}
@@ -242,52 +356,7 @@ endog_states(::SimulationPanel{T, N, NAMES, A}) where {T, N, NAMES, A} = NAMES
 states(sp::SimulationPanel) = (:exst, endog_states(sp)...)
 
 
-"""
-    ReportedMoment(; var, sample=:uncond, stat=:mean, transformation=Transformations.Level)
-
-Specification for a single entry in a `compare_economies` table.
-
-- `var`: variable name (Symbol) in the `MomentArray`
-- `sample`: filter name used in `describe()` (default `:uncond`)
-- `stat`: statistic name (default `:mean`)
-- `transformation`: optional T<:AbstractTransformation to apply to the raw moment (e.g., for reporting in levels or percentages)
-"""
-@kwdef struct ReportedMoment{T<:Transformations.AbstractTransformation, CT<:Transformations.AbstractTransformation}
-    var::Symbol
-    sample::Symbol = :uncond
-    stat::Symbol   = :mean
-    transformation::T = Transformations.Level()
-    compare_transformation::CT = Transformations.Level()
-end
-ReportedMoment(var::Symbol; kwargs...) = ReportedMoment(; var, kwargs...)
-
 const SamplesTuple{SAMPLES} = NamedTuple{SAMPLES, <:Tuple{Vararg{MomentArray}}}
 
 @inline _get_vars(::MomentArray{V, S}) where {V, S} = V
 @inline _get_stats(::MomentArray{V, S}) where {V, S} = S
-
-@inline function getmoment(s::SamplesTuple{SAMPLES}, rm::ReportedMoment) where {SAMPLES}
-    rm.sample ∈ SAMPLES || throw(KeyError("Sample name $(rm.sample) not found in describe() output"))
-    
-    m_array = s[rm.sample]
-    VARIABLES = _get_vars(m_array)
-    STATS = _get_stats(m_array)
-    
-    rm.var  ∈ VARIABLES || throw(KeyError("Variable name $(rm.var) not found in moments for sample $(rm.sample)"))
-    rm.stat ∈ STATS     || throw(KeyError("Statistic name $(rm.stat) not found in moments for sample $(rm.sample)"))
-    
-    return rm.transformation(getmoment(m_array, rm.var, rm.stat))
-end
-
-const EconomiesTuple{ECONS, N, SAMPLES} = NamedTuple{ECONS, NTuple{N, SAMPLES}}
-@inline function getmoment(nt::EconomiesTuple, rm::ReportedMoment, economy::Symbol, base::Union{Symbol, Integer}=1)
-    base = base isa Integer ? keys(nt)[base] : base
-    economy ∈ keys(nt) || throw(KeyError("Economy name $economy not found in economies tuple"))
-    val     = getmoment(nt[economy], rm)
-    valbase = getmoment(nt[base], rm)
-    if economy == base 
-        return rm.transformation(val, basis=valbase)
-    else
-        return rm.compare_transformation(val, basis=valbase)
-    end
-end

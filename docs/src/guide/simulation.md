@@ -68,13 +68,13 @@ stats[Val((:C,:K)), Val((:mean,))]    # MomentArray sub-view (compile-time dimen
 ## Comparing economies
 
 `compare_economies` produces a formatted table of selected moments across multiple solved
-models. Define moments with `ReportedMoment`, then pass a `NamedTuple` of `describe` outputs:
+models. Define moments with `SimulationMoment` (a statistic of a simulated variable) or `ImpulseMoment` (a point on an impulse response), then pass a `NamedTuple` of economies: `describe` outputs, or `EconomyResults(describe(...).moments, irf)` when impulse moments are included:
 
 ```julia
 moment_defs = (
-    MeanC = ReportedMoment(:C),
-    StdK  = ReportedMoment(:K; stat=:std),
-    MeanY = ReportedMoment(:Y),
+    MeanC = SimulationMoment(:C),
+    StdK  = SimulationMoment(:K; stat=:std),
+    MeanY = SimulationMoment(:Y),
 )
 
 desc_base = describe(simseries_base)

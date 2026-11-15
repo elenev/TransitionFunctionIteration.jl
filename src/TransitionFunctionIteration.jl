@@ -4,6 +4,9 @@ using Interpolations, NonlinearSolve, ForwardDiff, StaticArrays, StructArrays
 using RecipesBase
 using Logging, LinearAlgebra, Random, Statistics, StatsBase, PrettyTables
 using Polyester: @batch
+using Tables: Tables
+using MappedArrays: mappedarray
+import DataAPI, JSON, SHA
 
 # Types
 export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant, AbstractSteadyState
@@ -14,7 +17,7 @@ export points, dims, npt, nof, elsize, varnames, unigrids, singletons
 export coefficients, knots, statespacegrid, name_values, named_coefficients
 
 # Interface stub: model packages extend this
-export calc_eqm, compute_next_period_values, steadystate, define_endog_grids
+export calc_eqm, compute_next_period_values, steadystate, define_endog_grids, forecasts_from_policy
 
 # Logging
 export ExecutionLogger, TerminalLogger, CSVLogger
@@ -28,14 +31,17 @@ export main_setup, main_execute!, make_point, compute_expectations, TFIMethod, S
 
 # Simulation
 export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, augment_simulation, augment_errors
-export ReportedMoment, compare_economies
+export AbstractMoment, SimulationMoment, ImpulseMoment, EconomyResults, MomentTable, getmoment, moment_keys, compare_economies
 export SimulationPanel, SimulationErrorPanel, endog_states, states
+
+# Tables and provenance
+export Provenance, SimulationSettings, IRFSettings, solution_id, irf_paths
 
 # IRFs
 export IRFResult, Transformations, ReportedVariable, IRFPage, simulate_irf
 
 # MomentArray
-export MomentArray, @MomentArray, row_names, col_names
+export MomentArray, @MomentArray, row_names, col_names, row_key
 
 # Main interface
 export solve_and_simulate, generate_template, update_model
@@ -61,7 +67,10 @@ include("economics.jl")
 include("template.jl")
 
 include("irf.jl")
+include("moments.jl")
 include("irfplotting.jl")
+include("provenance.jl")
+include("tables.jl")
 
 
 """

@@ -123,3 +123,20 @@ end
     @test isapprox(Vlin[:, 2:end], Vsim[:, 2:end], atol=5e-4)
     @test isapprox(Tlin[:, 2:end], Tsim[:, 2:end], atol=5e-4)
 end
+
+@testset "NGM — one exogenous state (deterministic model)" begin
+    ngm1 = NeoclassicalGrowthModel(N_A = 1)
+    for method in (TFIMethod(), STPFIMethod())
+        obj1, stv1 = main_setup(ngm1)
+        main_execute!(obj1; maxiter=1000, tol=-7, logging=COMPLETE, solmethod=method)
+        # the deterministic steady state is a fixed point of the solved functions (up to
+        # linear interpolation error: Kss lies midway between grid points)
+        Kss = stv1.endog.K
+        @test obj1.Vfct((exst = 1, K = Kss)).C ≈ stv1.values.C  rtol=1e-4
+        @test only(obj1.Tfct((exst = 1, K = Kss)).K) ≈ Kss  rtol=1e-4
+        sim1, errs1 = simulate(obj1, stv1; sz = 200 => 2, burn = 10)
+        @test all(==(1.0), sim1.A)
+        calc_error_stats(errs1)          # runs with a one-state chain
+        check_bounds(sim1, obj1)
+    end
+end
