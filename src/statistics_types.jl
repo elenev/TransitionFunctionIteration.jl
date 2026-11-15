@@ -323,52 +323,7 @@ endog_states(::SimulationPanel{T, N, NAMES, A}) where {T, N, NAMES, A} = NAMES
 states(sp::SimulationPanel) = (:exst, endog_states(sp)...)
 
 
-"""
-    ReportedMoment(; var, sample=:uncond, stat=:mean, transformation=Transformations.Level)
-
-Specification for a single entry in a `compare_economies` table.
-
-- `var`: variable name (Symbol) in the `MomentArray`
-- `sample`: filter name used in `describe()` (default `:uncond`)
-- `stat`: statistic name (default `:mean`)
-- `transformation`: optional T<:AbstractTransformation to apply to the raw moment (e.g., for reporting in levels or percentages)
-"""
-@kwdef struct ReportedMoment{T<:Transformations.AbstractTransformation, CT<:Transformations.AbstractTransformation}
-    var::Symbol
-    sample::Symbol = :uncond
-    stat::Symbol   = :mean
-    transformation::T = Transformations.Level()
-    compare_transformation::CT = Transformations.Level()
-end
-ReportedMoment(var::Symbol; kwargs...) = ReportedMoment(; var, kwargs...)
-
 const SamplesTuple{SAMPLES} = NamedTuple{SAMPLES, <:Tuple{Vararg{MomentArray}}}
 
 @inline _get_vars(::MomentArray{V, S}) where {V, S} = V
 @inline _get_stats(::MomentArray{V, S}) where {V, S} = S
-
-@inline function getmoment(s::SamplesTuple{SAMPLES}, rm::ReportedMoment) where {SAMPLES}
-    rm.sample ∈ SAMPLES || throw(KeyError("Sample name $(rm.sample) not found in describe() output"))
-    
-    m_array = s[rm.sample]
-    VARIABLES = _get_vars(m_array)
-    STATS = _get_stats(m_array)
-    
-    rm.var  ∈ VARIABLES || throw(KeyError("Variable name $(rm.var) not found in moments for sample $(rm.sample)"))
-    rm.stat ∈ STATS     || throw(KeyError("Statistic name $(rm.stat) not found in moments for sample $(rm.sample)"))
-    
-    return rm.transformation(getmoment(m_array, rm.var, rm.stat))
-end
-
-const EconomiesTuple{ECONS, N, SAMPLES} = NamedTuple{ECONS, NTuple{N, SAMPLES}}
-@inline function getmoment(nt::EconomiesTuple, rm::ReportedMoment, economy::Symbol, base::Union{Symbol, Integer}=1)
-    base = base isa Integer ? keys(nt)[base] : base
-    economy ∈ keys(nt) || throw(KeyError("Economy name $economy not found in economies tuple"))
-    val     = getmoment(nt[economy], rm)
-    valbase = getmoment(nt[base], rm)
-    if economy == base 
-        return rm.transformation(val, basis=valbase)
-    else
-        return rm.compare_transformation(val, basis=valbase)
-    end
-end

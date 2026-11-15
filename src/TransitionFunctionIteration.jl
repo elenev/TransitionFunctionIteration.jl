@@ -31,7 +31,7 @@ export main_setup, main_execute!, make_point, compute_expectations, TFIMethod, S
 
 # Simulation
 export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, augment_simulation, augment_errors
-export ReportedMoment, compare_economies
+export AbstractMoment, SimulationMoment, ImpulseMoment, EconomyResults, MomentTable, getmoment, moment_keys, compare_economies
 export SimulationPanel, SimulationErrorPanel, endog_states, states
 
 # Tables and provenance
@@ -41,7 +41,7 @@ export Provenance, SimulationSettings, IRFSettings, solution_id, irf_paths
 export IRFResult, Transformations, ReportedVariable, IRFPage, simulate_irf
 
 # MomentArray
-export MomentArray, @MomentArray, row_names, col_names
+export MomentArray, @MomentArray, row_names, col_names, with_rowkey
 
 # Main interface
 export solve_and_simulate, generate_template, update_model
@@ -67,6 +67,7 @@ include("economics.jl")
 include("template.jl")
 
 include("irf.jl")
+include("moments.jl")
 include("irfplotting.jl")
 include("provenance.jl")
 include("tables.jl")

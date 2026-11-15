@@ -32,7 +32,8 @@ src/
                              EvaluationMode subtypes, SolutionMethod subtypes
   stubs.jl                -- Interface stubs (throw MethodNotImplementedError by default)
   transformations.jl      -- Transformations module (Level, Pct, DiffPct, AnnPct, etc.)
-  statistics_types.jl     -- MomentArray, SimulationPanel, SimulationErrorPanel, ReportedMoment
+  statistics_types.jl     -- MomentArray, SimulationPanel, SimulationErrorPanel
+  moments.jl              -- AbstractMoment (SimulationMoment, ImpulseMoment), EconomyResults, MomentTable, getmoment
   setup.jl                -- main_setup, steadystate dispatches, bounds fallback
   execution.jl            -- main_execute!, perform_iteration!, solve_at_point, EquilibriumSystem
   simulation.jl           -- simulate, simulate_markov_chain, describe, linearize, compare_economies
@@ -215,8 +216,8 @@ out.moments.crisis  # MomentArray for crisis filter
 
 # Cross-economy comparison:
 moment_defs = (
-    MeanC = ReportedMoment(:C),
-    StdK  = ReportedMoment(:K; stat=:std),
+    MeanC = SimulationMoment(:C),
+    StdK  = SimulationMoment(:K; stat=:std),
 )
 compare_economies(moment_defs, (; baseline=desc_base, alt=desc_alt))
 ```
@@ -249,6 +250,5 @@ conditional_distro(exogenv, state_idx)
 
 - `examples/intermedap.jl` is an intermediary asset pricing model under active development.
 - `augment_simulation` and related code is being updated and tested.
-- `ReportedMoment` needs to be extended to allow for economy comparisons using transformations.
 
 ---

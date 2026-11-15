@@ -69,8 +69,8 @@ end
 
 end
 
-@testset "ReportedMoment defaults" begin
-    rm = ReportedMoment(var=:C)
+@testset "SimulationMoment defaults" begin
+    rm = SimulationMoment(var=:C)
     @test rm.var    == :C
     @test rm.sample == :uncond
     @test rm.stat   == :mean
@@ -187,8 +187,8 @@ end
     d2 = describe(p2)
 
     moment_defs = (
-        mean_C = ReportedMoment(var=:C),
-        mean_K = ReportedMoment(var=:K, stat=:mean),
+        mean_C = SimulationMoment(var=:C),
+        mean_K = SimulationMoment(var=:K, stat=:mean),
     )
     economies = (baseline = d1.moments, scaled = d2.moments)
 
@@ -306,8 +306,8 @@ end
     economies = (baseline = d1.moments, scaled = d2.moments)
 
     moment_defs = (
-        mean_C = ReportedMoment(var=:C),
-        mean_K = ReportedMoment(var=:K, stat=:mean),
+        mean_C = SimulationMoment(var=:C),
+        mean_K = SimulationMoment(var=:K, stat=:mean),
     )
 
     # alpha differs, beta is the same → only alpha appears as a parameter row

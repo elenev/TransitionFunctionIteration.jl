@@ -68,6 +68,28 @@ Tables.columns(m::MomentArray{ROWS,COLS}) where {ROWS,COLS} =
 
 tfi_metadata(::MomentArray) = Dict("tfi.kind" => "MomentArray", "tfi.rowkey" => string(ROW_KEY))
 
+"""
+    with_rowkey(m::MomentArray, key::Symbol)
+
+`m` as a table whose row-name column is `key` instead of `__row`, for writers that want a
+readable column name (e.g. `variable`). The table's metadata records the key (`tfi.rowkey`), so
+`MomentArray(table)` restores it without a `rowkey` argument.
+"""
+with_rowkey(m::MomentArray, key::Symbol) = KeyedMomentArray(m, key)
+
+struct KeyedMomentArray{M<:MomentArray}
+    moments::M
+    key::Symbol
+end
+
+Tables.istable(::Type{<:KeyedMomentArray}) = true
+Tables.columnaccess(::Type{<:KeyedMomentArray}) = true
+function Tables.columns(k::KeyedMomentArray)
+    cols = Tables.columns(k.moments)
+    NamedTuple{(k.key, Base.tail(keys(cols))...)}(values(cols))
+end
+tfi_metadata(k::KeyedMomentArray) = merge(tfi_metadata(k.moments), Dict("tfi.rowkey" => string(k.key)))
+
 # row names, column names and data matrix of a table written from a MomentArray
 function _moments_from_table(table, rowkey)
     meta = _checked_metadata(table, "MomentArray")
@@ -335,7 +357,7 @@ end
 
 ## DataAPI.jl metadata (read-only) for all TFI tables
 
-const _TFITable = Union{MomentArray, SimulationPanel, SimulationErrorPanel, IRFResult, IRFPaths}
+const _TFITable = Union{MomentArray, KeyedMomentArray, SimulationPanel, SimulationErrorPanel, IRFResult, IRFPaths}
 
 DataAPI.metadatasupport(::Type{<:_TFITable}) = (read = true, write = false)
 DataAPI.metadatakeys(x::_TFITable) = keys(tfi_metadata(x))
