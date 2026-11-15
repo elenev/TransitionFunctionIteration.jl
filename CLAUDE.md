@@ -36,7 +36,7 @@ src/
   moments.jl              -- AbstractMoment (SimulationMoment, ImpulseMoment), EconomyResults, MomentTable, getmoment
   setup.jl                -- main_setup, steadystate dispatches, bounds fallback
   execution.jl            -- main_execute!, perform_iteration!, solve_at_point, EquilibriumSystem
-  simulation.jl           -- simulate, simulate_markov_chain, describe, linearize, compare_economies
+  simulation.jl           -- simulate, simulate_markov_chain, describe, linearize, compare_economies (economies and table forms)
   economics.jl            -- fisher_burmeister, crra/logutility/powerutility, ces, cobb_douglas,
                              epstein_zin_ce, return_on_ex_price, growth_rate
   exog.jl                 -- ExogenvAR1
@@ -44,6 +44,9 @@ src/
   irfplotting.jl          -- Plots recipes for IRFs
   logging.jl              -- ExecutionLogger, TerminalLogger, CSVLogger + log levels
   plotting.jl             -- Plots recipe for Interpolant
+  tables.jl               -- Tables.jl interfaces and DataAPI metadata of MomentArray, panels, IRFs; restore constructors
+  provenance.jl           -- Provenance, SimulationSettings/IRFSettings, solution_id, tfi_version
+  template.jl             -- generate_template (model skeleton)
   utils.jl                -- merge_structarrays, StaticStructArray helpers
 
 examples/
@@ -207,19 +210,26 @@ ma(:varname, :stat)                         # callable shorthand
 ```
 
 
-### `describe` and `compare_economies`
+Row keys: `MomentArray{ROWS,COLS,T,M,ROWKEY}`. ROWKEY names the column of row names when the array is
+a table (`__row` by default; creators set `variable`, `equation`, `moment`, `parameter`); it is in the
+type so that `Tables.columns` is inferred. Arithmetic/vcat/hcat/sub-selection keep it.
+
+### `describe`, moments and `compare_economies`
 
 ```julia
 # Conditional moments:
 out = describe(simseries; filters = (uncond = Returns(true), crisis = x -> x.K < threshold))
-out.moments.crisis  # MomentArray for crisis filter
+out.moments.crisis  # MomentArray for crisis filter (out.stderrs: standard errors)
 
-# Cross-economy comparison:
+# Moments are lazy specs; getmoment(source, moment) dispatches on both (describe output / IRFResult /
+# EconomyResults / NamedTuple of economies / MomentTable)
 moment_defs = (
     MeanC = SimulationMoment(:C),
     StdK  = SimulationMoment(:K; stat=:std),
+    irf_C = ImpulseMoment(:C, :shock_5, 2; transformation = Transformations.DiffLevel()),
 )
-compare_economies(moment_defs, (; baseline=desc_base, alt=desc_alt))
+compare_economies(moment_defs, (; baseline = EconomyResults(stats_b, irf_b), alt = EconomyResults(stats_a, irf_a)))
+compare_economies(moment_defs, (:baseline, :alt), long_table)   # MomentTable columns: economy, kind, group, variable, stat, period, value
 ```
 
 ### Logging

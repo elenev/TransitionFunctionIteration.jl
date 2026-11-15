@@ -3,90 +3,86 @@
 [![Build Status](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CI.yml)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://elenev.github.io/TransitionFunctionIteration.jl/dev/)
 [![CompatHelper](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CompatHelper.yml/badge.svg)](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CompatHelper.yml)
-[![TagBot](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/TagBot.yml/badge.svg)](https://github.com/YourUsername/TransitionFunctionIteration.jl/actions/workflows/TagBot.yml)
+[![TagBot](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/TagBot.yml/badge.svg)](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/TagBot.yml)
 
-This is a package for globally solving macroeconomic models using Transition Function Iteration of Elenev, Landvoigt, and Van Nieuwerburgh (2021) or, optionally, also using the Simultaneous Transition and Policy Function Iteration (STPFI) algorithm introduced in Cao, Luo, and Nie (2023).
+A package for globally solving macroeconomic models with Transition Function Iteration (Elenev,
+Landvoigt, and Van Nieuwerburgh, 2021) or, optionally, Simultaneous Transition and Policy Function
+Iteration (STPFI, Cao, Luo, and Nie, 2023).
 
-A solved model is represented by three sets of functions of state variables, linearly interpolated on a (potentially irregular) rectangular grid. The first state is always the index of the Markov Chain governing exogenous state variable dynamics.
-- Solution functions `Pfct` containing the solutions to a nonlinear system of equations defining the equilibrium at each grid point in the state space.
-- Next-period functions `Vfct` containing equilibrium quantities and prices whose next-period values enter in expectation equilibrium conditions today. 
-- Transition functions `Tfct` which specify the next-period value of endogenous variables for each realization of exogenous variables next period.
+A solved model is a set of functions of the state variables, linearly interpolated on a (potentially
+irregular) rectangular grid. The first state is always the index of the Markov chain that drives the
+exogenous variables.
 
-The algorithm initializes these functions based on their deterministic steady-state values and iterates to convergence. The package also provides utilities to simulate, compute impulse responses, plot, and compare results.
+- **`Pfct`**: policies, the solution of the system of equilibrium conditions at each grid point.
+- **`Vfct`**: equilibrium quantities and prices whose next-period values enter today's conditions.
+- **`Tfct`**: next-period values of the endogenous states, for each realization of the exogenous state.
+- **`Ffct`** (optional): forecasting values, current-period quantities that next-period expectations
+  depend on. A model that has them needs STPFI.
+
+The solver starts from the deterministic steady state and iterates to convergence. The package also
+simulates, computes impulse responses, summarizes and compares results, and plots them. Results are
+Tables.jl tables with provenance in their metadata; [OutputVault.jl](https://github.com/elenev/OutputVault.jl)
+saves them.
 
 ## Installation
-
-Install the package using:
 
 ```julia-repl
 julia> using Pkg
 julia> Pkg.add("TransitionFunctionIteration")
 ```
 
-## Usage 
+Julia 1.12 or later.
 
-### Pre-requisites 
-To use, you must (1) define a custom struct that inherits from `AbstractModel` and contains your model parameters, and (2) implement a set of functions containing the "economics" of the model. The easiest way to get started is to run:
+## Getting started
 
-```julia-repl
-julia> generate_template("MyModel","/path/to/model_file.jl")
-```
-
-This will create a template file with shells for the functions you need to implement. They are:
-
-- `Exogenv(mdl::MyModel)` to overload the constructor of the exogenous environment struct `Exogenv` using the parameters of the model.
-- `define_endog_grids(mdl::MyModel, ::AbstractSteadyState)` to provide grid points for endogenous state variables
-- `compute_next_period_values(next, mdl::MyModel, mode::EvaluationMode)::NextPeriod` to provide, for a given exogenous state next period, elements of expectations operators in the equilibrium conditions, values of next-period variables, which enter transition functions, and any other next-period variables, whose values are needed to compute quantities of interest in simulation for a solved model.
-- `calc_eqm(state, policy, mdl::MyModel, np::NextPeriod, mode::EvaluationMode)` to evaluate the system of equations, whose solution defines an equilibrium at a given grid point, and to provide updated `Vfct` and `Tfct` values at the solution.
-
-### Usage
-
-Having defined the functions and instantiated your model `mdl = MyModel()`, solve it by:
-
-1. Calculating the steady state and initializing the dynamic model solution at the steady state:
+A model is a struct that inherits from `AbstractModel` and holds its parameters, plus five
+functions with its economics. The quickest start is a template with a shell for each:
 
 ```julia-repl
-julia> obj, stv = main_setup()
+julia> generate_template("MyModel", "/path/to/model_file.jl")
 ```
 
-2. Solve the model:
+| Function | Provides |
+|:--|:--|
+| `Exogenv(mdl)` | the discretized Markov process of the exogenous states |
+| `steadystate(mdl, ::AnalyticalSteadyStateMode)` | the deterministic steady state (or use `SystemSteadyStateMode` or `FixedPointSteadyStateMode`) |
+| `define_endog_grids(mdl, stv)` | grid points for the endogenous states |
+| `compute_next_period_values(next, mdl, mode)` | expectations and continuations at each next-period state |
+| `calc_eqm(state, policy, mdl, np, mode)` | the equilibrium conditions, and (by `mode`) the new `Vfct` and `Tfct` values or simulation variables |
 
-``` julia-repl
-julia>main_execute!(obj)
+With `mdl = MyModel()`:
+
+```julia
+obj, stv = main_setup(mdl)                    # steady state, grids, initial functions
+main_execute!(obj; maxiter = 1000)            # iterate to convergence (tol = -5 means a distance of 1e-5)
+
+simseries, errs = simulate(obj, stv)          # stochastic simulation
+stats    = describe(simseries).moments.uncond # MomentArray of moments
+errstats = calc_error_stats(errs)             # equation errors on the simulated states: judge accuracy by these
+irf      = simulate_irf(obj, simseries)       # impulse responses
 ```
 
-Subsequently, you can simulate the model using `simulate`, summarize the simulation using `describe`, and calculate impulse reponses using `simulate_irf`. An array of plotting tools is also available.
+**Choosing the method.** Ordinary models use `TFIMethod()` (the default), which computes expectations
+before solving at each grid point. A model in which the current choice changes next period's
+expectations, for example a portfolio that enters next period's consumption stage, declares those
+quantities with `forecasts_from_policy` and is solved with
+`main_execute!(obj; solmethod = STPFIMethod())`.
 
-### Extending Functionality
-
-Many other functions can be overloaded to extend functionality. Their shells are commented out. See below for details.
-
-- One of, depending on the method of computing the steady state:
-    - `steadystate` to define the deterministic steady state analytically (using `AnalyticalSteadyStateMode`)
-    - `steadystate_system` to define the deterministic steady state as a solution to a different (usually smaller) system of equations than the dynamic system (using `SystemSteadyStateMode`)
- Alternatively, the steady state can be calculated by solving the dynamic system of equations augmented with constant laws of motion for endogenous state variables. To do this, provide an initial guess when constructing `FixedPointSteadyStateMode`
-
-- `initial_guess_from_stv(stv::SteadyState, mdl::MyModel)` to adjust the steady state values before they're used to initialize the dynamic system.
-
-- `normalize_next_period_values(np::NextPeriod, mdl::MyModel, mode::EvaluationMode)` to transform next-period expectations before they enter the equilibrium conditions in `calc_eqm`. This can be useful if the transformation does not depend on the unknowns being solved for in `calc_eqm`, because it ensures that the (potentially costly) calculations involved in these transformations are done once, and not repeated for every guess as the system is being solved.
-
-- `normalize_fx_errors(::MyModel, fx_nt, simvars)` to normalize errors/residuals of equilibrium conditions, to make them comparable.
-
-- `augment_simulation(sim::StructVector, mdl::MyModel)` to augment a single $T$-period simulation of the model with additional variables not defined in `calc_eqm`. This is especially useful when these variables are _dynamic_, i.e., when they use values from adjacent periods (e.g., returns, growth rates).
+The [documentation](https://elenev.github.io/TransitionFunctionIteration.jl/dev/) has a quick start
+that builds and solves the neoclassical growth model step by step, the full model interface
+(optional hooks, bounds, steady-state modes), simulation and accuracy, moments and comparing
+economies, and tables and provenance.
 
 ## Examples
 
-The examples folder contains two models solved using this package.
+The `examples` folder holds two models, and is the reference for how a model is written.
 
-1. `ngm.jl`: Neoclassical Growth Model. The textbook model defined by equations below. This is an easy model to solve and, the log-linear approximation is very close to the global solution. In fact, the packages test suite uses the log-linear solution as a "check" on the correct implementation of the method.
-
-$$
-\begin{aligned}
- V(A,K) &= \max_{C,K'} \left\lbrace \frac{C^{1-\gamma}}{1-\gamma} + \beta E[V(A',K') | A] \right\rbrace \\
- &\text{s.t.} \\
- C + I &= A K^\alpha \\
- K' &= (1-\delta) K + I
-\end{aligned}
-$$
-
-2. `intermedap.jl`: An intermediary-asset pricing model with two agents, occasionally binding constraints, trend growth, and Epstein-Zin preferences. `examples/intermedap.pdf` contains the model details.
+1. `ngm.jl`: the neoclassical growth model, the minimal model. It is easy to solve, and its log-linear
+   approximation is close to the global solution; the test suite uses the log-linear solution as a check.
+   Start here.
+2. `intermedap.jl`: the advanced example, an intermediary asset pricing model with two agents,
+   occasionally binding constraints, trend growth and Epstein-Zin preferences (`intermedap.pdf` has the
+   model). It shows a steady state from a smaller system, bounds, normalization of expectations and
+   errors, augmented simulation variables, and `solve_and_simulate` with options for each stage,
+   conditional moments and IRF paths. It runs as shipped in about 20 seconds with one thread
+   (`julia --project=. examples/intermedap.jl`).

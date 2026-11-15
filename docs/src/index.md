@@ -29,7 +29,10 @@ exogenous state dynamics. The solver initializes all three sets of functions at 
 deterministic steady-state values and iterates to convergence using damped updates.
 
 The package also provides utilities to simulate stochastic paths, compute conditional and
-unconditional moments, simulate impulse responses, and plot results.
+unconditional moments, simulate impulse responses, compare economies through lazily defined
+[moments](guide/moments.md), and plot results. Every result type is a
+[Tables.jl table](guide/tables.md) with its provenance in metadata; saving results to disk is the
+job of the companion package OutputVault.jl, which stores them in a fixed layout of plain files.
 
 ## Installation
 

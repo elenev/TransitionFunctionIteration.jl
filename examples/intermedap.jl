@@ -1,4 +1,19 @@
-# Neoclassical Growth Model 
+# Intermediary asset pricing model: the advanced reference example of TransitionFunctionIteration.jl
+#
+# Two agents (a household and an intermediary), an occasionally binding leverage constraint, trend
+# growth and Epstein-Zin preferences; examples/intermedap.pdf has the model. Read it after ngm.jl for
+# what a model beyond the neoclassical growth model needs:
+#   - a steady state from a smaller system (SystemSteadyStateMode with steadystate_system; the
+#     alternative, FixedPointSteadyStateMode, is sketched at the bottom)
+#   - variable bounds, initial_guess_from_stv and vals_from_policy
+#   - normalization of expectations and of equation errors (normalize_next_period_values,
+#     normalize_fx_errors)
+#   - augment_simulation, for variables built from consecutive periods (growth rates, returns)
+#   - the solve_and_simulate wrapper with options for each stage (setup, solve, describe, IRF),
+#     conditional moments (describe filters) and IRFs that keep the paths of chosen variables
+#
+# It runs as shipped with the package's own dependencies: `julia --project=. examples/intermedap.jl`
+# takes about 20 seconds with one thread, including loading.
 using TransitionFunctionIteration, StaticArrays, StructArrays
 
 # Explicitly import functions that must be overloaded
@@ -287,7 +302,8 @@ end
 
 mdl = IntermediaryAssetPricingModel()
 
-# Configuration
+# Configuration, by stage: setup (steady state mode and its guess), solve (iteration options),
+# describe (conditional moments: periods of negative output growth), IRFs (keep paths of C and K)
 xguess = 0.018
 setup_opts = (mode = SystemSteadyStateMode((x=xguess,)), check_steadystate=true)
 exec_opts  = (; maxiter=1000, logging=COMPLETE)

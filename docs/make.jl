@@ -10,6 +10,8 @@ makedocs(
             "guide/quickstart.md",
             "guide/model.md",
             "guide/simulation.md",
+            "guide/moments.md",
+            "guide/tables.md",
         ],
         "API Reference" => "api.md",
     ]

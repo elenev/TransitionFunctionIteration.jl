@@ -17,22 +17,34 @@ Key keyword arguments for `simulate`:
 
 | Argument | Default | Description |
 |---|---|---|
-| `N_runs` | `1` | Number of simulation runs (paths) |
-| `N_periods` | `1000` | Length of each run |
-| `burn` | `200` | Burn-in periods discarded |
+| `sz` | `10_000 => 12` | Periods per run `=>` number of runs |
+| `burn` | `500` | Burn-in periods discarded |
 | `seed` | `100` | RNG seed for reproducibility |
+| `exog_start` | steady-state index | Exogenous state in the first period |
+| `endog_start` | `stv.endog` | Endogenous state in the first period |
+| `dynamic_align` | `:drop` | How variables defined from consecutive periods line up (see `augment_simulation`) |
+| `report_bounds` | `true` | Report the ranges of the simulated states against the grid |
+
+A simulation records where it came from (the solution's id, the TFI version and the settings
+above) in its `provenance`; see [Tables and Provenance](@ref).
 
 Runs are simulated in parallel across threads, so a model's `calc_eqm`, `augment_simulation`
 and `augment_errors` must be thread-safe (no shared mutable state or global RNG use).
 
 ## Computing moments
 
-`describe` summarizes a `SimulationPanel` and returns a `NamedTuple` of `MomentArray`s:
+`describe` summarizes a `SimulationPanel` and returns `(; moments, stderrs)`, each a `NamedTuple`
+of `MomentArray`s by sample:
 
 ```julia
 out = describe(simseries)
 out.moments.uncond   # MomentArray of unconditional moments
 ```
+
+The statistics are `:mean`, `:std`, `:minimum`, `:maximum`, `:ac` (first-order autocorrelation), the
+percentiles `:p5`, `:p25`, `:p50`, `:p75`, `:p95`, and `:cor_<state>_lag0` for each endogenous state
+(`correlation_vars` chooses the states and lags). Pass `additional_stats` to add statistics, either
+functions of one variable's series or `MultivariateStatFun`s that also read another variable.
 
 ### Conditional moments
 
@@ -54,21 +66,27 @@ that selects no observations yields NaN moments rather than an error.
 
 ### `MomentArray` access
 
-`MomentArray` rows are variable names and columns are statistics (`:mean`, `:std`, `:auto`,
-etc.). Several access patterns are available:
+`MomentArray` rows are variable names and columns are statistics. The names are part of the type,
+so lookup by name is resolved at compile time. Several access patterns are available:
 
 ```julia
 stats = out.moments.uncond
 stats(:C, :mean)                      # scalar
 stats((:C, :K), :mean)                # NamedTuple of means
 stats(:C, (:mean, :std))              # NamedTuple of stats for C
-stats[Val((:C,:K)), Val((:mean,))]    # MomentArray sub-view (compile-time dimensions)
+stats((:C, :K), (:mean, :std))        # MomentArray of the selected rows and columns
+stats(Val((:C, :K)), Val((:mean,)))   # the same with the names fixed at compile time
 ```
+
+A `MomentArray` also has a name for its column of row names when it is written as a table (its
+*row key*): `variable` for the statistics of `describe`, `equation` for `calc_error_stats`, `moment`
+for `compare_economies`. See [Tables and Provenance](@ref).
 
 ## Comparing economies
 
-`compare_economies` produces a formatted table of selected moments across multiple solved
-models. Define moments with `SimulationMoment` (a statistic of a simulated variable) or `ImpulseMoment` (a point on an impulse response), then pass a `NamedTuple` of economies: `describe` outputs, or `EconomyResults(describe(...).moments, irf)` when impulse moments are included:
+`compare_economies` builds a table of moments across economies. A moment is a lazy specification,
+`SimulationMoment` for a statistic of a simulated variable and `ImpulseMoment` for a point on an
+impulse response; the economies are `describe` outputs, or `EconomyResults` that also hold an IRF.
 
 ```julia
 moment_defs = (
@@ -80,8 +98,11 @@ moment_defs = (
 desc_base = describe(simseries_base)
 desc_alt  = describe(simseries_alt)
 
-compare_economies(moment_defs, (; baseline=desc_base, alt=desc_alt))
+compare_economies(moment_defs, (; baseline=desc_base.moments, alt=desc_alt.moments))
 ```
+
+See [Moments and Comparing Economies](@ref) for impulse moments, transformations, the base
+economy, and building the same table from saved results.
 
 ## Checking solution accuracy
 
@@ -92,8 +113,11 @@ errstats = calc_error_stats(errs)
 ```
 
 The resulting table reports max and mean absolute residuals for each equilibrium equation,
-evaluated at the simulated states. Large errors (above ~1e-4) indicate the solver may not
-have converged sufficiently or the grid is too coarse near the ergodic distribution.
+evaluated at the simulated states: one row per equation (and per transition), with the mean and
+the percentiles `:p50`, `:p75`, `:p90`, `:p95`, `:p99` and the maximum `:p100` of the absolute
+residual. Large errors (above ~1e-4) indicate the solver may not have converged sufficiently or
+the grid is too coarse near the ergodic distribution. Judge accuracy by these errors, not by the
+convergence flag of the solver.
 
 ## Impulse response functions
 
@@ -111,14 +135,22 @@ Key keyword arguments:
 | `T` | `20` | IRF horizon (periods) |
 | `N` | `5_000` | Number of draws for averaging |
 | `seed` | `100` | RNG seed |
-| `shocks` | `(;)` | `NamedTuple` of shock sizes (default: one-std deviations) |
+| `shocks` | one per other exogenous state, plus `uncond` | `NamedTuple` of forced exogenous paths: a state index or a vector of indices, e.g. `(up = 5, up2 = [5, 5])`; `uncond = Int[]` forces nothing |
+| `exog_start` | steady-state index | Exogenous state before the shock |
+| `path_vars` | `()` | Variables whose individual draws are kept (`irf_paths`) |
+| `other_stats` | `(;)` | Statistics besides the mean and standard deviation |
 
-`irf` is an `IRFResult`. Access paths as:
+`endogstart`, the second argument, is a `NamedTuple` of starting values, or a `SimulationPanel`, in
+which case the ergodic mean is used. `irf` is an `IRFResult`. Paths are indexed by shock:
 
 ```julia
-irf.means.A.C    # mean C response path to an A shock (length T)
-irf.stdevs.A.K   # std of K response path to an A shock
+propertynames(irf.means)   # the shock names, e.g. (:uncond, :shock_1, ...)
+irf.means.shock_5.C        # mean C path after the exogenous state moves to state 5 (length T)
+irf.stdevs.shock_5.K       # standard deviation of K across draws
 ```
+
+The first element of a path is the starting period, before the shock. The response to a shock
+is the shock path compared with the `uncond` path; `ImpulseMoment` and the plot recipes do this.
 
 ## Plotting
 

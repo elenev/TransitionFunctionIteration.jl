@@ -43,7 +43,7 @@ state variable. `stv` is the `SteadyState` computed earlier, so grids can be sca
 relative to steady-state values:
 
 ```julia
-function define_endog_grids(mdl::MyModel, stv)
+function define_endog_grids(mdl::MyModel, stv::AbstractSteadyState)
     K_grid = range(0.8, 1.2, length=40) * stv.endog.K
     return (; K = K_grid)
 end
@@ -151,6 +151,7 @@ These functions have sensible defaults but can be overloaded:
 |---|---|
 | `bounds(stv::SteadyState{MyModel})` | Variable bounds for solver transformation (default: all `Unbounded()`) |
 | `augment_simulation(run, mdl)` | Append extra variables to a simulation run |
+| `forecasts_from_policy(state, policy, mdl)` | Current-period quantities that next period's expectations depend on (a forecasting function `Ffct`) |
 | `augment_errors(obj, state, out, trans)` | Add model-specific convergence diagnostics to the error output |
 | `normalize_next_period_values(np, mdl, mode)` | Transform expectations before they enter `calc_eqm` |
 | `normalize_fx_errors(mdl, fx_nt, simvars)` | Normalize residuals for comparability |
@@ -171,22 +172,55 @@ end
 ```
 
 Available bound types: `Unbounded`, `LowerBounded`, `UpperBounded`, `IntervalBounded`
-(documented in the API reference). Convenience constructors:
+(documented in the API reference; none is exported, so `import TransitionFunctionIteration:
+PositiveBounded, IntervalBounded` or qualify them). Convenience constructors:
 `PositiveBounded() = LowerBounded(0.0)`, `NegativeBounded() = UpperBounded(0.0)`.
 
 ### Augmenting simulation output
 
-`augment_simulation(run, mdl)` receives a vector of T period-NamedTuples and should return
-a `(static_nt, dynamic_nt)` pair, where `static_nt` has T-length vectors (one per period)
-and `dynamic_nt` has (T-1)-length vectors (useful for period-over-period quantities such as
-gross returns):
+`augment_simulation(run, mdl)` receives a vector of the T period-NamedTuples of one simulation run
+and returns a `NamedTuple` of extra variables, one vector each. A vector of length T is a
+variable of each period; a vector of length T-1 is a variable of consecutive periods (such as a
+gross return) and is aligned according to `simulate`'s `dynamic_align`: with `:drop` (the default)
+the first period of the panel is dropped, with `:nan` the first value is `NaN`. Return `nothing`
+(the default) for no augmentation:
 
 ```julia
 function augment_simulation(run, mdl::MyModel)
-    R = [run[t].Y / run[t-1].K for t in 2:length(run)]
-    return (;), (; R)
+    R = [run[t].Y / run[t-1].K for t in 2:length(run)]    # T-1 values
+    return (; R)
 end
 ```
+
+### Forecasting functions and the choice of method
+
+Decide by one question: *does a variable chosen at this grid point change what next period's expectations
+are?* In an ordinary model the answer is no. Expectations at a grid point depend on the next-period
+state, which the transition functions already give, so `TFIMethod` (the default) computes them once
+before solving for the policy at that point. In some models the answer is yes: for example a portfolio
+chosen today enters next period's consumption stage, so the expectations depend on the very choice being
+solved for.
+
+Such a model declares those choices as *forecasting values*:
+
+```julia
+forecasts_from_policy(state, policy, mdl::MyModel) = (; portfolio = policy.m)   # names must not clash with state or Vfct names
+obj, stv = main_setup(mdl)
+main_execute!(obj; solmethod = STPFIMethod())
+```
+
+- `forecasts_from_policy(state, policy, mdl)` returns a `NamedTuple` of current-period quantities beyond the
+  next-period state. The solution then has a forecasting function `Ffct` over the state space, iterated
+  together with `Pfct`, `Vfct` and `Tfct`; the forecasting values appear in `next` in
+  `compute_next_period_values`.
+- `STPFIMethod` (Simultaneous Transition and Policy Function Iteration) recomputes expectations from the
+  solver's current guess instead of precomputing them. `TFIMethod` freezes them within a grid-point solve, so it
+  misses any effect of the policy on next period's expectations: where the policy acts on the equilibrium
+  only through those expectations, the choice has no effect in the solve.
+- `Ffct` is saved with the solution and is part of its identity (`solution_id`). Switching a model
+  between ordinary TFI and forecasting values changes the solution architecture; treat the two as
+  different solutions.
+- Convergence is reported separately for the value, transition and forecasting functions.
 
 ### Extra error diagnostics
 

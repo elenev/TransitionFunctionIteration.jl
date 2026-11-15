@@ -12,7 +12,8 @@ A model is a plain Julia struct that inherits from `AbstractModel` and holds all
 using TransitionFunctionIteration, StaticArrays
 
 import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids,
-                                     steadystate, compute_next_period_values, bounds
+                                     steadystate, compute_next_period_values, bounds,
+                                     PositiveBounded
 
 @kwdef struct NeoclassicalGrowthModel <: AbstractModel
     α::Float64 = 0.33   # capital share
@@ -44,7 +45,7 @@ function steadystate(model::NeoclassicalGrowthModel, ::AnalyticalSteadyStateMode
 end
 
 # Endogenous grid: capital
-function define_endog_grids(model::NeoclassicalGrowthModel, stv)
+function define_endog_grids(model::NeoclassicalGrowthModel, stv::AbstractSteadyState)
     K_grid = range(0.8, 1.2, length=20) * stv.endog.K
     return (; K = K_grid)
 end
@@ -87,8 +88,11 @@ main_execute!(obj; maxiter=1000)
 ```
 
 `main_setup` computes the steady state, builds the state space grid, and initializes the
-interpolants. `main_execute!` iterates to convergence; default tolerance is `1e-5` on the
-sup-norm distance between successive policy function iterates.
+interpolants. `main_execute!` iterates until the largest distance between successive iterates of the
+value and transition functions (and the forecasting function, if the model has one) is below `tol`,
+which is a `log10` distance: the default `tol = -5` means `1e-5`. `damp` is the weight on the
+previous iterate (0 is a full update, 1 freezes the functions), and `logging = COMPLETE` suppresses the
+iteration logs.
 
 ## Step 3: Simulate and summarize
 
@@ -98,8 +102,10 @@ stats    = describe(simseries).moments.uncond
 errstats = calc_error_stats(errs)
 ```
 
-`simseries` is a `SimulationPanel`; `stats` is a `MomentArray` of unconditional moments
-(mean, standard deviation, autocorrelation, etc.).
+`simseries` is a `SimulationPanel`; `stats` is a `MomentArray` of unconditional moments with
+one row per variable and one column per statistic (`:mean`, `:std`, `:minimum`, `:maximum`, `:ac`
+for the autocorrelation, the percentiles `:p5` to `:p95`, and correlations with the endogenous
+states, e.g. `:cor_K_lag0`). `errstats` has one row per equilibrium equation and transition.
 
 ```julia
 # Access specific moments
@@ -116,8 +122,8 @@ result = solve_and_simulate(ngm)
 # result.obj       -- ModelSolution
 # result.stv       -- SteadyState
 # result.simseries -- SimulationPanel
-# result.stats     -- MomentArray (unconditional)
-# result.errstats  -- error statistics
+# result.stats     -- describe(simseries).moments: a NamedTuple of MomentArrays by sample (uncond, ...)
+# result.errstats  -- error statistics (MomentArray)
 # result.irf       -- IRFResult
 ```
 
@@ -125,8 +131,28 @@ result = solve_and_simulate(ngm)
 
 ```julia
 irf = simulate_irf(obj, simseries)
-# irf.means.A.C  -- mean C response to an A shock
-# irf.means.A.K  -- mean K response to an A shock
+propertynames(irf.means)   # (:uncond, :shock_1, :shock_2, :shock_4, :shock_5)
+irf.means.shock_5.C        # mean path of C when the exogenous state jumps to state 5 in period 2
+irf.means.uncond.C         # mean path of C without a forced shock
+
+# name the shocks yourself: a forced path of exogenous state indices
+irf = simulate_irf(obj, simseries; shocks = (up = 5, down = 1, uncond = Int[]))
+irf.means.up.K
+```
+
+By default there is one shock per exogenous state other than the starting one (`shock_<index>`),
+plus the baseline `uncond`, which draws every period as usual. A response is a shock path
+compared with `uncond`.
+
+## Step 6: Save the results
+
+The result of `solve_and_simulate` has the shape that OutputVault.jl saves, with the model's parameters
+added (see its documentation for the configuration):
+
+```julia
+using OutputVault, Parquet2
+set_config!(Config(output_root = "/path/to/outputs", table_format = OutputVault.Formats.ParquetFormat()))
+save_result(RunHandle("baseline"; experdef = "demo"), merge(result, (; params = collect_parameters(result.obj))))
 ```
 
 See [Simulation and Analysis](@ref) for more on plotting, conditional moments, and

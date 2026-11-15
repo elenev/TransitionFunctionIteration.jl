@@ -5,7 +5,9 @@ Write a Julia source file to `filename` containing shells for all interface func
 that a model package must (or may) implement to use TransitionFunctionIteration.jl.
 
 `typename` is the name of the model struct (e.g., `"NeoclassicalGrowthModel"`).
-Required functions are uncommented; optional overloads are wrapped in block comments.
+Required functions (`Exogenv`, `define_endog_grids`, `steadystate`, `compute_next_period_values`,
+`calc_eqm`) are uncommented; optional overloads (bounds, `vals_from_policy`, a steady-state system,
+normalization, `augment_simulation`, `forecasts_from_policy`) are wrapped in block comments.
 """
 function generate_template(typename::Union{String,Symbol}, filename::String)
     T = string(typename)
@@ -153,7 +155,8 @@ end
 
 #=
 # Append derived variables to the simulation panel (e.g., growth rates, excess returns).
-# Return a NamedTuple of extra vectors; each becomes a column in the simulation output.
+# Return a NamedTuple of extra vectors (length T: a variable of each period; length T-1: of
+# consecutive periods); each becomes a column in the simulation output.
 import TransitionFunctionIteration: augment_simulation
 function augment_simulation(sim::StructVector, mdl::$T)
     return (;)
@@ -169,11 +172,23 @@ function initial_guess_from_stv(stv::SteadyState, mdl::$T)
 end
 =#
 
+#=
+# Forecasting values: current-period quantities, beyond the next-period state, that next period's
+# expectations depend on (e.g. a portfolio entering next period's consumption stage). They are
+# stored in a forecasting function Ffct and appear in `next` in compute_next_period_values.
+# A model with forecasting values is solved with STPFIMethod:
+#     main_execute!(obj; solmethod = STPFIMethod())
+import TransitionFunctionIteration: forecasts_from_policy
+function forecasts_from_policy(state, policy, mdl::$T)
+    return (;)   # names must not clash with state or Vfct names
+end
+=#
+
 # ── Usage ─────────────────────────────────────────────────────────────────────
 
 # mdl = $T()
 # obj, stv = main_setup(mdl)
-# main_execute!(obj)
+# main_execute!(obj)        # tol = -5 means a distance of 1e-5; STPFIMethod for forecasting values
 # simseries, errs = simulate(obj, stv)
 # stats = describe(simseries).moments.uncond
 """

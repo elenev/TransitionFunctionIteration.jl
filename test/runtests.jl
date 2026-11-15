@@ -81,6 +81,7 @@ end
     include("test_exogenv.jl")
     include("test_bounded.jl")
     include("test_stubs.jl")
+    include("test_template.jl")
     include("test_momentarray.jl")
     include("test_moments.jl")
     include("test_economics.jl")

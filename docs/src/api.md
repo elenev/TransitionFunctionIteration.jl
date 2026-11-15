@@ -103,6 +103,29 @@ IRFPage
 MomentArray
 row_names
 col_names
+row_key
+AbstractMoment
+SimulationMoment
+ImpulseMoment
+EconomyResults
+MomentTable
+getmoment
+moment_keys
+compare_economies
+describe
+calc_error_stats
+```
+
+## Simulation results and provenance
+
+```@docs
+SimulationPanel
+SimulationErrorPanel
+irf_paths
+solution_id
+Provenance
+SimulationSettings
+IRFSettings
 ```
 
 ## Logging
@@ -177,6 +200,24 @@ Filter = t -> begin
         TransitionFunctionIteration.MomentArray,
         TransitionFunctionIteration.row_names,
         TransitionFunctionIteration.col_names,
+        TransitionFunctionIteration.row_key,
+        TransitionFunctionIteration.AbstractMoment,
+        TransitionFunctionIteration.SimulationMoment,
+        TransitionFunctionIteration.ImpulseMoment,
+        TransitionFunctionIteration.EconomyResults,
+        TransitionFunctionIteration.MomentTable,
+        TransitionFunctionIteration.getmoment,
+        TransitionFunctionIteration.moment_keys,
+        TransitionFunctionIteration.compare_economies,
+        TransitionFunctionIteration.describe,
+        TransitionFunctionIteration.calc_error_stats,
+        TransitionFunctionIteration.SimulationPanel,
+        TransitionFunctionIteration.SimulationErrorPanel,
+        TransitionFunctionIteration.irf_paths,
+        TransitionFunctionIteration.solution_id,
+        TransitionFunctionIteration.Provenance,
+        TransitionFunctionIteration.SimulationSettings,
+        TransitionFunctionIteration.IRFSettings,
         TransitionFunctionIteration.ExecutionLogger,
         TransitionFunctionIteration.TerminalLogger,
         TransitionFunctionIteration.CSVLogger,

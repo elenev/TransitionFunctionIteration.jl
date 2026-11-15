@@ -60,21 +60,22 @@ function normalize_fx_errors(::AbstractModel, fx_nt, simvars)
 end
 
 """
-    augment_simulation(run, model) -> (static_nt, dynamic_nt)
+    augment_simulation(run, model) -> NamedTuple or nothing
 
 Compute extra variables for one simulation run after `simulate()` finishes.
 
-`run` is a `Vector` of T NamedTuples (one period per element). Return a 2-tuple where:
-- `static_nt`: `NamedTuple` of T-element vectors (aligned with `run`), or `(;)`
-- `dynamic_nt`: `NamedTuple` of (T-1)-element vectors (e.g., one-period returns computed
-  from consecutive pairs), or `(;)` if no dynamic variables are needed
+`run` is a `Vector` of T NamedTuples (one period per element). Return a `NamedTuple` of vectors,
+one per new variable:
+- a vector of T elements (aligned with `run`) is a variable of each period;
+- a vector of T-1 elements (e.g., one-period returns computed from consecutive pairs) is a
+  variable of consecutive periods.
 
-`run` covers the output periods plus one extra period. For `dynamic_align=:drop`, static
-results trim the first element and dynamic results align directly with the panel, whose first
-period is then dropped. For `dynamic_align=:nan`, static results are used as-is and dynamic
-results receive a leading `NaN`; the extra period is dropped at the end.
+`run` covers the output periods plus one extra period. For `dynamic_align=:drop`, T-element
+variables trim the first element and (T-1)-element variables align directly with the panel,
+whose first period is then dropped. For `dynamic_align=:nan`, T-element variables are used as-is
+and (T-1)-element variables receive a leading `NaN`; the extra period is dropped at the end.
 
-The default returns empty NamedTuples (no augmentation).
+The default returns `nothing` (no augmentation).
 """
 augment_simulation(::StructVector, ::AbstractModel) = nothing
 
@@ -496,7 +497,7 @@ function _build_correlation_functions(correlation_vars)
 end
 
 """
-    describe(simseries; filters=(uncond=Returns(true),), ...) -> (; moments, ses)
+    describe(simseries; filters=(uncond=Returns(true),), ...) -> (; moments, stderrs)
 
 Compute per-variable summary statistics for the simulation panel.
 
@@ -505,7 +506,7 @@ Compute per-variable summary statistics for the simulation panel.
 subsample of periods where the filter returns `true`. The default `Returns(true)` passes
 every period (unconditional moments).
 
-Returns `(; moments, ses)` where `moments` and `ses` are NamedTuples of `MomentArray`s,
+Returns `(; moments, stderrs)` where `moments` and `stderrs` are NamedTuples of `MomentArray`s,
 keyed by filter names. For the default `filters=(uncond=Returns(true),)`, access the
 unconditional moments via `out.moments.uncond`.
 """
