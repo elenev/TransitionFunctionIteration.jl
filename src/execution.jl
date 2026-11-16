@@ -344,15 +344,7 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bo
             _update_forecasts_at!(diag, i, new.ffct, damp)
         end
 
-        if use_threads
-            @batch per=thread for idx in eachindex(unsolved_state_indices)
-                _solve_loop!(idx, pass)
-            end
-        else
-            for idx in eachindex(unsolved_state_indices)
-                _solve_loop!(idx, pass)
-            end
-        end
+        threaded_foreach(idx -> _solve_loop!(idx, pass), eachindex(unsolved_state_indices); use_threads)
 
         Pfct_coeffs .= new_Pfct
 
@@ -558,8 +550,6 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
         throw(ArgumentError("damping must be :damped_iterate or :previous_solve, got :$damping"))
 
     iter = 1
-    original_threads = BLAS.get_num_threads()
-    BLAS.set_num_threads(1)  # To avoid thread oversubscription
 
     diag = IterationDiagnostics(obj)
     exec = (; maxiter, tol, damp, npasses, solmethod, damping)
@@ -635,7 +625,6 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
         end
     end
 
-    BLAS.set_num_threads(original_threads)  # Restore
     if isnothing(history_list) || isempty(history_list)
         history = nothing
     else

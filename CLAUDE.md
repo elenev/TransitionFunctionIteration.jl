@@ -172,8 +172,8 @@ execution, simulation, momentarray, logging, plotting, irfplotting, linearize, n
 - `StructArray` and `StaticStructArray` (SVector-backed) used throughout for performance.
 - `StaticArrays` (`SVector`, `SMatrix`) used wherever size is compile-time known; avoids allocation
   inside the hot solver loop.
-- `@batch` (Polyester.jl) for multithreading over grid points; `BLAS.set_num_threads(1)` inside
-  solver and simulation to avoid oversubscription.
+- `threaded_foreach` (`Threads.@threads`) for multithreading over grid points and simulation runs; it
+  limits BLAS to one thread while threaded, to avoid oversubscription.
 - Coefficients arrays are indexed as `coefs[cartesian_index]` -> `SVector` of nof values.
 
 ---

@@ -22,7 +22,7 @@ Key keyword arguments for `simulate`:
 | `seed` | `100` | RNG seed for reproducibility |
 | `exog_start` | steady-state index | Exogenous state in the first period |
 | `endog_start` | `stv.endog` | Endogenous state in the first period |
-| `dynamic_align` | `:drop` | How variables defined from consecutive periods line up (see `augment_simulation`) |
+| `context_periods` | `dynamic_depth(model)` | Periods simulated after the burn-in and dropped after augmentation, so that variables defined from consecutive periods have no `NaN` (see `augment_simulation`) |
 | `report_bounds` | `true` | Report the ranges of the simulated states against the grid |
 
 A simulation records where it came from (the solution's id, the TFI version and the settings
@@ -137,6 +137,7 @@ Key keyword arguments:
 | `seed` | `100` | RNG seed |
 | `shocks` | one per other exogenous state, plus `uncond` | `NamedTuple` of forced exogenous paths: a state index or a vector of indices, e.g. `(up = 5, up2 = [5, 5])`; `uncond = Int[]` forces nothing |
 | `exog_start` | steady-state index | Exogenous state before the shock |
+| `hold_periods` | `dynamic_depth(model)` | Periods the exogenous state is held at `exog_start` before the IRF; they fill the variables of `augment_simulation` in period 1 and are not output |
 | `path_vars` | `()` | Variables whose individual draws are kept (`irf_paths`) |
 | `other_stats` | `(;)` | Statistics besides the mean and standard deviation |
 

@@ -179,17 +179,21 @@ PositiveBounded, IntervalBounded` or qualify them). Convenience constructors:
 ### Augmenting simulation output
 
 `augment_simulation(run, mdl)` receives a vector of the T period-NamedTuples of one simulation run
-and returns a `NamedTuple` of extra variables, one vector each. A vector of length T is a
-variable of each period; a vector of length T-1 is a variable of consecutive periods (such as a
-gross return) and is aligned according to `simulate`'s `dynamic_align`: with `:drop` (the default)
-the first period of the panel is dropped, with `:nan` the first value is `NaN`. Return `nothing`
-(the default) for no augmentation:
+and returns a `NamedTuple` of extra variables, one vector each. A vector of length T - d is a
+variable that needs d periods of history (d = 0: a variable of each period; d = 1: a variable of
+consecutive periods, such as a gross return). It is aligned with the last T - d periods and the
+first d are `NaN`. `simulate` simulates `context_periods` periods before the output periods,
+augments them with the rest and drops them, so no `NaN` remains if `context_periods` is at least
+d. Declare the largest d in `dynamic_depth(mdl)`, which is the default of `context_periods` (and
+of `simulate_irf`'s `hold_periods`). Return `nothing` (the default) for no augmentation:
 
 ```julia
 function augment_simulation(run, mdl::MyModel)
     R = [run[t].Y / run[t-1].K for t in 2:length(run)]    # T-1 values
     return (; R)
 end
+
+dynamic_depth(::MyModel) = 1
 ```
 
 ### Forecasting functions and the choice of method

@@ -47,3 +47,24 @@ end
     @test isempty(irf_direct.other_stats)
     @test irf_direct.paths === paths
 end
+
+@testset "simulate_irf — hold periods fill the dynamic variables of period 1" begin
+    kw = (exog_start = 2, shocks = (uncond = Int[], up = 3), T = 6, N = 5)
+    irf = simulate_irf(obj_as, (x = 1.0,); kw...)          # default: dynamic_depth = 2
+    @test irf.provenance.settings.hold_periods == 2
+    for sh in (:uncond, :up)
+        @test length(irf.means[sh]) == 6                      # the held periods are not output
+    end
+    @test !any(isnan, irf.means.up.dexst) && !any(isnan, irf.means.up.ddexst)
+
+    # period 1 is the starting state for every shock; the shock arrives in period 2
+    @test irf.means.up.exst[1] == irf.means.uncond.exst[1] == 2
+    @test irf.means.up.exst[2] == 3
+    @test irf.means.up.dexst[1:2] == [0, 1] && irf.means.up.ddexst[1:2] == [0, 1]
+
+    # without held periods the history of period 1 is missing
+    irf0 = simulate_irf(obj_as, (x = 1.0,); kw..., hold_periods = 0)
+    @test length(irf0.means.up) == 6
+    @test isnan(irf0.means.up.dexst[1]) && all(isnan, irf0.means.up.ddexst[1:2])
+    @test irf0.means.up.exst[1:2] == [2, 3]
+end

@@ -20,6 +20,7 @@ steadystate
 TransitionFunctionIteration.steadystate_system
 define_endog_grids
 augment_simulation
+dynamic_depth
 augment_errors
 ```
 

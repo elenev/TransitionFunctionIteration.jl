@@ -107,3 +107,42 @@ end
         return StructArray(new_components)
     end
 end
+
+"""
+    with_blas_threads(f, n)
+
+Call `f()` with BLAS limited to `n` threads, then restore the previous number (also if `f` throws).
+The BLAS thread count is global to the process.
+"""
+function with_blas_threads(f::F, n) where {F}
+    original = BLAS.get_num_threads()
+    BLAS.set_num_threads(n)
+    try
+        return f()
+    finally
+        BLAS.set_num_threads(original)
+    end
+end
+
+"""
+    threaded_foreach(f, iter; use_threads = true)
+
+Call `f(x)` for every `x` in `iter`. With `use_threads` the calls run in parallel (`Threads.@threads`)
+and BLAS is limited to one thread meanwhile, to avoid oversubscribing the cores; otherwise they run
+in order and BLAS is left alone. `f` must be thread-safe and must not
+depend on the order of the calls.
+"""
+function threaded_foreach(f::F, iter; use_threads::Bool = true) where {F}
+    if use_threads
+        with_blas_threads(1) do
+            Threads.@threads for x in iter
+                f(x)
+            end
+        end
+    else
+        for x in iter
+            f(x)
+        end
+    end
+    return nothing
+end
