@@ -682,16 +682,14 @@ end
 
 """
     compare_economies(moment_defs, economies; base=1, models=nothing) -> MomentArray
-    compare_economies(moment_defs, economy_names, table; base=1) -> MomentArray
 
 Build a labeled table of moments across multiple economies.
 
 - `moment_defs`: NamedTuple of [`AbstractMoment`](@ref)s (rows of the output table); a bare
   variable name is a `SimulationMoment` with default settings
-- `economies`: NamedTuple of the economies' results (columns of the output table), each a
-  `describe()` output (`SimulationMoment`s only) or [`EconomyResults`](@ref)
-- `economy_names`, `table`: the economies' names and a long [`MomentTable`](@ref) (or any table
-  that converts to one) holding their statistics
+- `economies`: NamedTuple of the economies' results (columns of the output table), each a source
+  the moments can be read from: a `describe()` output (`SimulationMoment`s only) or an
+  [`EconomyResult`](@ref), or a project's own source type (OutputVault's tables of saved runs)
 
 Returns a `MomentArray` with moment names as rows and economy names as columns; each cell is
 `getmoment(economies, moment, economy, base)`.
@@ -723,17 +721,5 @@ function compare_economies(moment_defs::NamedTuple, economies::NamedTuple;
     else
         return stats
     end
-end
-
-function compare_economies(moment_defs::NamedTuple, economy_names::Union{Tuple, AbstractVector}, table;
-    base::Union{Integer,Symbol} = 1)
-
-    names = Tuple(Symbol.(economy_names))
-    base  = base isa Integer ? names[base] : base
-    moment_defs = map(v -> v isa AbstractMoment ? v : SimulationMoment(v), moment_defs)
-    source = MomentTable(table)
-
-    data = [getmoment(source, moment, econ, base) for moment in values(moment_defs), econ in names]
-    return MomentArray(data, keys(moment_defs), names; rowkey = :moment)
 end
 

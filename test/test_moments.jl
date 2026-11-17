@@ -12,6 +12,8 @@ using Tables, DataAPI
         __period = repeat(1:3, 4),
         C = scale .* [1.0, 2.0, 3.0, 1.0, 1.5, 2.0, 0.1, 0.2, 0.3, 0.1, 0.1, 0.1])
     irf(scale) = IRFResult(irf_table(scale))
+    params(scale) = TFI.MomentArray(reshape([0.9scale, 2.0scale], :, 1), (:β, :σ), (:value,); rowkey = :parameter)
+    result(scale) = EconomyResult(; stats = stats(scale), irf = irf(scale), params = params(scale))
 
     @testset "construction" begin
         sm = SimulationMoment(:C)
@@ -23,7 +25,7 @@ using Tables, DataAPI
     end
 
     @testset "getmoment dispatches on the moment" begin
-        res = EconomyResults(stats(1.0), irf(1.0))
+        res = result(1.0)
         @test getmoment(res, SimulationMoment(:K; stat = :std)) == 4.0
         @test getmoment(res, SimulationMoment(:C; sample = :bust)) == 10.0
         @test getmoment(res, ImpulseMoment(:C, :hike, 2)) == 2.0                       # Level: the path value
@@ -34,7 +36,7 @@ using Tables, DataAPI
         @test getmoment(stats(1.0), SimulationMoment(:C)) == 1.0
         @test getmoment(irf(1.0), ImpulseMoment(:C, :hike, 1)) == 1.0
         # errors name what is missing
-        @test_throws ArgumentError getmoment(EconomyResults(stats(1.0)), ImpulseMoment(:C, :hike, 2))
+        @test_throws ArgumentError getmoment(EconomyResult(; stats = stats(1.0)), ImpulseMoment(:C, :hike, 2))
         @test_throws KeyError getmoment(res, SimulationMoment(:nope))
         @test_throws KeyError getmoment(res, ImpulseMoment(:C, :cut, 2))
         @test_throws BoundsError getmoment(res, ImpulseMoment(:C, :hike, 9))
@@ -45,7 +47,7 @@ using Tables, DataAPI
                irf_C = ImpulseMoment(:C, :hike, 3; transformation = T.DiffLevel()))
 
     @testset "economies tuple" begin
-        economies = (base = EconomyResults(stats(1.0), irf(1.0)), big = EconomyResults(stats(2.0), irf(2.0)))
+        economies = (base = result(1.0), big = result(2.0))
         @test getmoment(economies, moments.mean_C, :big, :base) == 2.0
         @test getmoment(economies, moments.std_K, :big, :base) == 4.0     # DiffLevel against base: 8 - 4
         @test getmoment(economies, moments.std_K, :base, 1) == 4.0        # the base uses its transformation
@@ -59,26 +61,113 @@ using Tables, DataAPI
         @test legacy(:C, :big) == 2.0
     end
 
-    @testset "long table gives the same table" begin
-        rows = NamedTuple[]
-        for (econ, scale) in (("base", 1.0), ("big", 2.0)), m in values(moments)
-            res = EconomyResults(stats(scale), irf(scale))
-            vals = (TFI.momentvalues(res, m)[1], TFI.momentvalues(res, m)[2])
-            for (k, v) in zip(moment_keys(m), vals)
-                push!(rows, (; economy = econ, kind = String(k.kind), group = String(k.group),
-                             variable = String(k.variable), stat = String(k.stat), period = k.period, value = v))
-            end
+    @testset "CalculatedMoment" begin
+        allocs(f, args...) = (f(args...); @allocated f(args...))
+        res1 = result(1.0)
+        economies = (base = res1, big = result(2.0))
+        irfC = ImpulseMoment(:C, :hike, 3; transformation = T.DiffLevel())       # 1 * scale
+        stdK = SimulationMoment(:K; stat = :std)                                  # 4 * scale
+        total = CalculatedMoment(nt -> nt.irf_C + nt.std_K, (irf_C = irfC, std_K = stdK))
+        nested = CalculatedMoment(nt -> 2nt.total - nt.mean_C, (total = total, mean_C = SimulationMoment(:C)))
+
+        @test total isa AbstractMoment && total.transformation isa T.Level && total.compare_transformation isa T.Level
+        @test TFI.transformation(total) === total.transformation && TFI.compare_transformation(total) === total.compare_transformation
+        @test_throws ArgumentError CalculatedMoment(identity, (a = 1.0,))
+
+        @testset "values and nesting" begin
+            @test getmoment(res1, total) == 5.0                              # inputs use their own transformations
+            @test getmoment(res1, nested) == 9.0
+            @test getmoment(res1, CalculatedMoment(nt -> nt.a, (a = irfC,); transformation = T.Pct())) == 100.0
+            @test getmoment(economies, total, :big, :base) == 10.0           # Level compare: the calculated value
+            cmp = CalculatedMoment(total.f, total.inputs; compare_transformation = T.DiffLevel())
+            @test getmoment(economies, cmp, :big, :base) == 5.0              # 10 - 5; child compare_transformations play no role
+            @test getmoment(economies, cmp, :base) == 5.0
+            child_cmp = CalculatedMoment(nt -> nt.a, (a = SimulationMoment(:K; stat = :std, compare_transformation = T.DiffLevel()),))
+            @test getmoment(economies, child_cmp, :big, :base) == 8.0        # the child's DiffLevel is ignored
+            tab = compare_economies((total = total, nested = nested, std_K = stdK), economies)
+            @test tab(:total, :big) == 10.0 && tab(:nested, :base) == 9.0 && tab(:nested, :big) == 18.0
+            @test_throws ArgumentError getmoment(EconomyResult(; stats = stats(1.0)), total)
+            @test_throws KeyError getmoment(res1, CalculatedMoment(nt -> nt.a, (a = SimulationMoment(:nope),)))
         end
-        table = Tables.columntable(unique(rows))
-        economies = (base = EconomyResults(stats(1.0), irf(1.0)), big = EconomyResults(stats(2.0), irf(2.0)))
-        from_table = compare_economies(moments, (:base, :big), table)
-        @test from_table.data == compare_economies(moments, economies).data
-        @test row_names(from_table) == keys(moments) && col_names(from_table) == (:base, :big)
-        @test compare_economies(moments, [:big, :base], table; base = :big)(:std_K, :base) == -4.0
-        @test getmoment(TFI.MomentTable(table), moments.irf_C, :big) == 6.0
-        @test_throws KeyError getmoment(TFI.MomentTable(table), SimulationMoment(:K; stat = :p99), :big)
-        @test_throws ArgumentError TFI.MomentTable((economy = ["a"],))
-        @test_throws ArgumentError TFI.MomentTable(Tables.columntable([rows[1], rows[1]]))
+
+        @testset "inference and allocations" begin
+            @test (@inferred getmoment(res1, total)) == 5.0
+            @test (@inferred getmoment(res1, nested)) == 9.0
+            @test (@inferred getmoment(economies, total, :big, :base)) == 10.0
+            @test allocs(getmoment, res1, nested) <= allocs(getmoment, res1, irfC) + allocs(getmoment, res1, stdK) + allocs(getmoment, res1, SimulationMoment(:C))
+        end
+    end
+end
+
+struct ToyParametersModel <: TFI.AbstractModel
+    β::Float64
+    flag::Bool
+    label::String
+end
+
+@testset "Moments — parameters and calculated expressions" begin
+    T = TFI.Transformations
+    stats = (uncond = TFI.MomentArray([1.0 2.0; 3.0 4.0], (:C, :K), (:mean, :std)),)
+    params = TFI.MomentArray(reshape([0.9, 2.0], :, 1), (:β, :σ), (:value,); rowkey = :parameter)
+    res = EconomyResult(; stats, params)
+
+    @testset "collect_parameters" begin
+        p = collect_parameters(ToyParametersModel(0.9, true, "x"))
+        @test row_names(p) == (:β, :flag) && col_names(p) == (:value,) && p.data == reshape([0.9, 1.0], :, 1)
+        @test row_key(p) == :parameter
+    end
+
+    @testset "ParameterMoment" begin
+        @test getmoment(res, ParameterMoment(:β)) == 0.9
+        @test getmoment(res, ParameterMoment(:σ; transformation = T.Pct())) == 200.0
+        @test getmoment(EconomyResult(; params = (β = 0.5,)), ParameterMoment(:β)) == 0.5
+        @test getmoment((a = res, b = EconomyResult(; params = (β = 0.5, σ = 1.0))), ParameterMoment(:σ), :b, :a) == 1.0
+        @test_throws KeyError getmoment(res, ParameterMoment(:nope))
+        @test_throws ArgumentError getmoment(EconomyResult(; stats), ParameterMoment(:β))
+        @test_throws ArgumentError getmoment(EconomyResult(; params), SimulationMoment(:C))
+        @test_throws ArgumentError getmoment(stats, ParameterMoment(:β))     # a describe output cannot serve it
+    end
+
+    C = SimulationMoment(:C)                      # 1
+    K = SimulationMoment(:K; stat = :std)         # 4
+
+    @testset "@CalculatedMoment" begin
+        total = @CalculatedMoment C + K
+        @test total isa CalculatedMoment && getmoment(res, total) == 5.0
+        @test getmoment(res, @CalculatedMoment sqrt(K^2 + 2C)) == sqrt(18.0)
+        @test getmoment(res, @CalculatedMoment -C) == -1.0
+        @test getmoment(res, @CalculatedMoment log(1 + C / K)) ≈ log(1.25)
+        @test getmoment(res, @CalculatedMoment total * 2) == 10.0                # nests
+        @test getmoment(res, @CalculatedMoment C * ParameterMoment(:σ)) == 2.0   # any kind of moment
+        scaled(x; by) = x * by
+        @test getmoment(res, @CalculatedMoment scaled(K; by = 3.0)) == 12.0      # keywords are constants
+        @test getmoment(res, @CalculatedMoment max(C, K, 10.0)) == 10.0          # constants among moments
+        # a call with no moment among its arguments is the plain call
+        @test (@CalculatedMoment SimulationMoment(:C)) isa SimulationMoment
+        @test (@CalculatedMoment 1 + 2) == 3
+        ratio_of(v) = @CalculatedMoment SimulationMoment(v; stat = :std) / SimulationMoment(v)
+        @test getmoment(res, ratio_of(:K)) == 4 / 3
+        # equal expressions are ==, and reading is inferable
+        @test (@CalculatedMoment C + K) == (@CalculatedMoment C + K)
+        @test (@inferred getmoment(res, total)) == 5.0
+        @test getmoment((a = res, b = EconomyResult(; stats = (uncond = TFI.MomentArray([2.0 4.0; 6.0 8.0], (:C, :K), (:mean, :std)),))),
+                        total, :b, :a) == 10.0
+    end
+
+    @testset "@CalculatedMoment with named moments" begin
+        named = (mean_C = C, std_K = K)
+        @test getmoment(res, @CalculatedMoment named std_K / mean_C) == 4.0
+        x = 10.0
+        @test (@CalculatedMoment named x + 1) == 11.0                              # a variable in scope is a variable
+        @test getmoment(res, @CalculatedMoment named std_K - x) == -6.0
+        @test getmoment(res, @CalculatedMoment named named.std_K + mean_C) == 5.0   # field access: only the object is a name
+        @test_throws ArgumentError (@CalculatedMoment named nope / mean_C)
+    end
+
+    @testset "fallback" begin
+        @test_throws ArgumentError TFI.momentvalues(1.0, C)
+        err = try; getmoment(1.0, ParameterMoment(:β)); catch e; e; end
+        @test occursin("ParameterMoment", err.msg) && occursin("Float64", err.msg)
     end
 end
 
@@ -117,9 +206,6 @@ end
         @test row_key(d.moments.uncond) == :variable && row_key(d.stderrs.uncond) == :variable
         cmp = compare_economies((m = SimulationMoment(:C),), (a = d.moments, b = d.moments))
         @test row_key(cmp) == :moment
-        tab = compare_economies((m = SimulationMoment(:C),), (:a,), Tables.columntable((economy = ["a"], kind = ["simulation"],
-              group = ["uncond"], variable = ["C"], stat = ["mean"], period = [0], value = [1.0])))
-        @test row_key(tab) == :moment
     end
 
     @testset "reading" begin

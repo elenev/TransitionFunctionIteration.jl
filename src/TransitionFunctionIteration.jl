@@ -30,7 +30,7 @@ export main_setup, main_execute!, make_point, compute_expectations, TFIMethod, S
 
 # Simulation
 export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, augment_simulation, dynamic_depth, augment_errors
-export AbstractMoment, SimulationMoment, ImpulseMoment, EconomyResults, MomentTable, getmoment, moment_keys, compare_economies
+export AbstractMoment, SimulationMoment, ImpulseMoment, ParameterMoment, CalculatedMoment, @CalculatedMoment, EconomyResult, getmoment, compare_economies, collect_parameters
 export SimulationPanel, SimulationErrorPanel, endog_states, states
 
 # Tables and provenance
