@@ -122,6 +122,30 @@ outside the IRF is a `BoundsError`, and a moment that needs a part the `EconomyR
 `ImpulseMoment` without an IRF, say) is an `ArgumentError`, as is reading a moment from a source that
 cannot serve its type.
 
+## Writing a source
+
+A source is any object that can serve moments. [`getmoment`](@ref) and [`compare_economies`](@ref)
+read through one function, `momentvalues(source, moment)`, which returns the pair `(value, basis)`:
+the moment's value before its transformation, and the basis for the transformation (`nothing` for its
+default, which is what every moment but an `ImpulseMoment` has). A source needs one method per kind of
+moment it can serve, and a calculated moment then works on it with no further code, since it reads
+its inputs from the same source:
+
+```julia
+struct MyEconomy
+    values::Dict{Symbol, Float64}
+end
+
+TransitionFunctionIteration.momentvalues(e::MyEconomy, m::SimulationMoment) =
+    (e.values[Symbol(m.stat, "_", m.var)], nothing)     # a missing key is a KeyError that names it
+
+getmoment(MyEconomy(Dict(:mean_C => 1.0, :std_K => 0.2)), SimulationMoment(:K; stat = :std))
+```
+
+A moment type with no method for a source is an `ArgumentError`. OutputVault's saved results are a
+source in this sense: one `Dict` per economy, read through `momentvalues`. Both its row layout and
+its DuckDB queries are described in OutputVault's guide on querying with DuckDB.
+
 ## Comparing economies
 
 [`compare_economies`](@ref) tabulates moments (rows) across economies (columns) in a `MomentArray`

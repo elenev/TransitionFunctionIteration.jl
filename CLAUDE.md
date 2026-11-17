@@ -33,10 +33,10 @@ src/
   stubs.jl                -- Interface stubs (throw MethodNotImplementedError by default)
   transformations.jl      -- Transformations module (Level, Pct, DiffPct, AnnPct, etc.)
   statistics_types.jl     -- MomentArray, SimulationPanel, SimulationErrorPanel
-  moments.jl              -- AbstractMoment (SimulationMoment, ImpulseMoment), EconomyResults, MomentTable, getmoment
+  moments.jl              -- AbstractMoment (SimulationMoment, ImpulseMoment, ParameterMoment, CalculatedMoment, @CalculatedMoment), EconomyResult, collect_parameters, momentvalues, getmoment
   setup.jl                -- main_setup, steadystate dispatches, bounds fallback
   execution.jl            -- main_execute!, perform_iteration!, solve_at_point, EquilibriumSystem
-  simulation.jl           -- simulate, simulate_markov_chain, describe, linearize, compare_economies (economies and table forms)
+  simulation.jl           -- simulate, simulate_markov_chain, describe, linearize, compare_economies
   economics.jl            -- fisher_burmeister, crra/logutility/powerutility, ces, cobb_douglas,
                              epstein_zin_ce, return_on_ex_price, growth_rate
   exog.jl                 -- ExogenvAR1
@@ -221,15 +221,19 @@ type so that `Tables.columns` is inferred. Arithmetic/vcat/hcat/sub-selection ke
 out = describe(simseries; filters = (uncond = Returns(true), crisis = x -> x.K < threshold))
 out.moments.crisis  # MomentArray for crisis filter (out.stderrs: standard errors)
 
-# Moments are lazy specs; getmoment(source, moment) dispatches on both (describe output / IRFResult /
-# EconomyResults / NamedTuple of economies / MomentTable)
+# Moments are lazy specs; momentvalues(source, moment) -> (value, basis) is the one reading function and
+# getmoment(source, moment) applies the transformation. Sources: describe output (SimulationMoment), IRFResult
+# (ImpulseMoment), EconomyResult(; stats, irf, params), NamedTuple of economies, or a project's own source type
+# (OutputVault: a Dict per economy of saved rows). CalculatedMoment reads from any source serving its inputs.
 moment_defs = (
     MeanC = SimulationMoment(:C),
     StdK  = SimulationMoment(:K; stat=:std),
     irf_C = ImpulseMoment(:C, :shock_5, 2; transformation = Transformations.DiffLevel()),
+    beta  = ParameterMoment(:β),
+    mean_ratio = @CalculatedMoment mean(:C) / mean(:K),   # with mean(v) = SimulationMoment(v); see the moments guide
 )
-compare_economies(moment_defs, (; baseline = EconomyResults(stats_b, irf_b), alt = EconomyResults(stats_a, irf_a)))
-compare_economies(moment_defs, (:baseline, :alt), long_table)   # MomentTable columns: economy, kind, group, variable, stat, period, value
+compare_economies(moment_defs, (; baseline = EconomyResult(; stats = stats_b, irf = irf_b, params = collect_parameters(obj_b)),
+                                  alt      = EconomyResult(; stats = stats_a, irf = irf_a, params = collect_parameters(obj_a))))
 ```
 
 ### Logging
