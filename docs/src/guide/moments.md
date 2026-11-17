@@ -66,7 +66,7 @@ cor_r(v) = SimulationMoment(v; stat = :cor_r_lag0)
 
 ols_r(v) = @CalculatedMoment cor_r(v) * sd(v) / sd(:r)        # sd(:r) is a plain call: a SimulationMoment
 total    = @CalculatedMoment sqrt(sd(:C)^2 + 2 * mean(:K))
-tail     = @CalculatedMoment gampdf(2.0, 1.5, mean(:Y))       # any function, constants carried along
+mean_Y_floored = @CalculatedMoment max(mean(:Y), 1.5)         # any function, constants carried along (a number: mean Y, at least 1.5)
 ```
 
 With a collection of named moments as the first argument, a bare name that is not a variable in
