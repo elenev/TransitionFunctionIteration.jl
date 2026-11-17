@@ -86,7 +86,7 @@ for `compare_economies`. See [Tables and Provenance](@ref).
 
 `compare_economies` builds a table of moments across economies. A moment is a lazy specification,
 `SimulationMoment` for a statistic of a simulated variable and `ImpulseMoment` for a point on an
-impulse response; the economies are `describe` outputs, or `EconomyResults` that also hold an IRF.
+impulse response; the economies are `describe` outputs, or `EconomyResult`s that also hold an IRF and the parameters.
 
 ```julia
 moment_defs = (

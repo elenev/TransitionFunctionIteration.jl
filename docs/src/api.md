@@ -106,12 +106,17 @@ row_names
 col_names
 row_key
 AbstractMoment
+TransitionFunctionIteration.transformation
+TransitionFunctionIteration.compare_transformation
 SimulationMoment
 ImpulseMoment
-EconomyResults
-MomentTable
+ParameterMoment
+CalculatedMoment
+@CalculatedMoment
+TransitionFunctionIteration.lifted
+EconomyResult
+collect_parameters
 getmoment
-moment_keys
 compare_economies
 describe
 calc_error_stats
@@ -205,10 +210,15 @@ Filter = t -> begin
         TransitionFunctionIteration.AbstractMoment,
         TransitionFunctionIteration.SimulationMoment,
         TransitionFunctionIteration.ImpulseMoment,
-        TransitionFunctionIteration.EconomyResults,
-        TransitionFunctionIteration.MomentTable,
+        TransitionFunctionIteration.ParameterMoment,
+        TransitionFunctionIteration.CalculatedMoment,
+        TransitionFunctionIteration.var"@CalculatedMoment",
+        TransitionFunctionIteration.lifted,
+        TransitionFunctionIteration.transformation,
+        TransitionFunctionIteration.compare_transformation,
+        TransitionFunctionIteration.EconomyResult,
+        TransitionFunctionIteration.collect_parameters,
         TransitionFunctionIteration.getmoment,
-        TransitionFunctionIteration.moment_keys,
         TransitionFunctionIteration.compare_economies,
         TransitionFunctionIteration.describe,
         TransitionFunctionIteration.calc_error_stats,
