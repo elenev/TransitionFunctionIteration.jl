@@ -14,5 +14,4 @@
     end
     @test occursin("forecasts_from_policy(state, policy, mdl::MyModel)", src)
     @test !occursin("forecasts_from_policy", split(src, "#=")[1])
-    @test occursin("STPFIMethod", src)
 end

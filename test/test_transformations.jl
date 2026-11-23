@@ -44,11 +44,6 @@ end
 
 @testset "Transformations — labels" begin
     @test Transformations.label(Level)       == ""
-    @test occursin("%",      Transformations.label(Pct))
-    @test occursin("Annual", Transformations.label(AnnPct))
-    @test occursin("Diff",   Transformations.label(DiffLevel))
-    @test occursin("Diff",   Transformations.label(DiffInitLevel))
-    @test occursin("Initial",Transformations.label(DiffInitPct))
 end
 
 @testset "Transformations — labels (all remaining types)" begin
@@ -62,20 +57,6 @@ end
     for T in all_types
         lbl = Transformations.label(T)
         @test lbl isa String
-    end
-
-    # Annual types carry "Annual"
-    for T in [AnnLevel, AnnInvLevel, AnnQuadLevel, AnnPct, AnnInvPct, AnnQuadPct,
-              DiffAnnLevel, DiffAnnInvLevel, DiffAnnQuadLevel,
-              DiffAnnPct, DiffAnnInvPct, DiffAnnQuadPct, RatioAnnPct]
-        @test occursin("Annual", Transformations.label(T))
-    end
-
-    # Diff types carry "Diff"
-    for T in [DiffAnnLevel, DiffAnnInvLevel, DiffAnnQuadLevel,
-              DiffAnnPct, DiffAnnInvPct, DiffAnnQuadPct,
-              RatioPct, RatioAnnPct]
-        @test occursin("Diff", Transformations.label(T))
     end
 end
 

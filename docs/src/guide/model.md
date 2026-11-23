@@ -196,35 +196,43 @@ end
 dynamic_depth(::MyModel) = 1
 ```
 
-### Forecasting functions and the choice of method
+### Forecasting functions
 
-Decide by one question: *does a variable chosen at this grid point change what next period's expectations
-are?* In an ordinary model the answer is no. Expectations at a grid point depend on the next-period
-state, which the transition functions already give, so `TFIMethod` (the default) computes them once
-before solving for the policy at that point. In some models the answer is yes: for example a portfolio
-chosen today enters next period's consumption stage, so the expectations depend on the very choice being
-solved for.
-
-Such a model declares those choices as *forecasting values*:
+In some models next period's calculations need a current-period choice that is not a state variable: for
+example a portfolio chosen today enters next period's consumption stage. Such a model declares those
+choices as *forecasting values*:
 
 ```julia
 forecasts_from_policy(state, policy, mdl::MyModel) = (; portfolio = policy.m)   # names must not clash with state or Vfct names
-obj, stv = main_setup(mdl)
-main_execute!(obj; solmethod = STPFIMethod())
 ```
 
 - `forecasts_from_policy(state, policy, mdl)` returns a `NamedTuple` of current-period quantities beyond the
   next-period state. The solution then has a forecasting function `Ffct` over the state space, iterated
   together with `Pfct`, `Vfct` and `Tfct`; the forecasting values appear in `next` in
   `compute_next_period_values`.
-- `STPFIMethod` (Simultaneous Transition and Policy Function Iteration) recomputes expectations from the
-  solver's current guess instead of precomputing them. `TFIMethod` freezes them within a grid-point solve, so it
-  misses any effect of the policy on next period's expectations: where the policy acts on the equilibrium
-  only through those expectations, the choice has no effect in the solve.
 - `Ffct` is saved with the solution and is part of its identity (`solution_id`). Switching a model
-  between ordinary TFI and forecasting values changes the solution architecture; treat the two as
+  between having forecasting values and not changes the solution architecture; treat the two as
   different solutions.
 - Convergence is reported separately for the value, transition and forecasting functions.
+
+Forecasting values work with either solution method.
+
+### Choice of solution method
+
+`TFIMethod` (the default) computes the expectations at a grid point once, before solving for the policy at
+that point, and holds them fixed during the solve. It therefore misses any effect of the policy on next
+period's expectations. That is harmless when the policy also enters the equilibrium conditions directly.
+Where the policy acts on the equilibrium only through those expectations, the choice has no effect in the
+solve, and the model needs `STPFIMethod` (Simultaneous Transition and Policy Function Iteration), which
+recomputes the expectations from the solver's current guess instead of precomputing them:
+
+```julia
+obj, stv = main_setup(mdl)
+main_execute!(obj; solmethod = STPFIMethod())
+```
+
+Whether a model has forecasting values does not decide the method; either method can be used with or without
+them.
 
 ### Extra error diagnostics
 

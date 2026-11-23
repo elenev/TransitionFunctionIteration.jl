@@ -17,7 +17,7 @@ exogenous variables.
 - **`Vfct`**: equilibrium quantities and prices whose next-period values enter today's conditions.
 - **`Tfct`**: next-period values of the endogenous states, for each realization of the exogenous state.
 - **`Ffct`** (optional): forecasting values, current-period quantities that next-period expectations
-  depend on. A model that has them needs STPFI.
+  depend on.
 
 The solver starts from the deterministic steady state and iterates to convergence. The package also
 simulates, computes impulse responses, summarizes and compares results, and plots them. Results are
@@ -63,10 +63,10 @@ irf      = simulate_irf(obj, simseries)       # impulse responses
 ```
 
 **Choosing the method.** Ordinary models use `TFIMethod()` (the default), which computes expectations
-before solving at each grid point. A model in which the current choice changes next period's
-expectations, for example a portfolio that enters next period's consumption stage, declares those
-quantities with `forecasts_from_policy` and is solved with
-`main_execute!(obj; solmethod = STPFIMethod())`.
+before solving at each grid point and therefore misses any effect of the policy on next period's
+expectations. `STPFIMethod()` recomputes them from the solver's current guess; use it when a policy
+acts on the equilibrium only through those expectations, for example a portfolio that enters next
+period's consumption stage: `main_execute!(obj; solmethod = STPFIMethod())`.
 
 The [documentation](https://elenev.github.io/TransitionFunctionIteration.jl/dev/) has a quick start
 that builds and solves the neoclassical growth model step by step, the full model interface
