@@ -62,7 +62,7 @@ end
     prov = simseries.provenance
     @test prov isa Provenance{SimulationSettings}
     @test prov.solution == solution_id(obj) && prov.tfi_version == TFI.tfi_version()
-    @test prov.settings.seed == 100 && prov.settings.dynamic_align == :drop && prov.settings.exog_start isa String
+    @test prov.settings.seed == 100 && prov.settings.context_periods == 0 && prov.settings.exog_start isa String
     # one provenance object, shared by the error panel and by slices
     @test errs.provenance === prov
     @test simseries[:, 1:2].provenance === prov && view(errs, :, 1).provenance === prov
@@ -100,7 +100,7 @@ end
 @testset "simulate — supplied exogenous path" begin
     exog = fill(TFI.ssidx(obj.exogenv), 30, 2)
     s2, e2 = simulate(obj, exog; endog_start = stv.endog)
-    @test size(s2) == (29, 2) == size(e2)           # 30 rows: 29 output periods and the extra one
+    @test size(s2) == (30, 2) == size(e2)           # the model has no dynamic variables: no context periods
     @test isnothing(s2.provenance.settings.seed) && isnothing(s2.provenance.settings.exog_start)
     @test e2.provenance === s2.provenance
     @test SimulationPanel(roundtrip(s2)).provenance == s2.provenance

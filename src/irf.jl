@@ -61,7 +61,8 @@ end
 
 
 """
-    simulate_irf(obj, endogstart; shocks=(;), T=20, N=5_000, seed=100, ...)
+    simulate_irf(obj, endogstart; shocks=(;), T=20, N=5_000, seed=100,
+                 hold_periods=dynamic_depth(obj.model), ...)
 
 Simulate impulse response functions (IRFs) from a solved model `obj`.
 
@@ -71,6 +72,11 @@ Simulate impulse response functions (IRFs) from a solved model `obj`.
   state index or a vector of indices, e.g. `(hike = 5, hike2 = [5, 5])`; empty (the default) means
   one shock per other exogenous state plus the unconditional baseline `uncond = Int64[]`
 - `T`: IRF horizon (periods)
+- `hold_periods`: periods the exogenous state is held at `exog_start` before the IRF, starting
+  from `endogstart` with no shock. The endogenous state after them is the IRF's initial state
+  and the held periods supply the history of the variables of `augment_simulation`, so period 1
+  of the IRF has no `NaN` if `hold_periods` is at least `dynamic_depth(obj.model)` (the default).
+  The held periods are not part of the output.
 - `N`: number of Monte Carlo draws for expectation/fan charts
 - `seed`: random seed for reproducibility
 
@@ -84,7 +90,8 @@ function simulate_irf(obj::ModelSolution, endogstart;
     N=5_000,
     seed = 100,
     path_vars = (),
-    other_stats = (;),)
+    other_stats = (;),
+    hold_periods = dynamic_depth(obj.model),)
 
     stats = merge( (; mean, std), other_stats)
 
@@ -99,17 +106,17 @@ function simulate_irf(obj::ModelSolution, endogstart;
         shocks = merge( (uncond = Int64[],), shocks)
     end
 
-    # Generate random numbers
-    sz = T => N
+    # Generate random numbers (the first period is the starting state)
+    sz = (T - 1) => N
     rands = sample_shocks(sz, seed, 0)
 
     # Simulate IRF for each shock
     _simulate_irf_shock(shockvec) = simulate_irf_shock(obj, exog_start, 
-        endogstart, shockvec, rands, stats, path_vars)
+        endogstart, shockvec, rands, stats, path_vars, hold_periods)
 
     result = map(_simulate_irf_shock, shocks)
     provenance = Provenance(solution_id(obj), tfi_version(),
-                            IRFSettings(; seed, N, shocks = repr(shocks), endog_start = repr(endogstart)))
+                            IRFSettings(; seed, N, hold_periods, shocks = repr(shocks), endog_start = repr(endogstart)))
     return IRFResult(NotTable(), result; provenance)
 end
 
@@ -119,24 +126,22 @@ function simulate_irf_shock(obj::ModelSolution,
         shock::Union{Integer,AbstractVector{<:Integer}}, 
         rands::AbstractMatrix{<:AbstractFloat}, 
         stat_fcns::NamedTuple, 
-        path_vars::NTuple{NP, Symbol} where NP)
+        path_vars::NTuple{NP, Symbol} where NP,
+        hold_periods::Integer)
 
     # Simulate exogenus states
     shock = shock isa Integer ? [shock] : shock
     T_fixed = length(shock)
-    T = size(rands, 1) + 1
     N = size(rands, 2)
     last_fixed_exog = isempty(shock) ? start_exog : shock[end]
     exog, _ = simulate_markov_chain(obj.exogenv, last_fixed_exog, rands[T_fixed+1:end, :])
     #@debug "exog" exog
-    if !isempty(shock)
-        exog = vcat(fill(start_exog,1,N), repeat(shock, 1, N), exog[2:end,:])
-    else
-        exog = vcat(fill(start_exog,1,N), exog[2:end,:])
-    end
+    # Held periods at the starting state, then the forced and the random periods
+    held = fill(start_exog, 1 + hold_periods, N)
+    exog = vcat(held, repeat(shock, 1, N), exog[2:end,:])
 
     # Simulate model
-    sim, _ = simulate(obj, exog; endog_start=start_endog, report_bounds=false, dynamic_align=:nan)
+    sim, _ = simulate(obj, exog; endog_start=start_endog, report_bounds=false, context_periods=hold_periods)
 
     # Summarize
     _f(fcn, var) = map(fcn, eachrow(var))

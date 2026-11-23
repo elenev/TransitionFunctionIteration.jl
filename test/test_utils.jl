@@ -112,3 +112,30 @@ end
     @test (@inferred TFI.unrolled_any(isnan, wide)) === false
     @test (@inferred TFI.unrolled_any(isnan, wide_nan)) === true
 end
+
+@testset "with_blas_threads and threaded_foreach" begin
+    original = TFI.BLAS.get_num_threads()
+    TFI.BLAS.set_num_threads(2)
+    blas() = TFI.BLAS.get_num_threads()
+    try
+        # limited inside, restored after, also when f throws
+        @test TFI.with_blas_threads(blas, 1) == 1
+        @test blas() == 2
+        @test_throws ErrorException TFI.with_blas_threads(() -> error("boom"), 1)
+        @test blas() == 2
+
+        # every element is visited, in parallel with one BLAS thread or in order with BLAS untouched
+        for use_threads in (true, false)
+            seen, threads = zeros(Int, 8), zeros(Int, 8)
+            TFI.threaded_foreach(1:8; use_threads) do i
+                seen[i] += 1
+                threads[i] = blas()
+            end
+            @test seen == ones(Int, 8)
+            @test threads == fill(use_threads ? 1 : 2, 8)
+            @test blas() == 2
+        end
+    finally
+        TFI.BLAS.set_num_threads(original)
+    end
+end

@@ -92,22 +92,22 @@ end
     @test isnothing(extra)
 end
 
-@testset "augment_simulation — static merge :nan" begin
+@testset "augment_simulation — static variable, no context" begin
     N_runs, N_periods = 2, 6
     data = StructArray([(x = Float64(r * t),) for t in 1:N_periods, r in 1:N_runs])
 
-    result = TFI._update_simseries_with_augmented(data, (; model = AugModel()), :nan)
+    result = TFI._update_simseries_with_augmented(data, (; model = AugModel()), 0)
 
     @test :log_x in propertynames(result)
     @test size(result) == (N_periods, N_runs)
     @test result.log_x ≈ log.(data.x)
 end
 
-@testset "augment_simulation — dynamic merge :nan" begin
+@testset "augment_simulation — dynamic variable, context 0 keeps the NaN" begin
     N_runs, N_periods = 3, 5
     data = StructArray([(x = Float64(r + t),) for t in 1:N_periods, r in 1:N_runs])
 
-    result = TFI._update_simseries_with_augmented(data, (; model = AugModel()), :nan)
+    result = TFI._update_simseries_with_augmented(data, (; model = AugModel()), 0)
 
     @test :dx in propertynames(result)
     @test size(result) == (N_periods, N_runs)
@@ -115,15 +115,42 @@ end
     @test result.dx[2, 1] ≈ data.x[2, 1] - data.x[1, 1]
 end
 
-@testset "augment_simulation — dynamic merge :drop" begin
+@testset "augment_simulation — dynamic variable, context 1 drops the first period" begin
     N_runs, N_periods = 3, 5
     data = StructArray([(x = Float64(r + t),) for t in 1:N_periods, r in 1:N_runs])
 
-    result = TFI._update_simseries_with_augmented(data, (; model = AugModel()), :drop)
+    result = TFI._update_simseries_with_augmented(data, (; model = AugModel()), 1)
 
-    @test :dx in propertynames(result)
-    @test size(result, 1) == N_periods - 1                    # first period dropped
-    @test result.dx[1, 1] ≈ data.x[2, 1] - data.x[1, 1]     # aligns directly, no NaN
+    @test size(result) == (N_periods - 1, N_runs)             # first period dropped
+    @test result.x == data.x[2:end, :]
+    @test result.log_x ≈ log.(data.x[2:end, :])
+    @test result.dx[1, 1] ≈ data.x[2, 1] - data.x[1, 1]     # no NaN
+    @test !any(isnan, result.dx)
+end
+
+# AugDepthModel returns variables of lengths T-1 and T-2
+struct AugDepthModel <: AbstractModel end
+TFI.augment_simulation(run::StructVector, ::AugDepthModel) = (; dx = diff(run.x), ddx = diff(diff(run.x)))
+TFI.dynamic_depth(::AugDepthModel) = 2
+
+@testset "augment_simulation — T-2 variable is padded with two NaN" begin
+    N_runs, N_periods = 2, 6
+    data = StructArray([(x = Float64(t^2 + r),) for t in 1:N_periods, r in 1:N_runs])
+    model = (; model = AugDepthModel())
+
+    r0 = TFI._update_simseries_with_augmented(data, model, 0)
+    @test all(isnan, r0.dx[1, :]) && !any(isnan, r0.dx[2:end, :])
+    @test all(isnan, r0.ddx[1:2, :]) && !any(isnan, r0.ddx[3:end, :])
+    @test r0.ddx[3, 1] ≈ 2.0                                  # second difference of t^2
+
+    r1 = TFI._update_simseries_with_augmented(data, model, 1)
+    @test size(r1, 1) == N_periods - 1
+    @test !any(isnan, r1.dx) && all(isnan, r1.ddx[1, :]) && !any(isnan, r1.ddx[2:end, :])
+
+    r2 = TFI._update_simseries_with_augmented(data, model, 2)
+    @test size(r2, 1) == N_periods - 2
+    @test !any(isnan, r2.dx) && !any(isnan, r2.ddx)
+    @test r2.ddx == r0.ddx[3:end, :] && r2.x == data.x[3:end, :]
 end
 
 @testset "describe — filters" begin
@@ -317,27 +344,57 @@ end
     @test s1.data.exst != s3.data.exst          # a different seed changes the draws
 end
 
-# AugErrModel with one dynamic augmentation variable, for the period count of simulate
+# AugErrModel with lagged variables of the exogenous state index (which varies along a path),
+# for the periods of simulate
 struct AugSimModel <: AbstractModel end
 TFI.compute_next_period_values(next, ::AugSimModel, mode::EvaluationMode) =
     TFI.compute_next_period_values(next, AugErrModel(), mode)
 TFI.calc_eqm(state, policy, ::AugSimModel, np::NextPeriod, mode::EvaluationMode) =
     TFI.calc_eqm(state, policy, AugErrModel(), np, mode)
-TFI.augment_simulation(run::StructVector, ::AugSimModel) = (; dx = diff(run.x))
+TFI.augment_simulation(run::StructVector, ::AugSimModel) =
+    (; dexst = diff(run.exst), ddexst = diff(diff(run.exst)))
+TFI.dynamic_depth(::AugSimModel) = 2
 obj_as = ModelSolution(model = AugSimModel(), exogenv = e3, Pfct = pfct_ec, Vfct = vfct_ec, Tfct = tfct_ec, ssg = ssg_ex)
 
 @testset "simulate — panels have the requested periods" begin
     kw = (endog_start = (x = 1.0,), sz = 8 => 3, burn = 2, report_bounds = false)
-    for o in (obj_ec, obj_as), align in (:drop, :nan)
-        s, e = simulate(o; kw..., dynamic_align = align)
+    for o in (obj_ec, obj_as), c in 0:3
+        s, e = simulate(o; kw..., context_periods = c)
         @test size(s) == (8, 3) == size(e)
     end
-    # same draws: with a dynamic variable, :drop keeps periods 2-9 of the simulated path, :nan 1-8
-    sd, ed = simulate(obj_as; kw..., dynamic_align = :drop)
-    sn, en = simulate(obj_as; kw..., dynamic_align = :nan)
-    @test sd.x[1:end-1, :] == sn.x[2:end, :]
-    @test all(isnan, sn.dx[1, :]) && sd.dx[1, :] == sd.x[1, :] .- sn.x[1, :]
-    @test isequal(ed.data[1:end-1, :], en.data[2:end, :])        # errors for the same periods
-    # without one, :drop keeps the first periods too (the extra period goes at the end)
-    @test simulate(obj_ec; kw..., dynamic_align = :drop)[1].x == simulate(obj_ec; kw..., dynamic_align = :nan)[1].x
+    # the default is the model's dynamic_depth
+    @test simulate(obj_ec; kw...)[1].provenance.settings.context_periods == 0
+    @test simulate(obj_as; kw...)[1].provenance.settings.context_periods == 2
+    @test_throws ArgumentError simulate(obj_as; kw..., context_periods = -1)
 end
+
+@testset "simulate — context periods are dropped from the front after augmentation" begin
+    exog = rand(MersenneTwister(5), 1:3, 12, 3)          # same path for every context_periods
+    kw = (endog_start = (x = 1.0,), burn = 1, report_bounds = false)
+    s = Dict(c => simulate(obj_as, exog; kw..., context_periods = c) for c in 0:2)
+    sim(c) = s[c][1].data
+    err(c) = s[c][2].data
+
+    @test [size(sim(c), 1) for c in 0:2] == [11, 10, 9]
+    @test sim(1).exst == sim(0).exst[2:end, :] && sim(2).exst == sim(0).exst[3:end, :]
+    @test isequal(sim(1).dexst, sim(0).dexst[2:end, :]) && isequal(sim(2).dexst, sim(0).dexst[3:end, :])
+    @test isequal(sim(1).ddexst, sim(0).ddexst[2:end, :]) && isequal(sim(2).ddexst, sim(0).ddexst[3:end, :])
+    # NaN only where the history is missing
+    @test all(isnan, sim(0).dexst[1, :]) && !any(isnan, sim(0).dexst[2:end, :])
+    @test all(isnan, sim(0).ddexst[1:2, :])
+    @test !any(isnan, sim(1).dexst) && all(isnan, sim(1).ddexst[1, :]) && !any(isnan, sim(1).ddexst[2:end, :])
+    @test !any(isnan, sim(2).dexst) && !any(isnan, sim(2).ddexst)
+    # errors for the same periods
+    @test isequal(err(1), err(0)[2:end, :]) && isequal(err(2), err(0)[3:end, :])
+    # the first output period of context 2 follows two simulated periods
+    @test sim(2).exst[1, :] == exog[1 + 1 + 2, :]
+end
+
+@testset "simulate — without augmentation the context periods are still dropped" begin
+    exog = rand(MersenneTwister(6), 1:3, 10, 2)
+    kw = (endog_start = (x = 1.0,), burn = 0, report_bounds = false)
+    s0 = simulate(obj_ec, exog; kw..., context_periods = 0)[1]
+    s2 = simulate(obj_ec, exog; kw..., context_periods = 2)[1]
+    @test s2.data.exst == s0.data.exst[3:end, :]
+end
+

@@ -3,7 +3,6 @@ module TransitionFunctionIteration
 using Interpolations, NonlinearSolve, ForwardDiff, StaticArrays, StructArrays
 using RecipesBase
 using Logging, LinearAlgebra, Random, Statistics, StatsBase, PrettyTables
-using Polyester: @batch
 using Tables: Tables
 using MappedArrays: mappedarray
 import DataAPI, JSON, SHA
@@ -30,8 +29,8 @@ export ExogenvAR1, ergodic_distro, ssidx, exnpt, nex, transition_matrix, conditi
 export main_setup, main_execute!, make_point, compute_expectations, TFIMethod, STPFIMethod, fisher_burmeister
 
 # Simulation
-export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, augment_simulation, augment_errors
-export AbstractMoment, SimulationMoment, ImpulseMoment, EconomyResults, MomentTable, getmoment, moment_keys, compare_economies
+export simulate, simulate_markov_chain, sample_shocks, calc_error_stats, check_bounds, describe, linearize, augment_simulation, dynamic_depth, augment_errors
+export AbstractMoment, SimulationMoment, ImpulseMoment, ParameterMoment, CalculatedMoment, @CalculatedMoment, EconomyResult, getmoment, compare_economies, collect_parameters
 export SimulationPanel, SimulationErrorPanel, endog_states, states
 
 # Tables and provenance

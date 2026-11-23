@@ -238,7 +238,7 @@ Settings of a `simulate` call that the simulated data do not record:
 
 - `seed`: seed of the random draws, or `nothing` if the exogenous path was supplied
 - `burn`: burn-in periods dropped from the output
-- `dynamic_align`: `:drop` or `:nan` (see `simulate`)
+- `context_periods`: periods simulated after the burn-in and dropped after augmentation (see `simulate`)
 - `exog_start`: starting exogenous state, or `nothing` if the exogenous path was supplied
 - `endog_start`: starting endogenous states
 
@@ -247,7 +247,7 @@ The starting states are stored as their `repr`.
 @kwdef struct SimulationSettings
     seed::Union{Int,Nothing}
     burn::Int
-    dynamic_align::Symbol
+    context_periods::Int
     exog_start::Union{String,Nothing}
     endog_start::String
 end
@@ -259,6 +259,7 @@ Settings of a `simulate_irf` call that the IRF statistics do not record:
 
 - `seed`: seed of the random draws
 - `N`: number of draws per shock
+- `hold_periods`: periods the exogenous state is held at its start before the IRF (see `simulate_irf`)
 - `shocks`: the forced exogenous paths, e.g. `(uncond = Int64[], shock_2 = [2])`
 - `endog_start`: starting endogenous states (the means, if a panel was passed)
 
@@ -268,6 +269,7 @@ exogenous state are in the statistics themselves (line length, period-1 `exst`).
 @kwdef struct IRFSettings
     seed::Int
     N::Int
+    hold_periods::Int
     shocks::String
     endog_start::String
 end

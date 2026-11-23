@@ -1,9 +1,9 @@
 # Moments and Comparing Economies
 
 A *moment* is a lazy specification of one number per economy: it says which statistic of which
-variable, or which point of which impulse response, and how to transform it. Nothing is
-computed when a moment is defined, so the same list of moments can be read from economies held in
-memory or from saved results, and tabulated with [`compare_economies`](@ref).
+variable, which point of which impulse response, or which parameter, and how to transform it.
+Nothing is computed when a moment is defined, so the same list of moments can be read from
+economies held in memory or from saved results, and tabulated with [`compare_economies`](@ref).
 
 ## Defining moments
 
@@ -17,6 +17,7 @@ moments = (
     ac_Y   = SimulationMoment(:Y; stat = :ac, transformation = Pct()),
     mean_K_crisis = SimulationMoment(:K; sample = :crisis),
     irf_C  = ImpulseMoment(:C, :shock_5, 2; transformation = DiffLevel()),
+    beta   = ParameterMoment(:β),
 )
 ```
 
@@ -28,9 +29,55 @@ moments = (
   applied with the `uncond` path at the same period as the basis, so `DiffLevel()` is the response
   and `RatioPct()` the percentage response. The IRF is assumed to start at the stochastic steady
   state, where `uncond` is the no-shock baseline.
+- [`ParameterMoment`](@ref)`(name; transformation, compare_transformation)` is a model parameter, as
+  [`collect_parameters`](@ref) returns it.
+- [`CalculatedMoment`](@ref)`(f, inputs; transformation, compare_transformation)` is a function of
+  other moments. `inputs` is a `NamedTuple` of moments (which may be calculated moments too), and
+  `f` receives a `NamedTuple` with the same keys and the inputs' values in one economy:
 
-Both are subtypes of [`AbstractMoment`](@ref). A new kind of moment is a new subtype with a
-[`moment_keys`](@ref) and a `momentvalues` method.
+```julia
+irf_ratio = CalculatedMoment(nt -> nt.irf_C / nt.irf_Y,
+                             (irf_C = ImpulseMoment(:C, :shock_5, 2; transformation = DiffLevel()),
+                              irf_Y = ImpulseMoment(:Y, :shock_5, 2; transformation = DiffLevel())))
+```
+
+  Each input is read with its own `transformation` (its `compare_transformation` is ignored); the
+  calculated moment's own `transformation` and `compare_transformation` apply to the result, as
+  for any moment, and its transformation gets no basis. It reads from any source that serves all
+  its inputs. A lambda is convenient, but two specs with equal lambdas are not `==`; use a named
+  function if the spec must be stored.
+
+All are subtypes of [`AbstractMoment`](@ref). A new kind of moment is a new subtype with a
+`momentvalues` method per source that can serve it, and the accessors
+`TransitionFunctionIteration.transformation` and `compare_transformation` (the fields of those
+names by default).
+
+### Calculated moments as expressions
+
+[`@CalculatedMoment`](@ref) writes a calculated moment as an expression of moments. Every function
+call in it is made through [`lifted`](@ref TransitionFunctionIteration.lifted): the plain call if no
+argument is a moment, otherwise a calculated moment of the moment arguments. So any function of
+numbers works, operators included, with no list of supported functions:
+
+```julia
+mean(v) = SimulationMoment(v)
+sd(v)   = SimulationMoment(v; stat = :std)
+cor_r(v) = SimulationMoment(v; stat = :cor_r_lag0)
+
+ols_r(v) = @CalculatedMoment cor_r(v) * sd(v) / sd(:r)        # sd(:r) is a plain call: a SimulationMoment
+total    = @CalculatedMoment sqrt(sd(:C)^2 + 2 * mean(:K))
+mean_Y_floored = @CalculatedMoment max(mean(:Y), 1.5)         # any function, constants carried along (a number: mean Y, at least 1.5)
+```
+
+With a collection of named moments as the first argument, a bare name that is not a variable in
+scope is read from it:
+
+```julia
+@CalculatedMoment moments mean_C / std_K
+```
+
+Only calls are lifted: `if`, `&&`, broadcasting and anonymous functions are left as they are, and a
+moment passed as a keyword argument is not lifted.
 
 ### Transformations
 
@@ -55,20 +102,49 @@ it reads follows from the pair (source, moment type):
 |:--|:--|
 | `describe(...).moments` (a `NamedTuple` of `MomentArray`s by sample) | `SimulationMoment` |
 | an `IRFResult` | `ImpulseMoment` |
-| [`EconomyResults`](@ref)`(stats, irf)` | both |
-| a [`MomentTable`](@ref) (below), for one economy | both |
+| [`EconomyResult`](@ref)`(; stats, irf, params)` | all three; each part is optional |
+
+A calculated moment reads from any source that serves its inputs. Saved results are read through
+OutputVault, which provides a source for the runs of one economy.
 
 ```julia
 simseries, errs = simulate(obj, stv)
 irf = simulate_irf(obj, simseries)
-results = EconomyResults(describe(simseries).moments, irf)
+results = EconomyResult(; stats = describe(simseries).moments, irf, params = collect_parameters(obj))
 
 getmoment(results, moments.std_K)
 getmoment(results, moments.irf_C)
+getmoment(results, moments.beta)
 ```
 
-A missing sample, variable, statistic or shock is a `KeyError` that names it, a period outside the
-IRF is a `BoundsError`, and an `ImpulseMoment` on results without an IRF is an `ArgumentError`.
+A missing sample, variable, statistic, shock or parameter is a `KeyError` that names it, a period
+outside the IRF is a `BoundsError`, and a moment that needs a part the `EconomyResult` lacks (an
+`ImpulseMoment` without an IRF, say) is an `ArgumentError`, as is reading a moment from a source that
+cannot serve its type.
+
+## Writing a source
+
+A source is any object that can serve moments. [`getmoment`](@ref) and [`compare_economies`](@ref)
+read through one function, `momentvalues(source, moment)`, which returns the pair `(value, basis)`:
+the moment's value before its transformation, and the basis for the transformation (`nothing` for its
+default, which is what every moment but an `ImpulseMoment` has). A source needs one method per kind of
+moment it can serve, and a calculated moment then works on it with no further code, since it reads
+its inputs from the same source:
+
+```julia
+struct MyEconomy
+    values::Dict{Symbol, Float64}
+end
+
+TransitionFunctionIteration.momentvalues(e::MyEconomy, m::SimulationMoment) =
+    (e.values[Symbol(m.stat, "_", m.var)], nothing)     # a missing key is a KeyError that names it
+
+getmoment(MyEconomy(Dict(:mean_C => 1.0, :std_K => 0.2)), SimulationMoment(:K; stat = :std))
+```
+
+A moment type with no method for a source is an `ArgumentError`. OutputVault's saved results are a
+source in this sense: one `Dict` per economy, read through `momentvalues`. Both its row layout and
+its DuckDB queries are described in OutputVault's guide on querying with DuckDB.
 
 ## Comparing economies
 
@@ -76,8 +152,8 @@ IRF is a `BoundsError`, and an `ImpulseMoment` on results without an IRF is an `
 whose row key is `moment`:
 
 ```julia
-economies = (baseline = EconomyResults(stats_base, irf_base),
-             alt      = EconomyResults(stats_alt,  irf_alt))
+economies = (baseline = EconomyResult(; stats = stats_base, irf = irf_base),
+             alt      = EconomyResult(; stats = stats_alt,  irf = irf_alt))
 compare_economies(moments, economies)
 compare_economies(moments, economies; base = :alt)
 ```
@@ -91,27 +167,6 @@ compare_economies(moments, economies; base = :alt)
   models are added as rows, so that the table shows what was varied.
 
 The economies may also be `describe` outputs (a `NamedTuple` of `MomentArray`s by sample) when
-all moments are `SimulationMoment`s.
-
-## From a table of statistics
-
-Results saved to disk are read back as a long table, one row per statistic, for example by
-OutputVault's DuckDB query. A [`MomentTable`](@ref) wraps any such Tables.jl source with the
-columns `economy`, `kind`, `group`, `variable`, `stat`, `period` and `value`:
-
-| `kind` | `group` | `period` |
-|:--|:--|:--|
-| `simulation` | the sample (`uncond`, ...) | 0 |
-| `impulse` | the shock (`up`, ..., and the baseline `uncond`) | the IRF period |
-
-[`moment_keys`](@ref)`(moment)` lists the rows a moment needs, so a query can fetch only those.
-With the table, the same `getmoment` and `compare_economies` apply:
-
-```julia
-table = MomentTable(rows)                    # rows: any Tables.jl source
-getmoment(table, moments.std_K, :baseline)   # one economy, as for any other source
-compare_economies(moments, (:baseline, :alt), table)   # a MomentArray as above
-```
-
-Because both routes go through `momentvalues`, an in-memory comparison and one from saved
-results give the same numbers.
+all moments are `SimulationMoment`s. `getmoment(economies, moment, economy, base)` reads one cell.
+Any source with the `momentvalues` methods works as an economy, so results saved to disk give the
+same numbers as the same economies in memory.

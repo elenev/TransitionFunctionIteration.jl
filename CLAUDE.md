@@ -1,7 +1,7 @@
 # TransitionFunctionIteration.jl
 
 Generic Julia infrastructure for solving discrete-time dynamic equilibrium models globally via
-Transition Function Iteration (TFI). Developed by Vadim Elenev. Julia 1.11+.
+Transition Function Iteration (TFI). Developed by Vadim Elenev. Julia 1.12+.
 
 ---
 
@@ -33,10 +33,10 @@ src/
   stubs.jl                -- Interface stubs (throw MethodNotImplementedError by default)
   transformations.jl      -- Transformations module (Level, Pct, DiffPct, AnnPct, etc.)
   statistics_types.jl     -- MomentArray, SimulationPanel, SimulationErrorPanel
-  moments.jl              -- AbstractMoment (SimulationMoment, ImpulseMoment), EconomyResults, MomentTable, getmoment
+  moments.jl              -- AbstractMoment (SimulationMoment, ImpulseMoment, ParameterMoment, CalculatedMoment, @CalculatedMoment), EconomyResult, collect_parameters, momentvalues, getmoment
   setup.jl                -- main_setup, steadystate dispatches, bounds fallback
   execution.jl            -- main_execute!, perform_iteration!, solve_at_point, EquilibriumSystem
-  simulation.jl           -- simulate, simulate_markov_chain, describe, linearize, compare_economies (economies and table forms)
+  simulation.jl           -- simulate, simulate_markov_chain, describe, linearize, compare_economies
   economics.jl            -- fisher_burmeister, crra/logutility/powerutility, ces, cobb_douglas,
                              epstein_zin_ce, return_on_ex_price, growth_rate
   exog.jl                 -- ExogenvAR1
@@ -51,7 +51,8 @@ src/
 
 examples/
   ngm.jl                  -- Neoclassical Growth Model (canonical reference implementation)
-  intermedap.jl           -- Intermediary AP model (more complex, in-progress on rev202603)
+  intermedap.jl           -- Intermediary AP model (more complex; derivation in intermedap.typ/.pdf)
+  interpolations.jl       -- Interpolation examples
 
 test/
   runtests.jl             -- Test suite entry point
@@ -156,8 +157,8 @@ test/runtests.jl   -- loads all test_*.jl files
 ```
 
 Run with `julia --project -e "using Pkg; Pkg.test()"` or `]test` in the package REPL.
-Each test file covers one subsystem (statespace, exogenv, bounded, economics, interpolant,
-execution, simulation, momentarray, logging, plotting, irfplotting, linearize, ngm).
+Each `test_*.jl` file covers one subsystem (statespace, exogenv, bounded, economics, interpolant,
+execution, simulation, moments, tables, forecasts, template, Aqua, performance, ngm, and so on).
 
 ---
 
@@ -172,8 +173,8 @@ execution, simulation, momentarray, logging, plotting, irfplotting, linearize, n
 - `StructArray` and `StaticStructArray` (SVector-backed) used throughout for performance.
 - `StaticArrays` (`SVector`, `SMatrix`) used wherever size is compile-time known; avoids allocation
   inside the hot solver loop.
-- `@batch` (Polyester.jl) for multithreading over grid points; `BLAS.set_num_threads(1)` inside
-  solver and simulation to avoid oversubscription.
+- `threaded_foreach` (`Threads.@threads`) for multithreading over grid points and simulation runs; it
+  limits BLAS to one thread while threaded, to avoid oversubscription.
 - Coefficients arrays are indexed as `coefs[cartesian_index]` -> `SVector` of nof values.
 
 ---
@@ -187,7 +188,6 @@ execution, simulation, momentarray, logging, plotting, irfplotting, linearize, n
 
 ### Math
 - Standalone mathematical derivations files are usually in Typst. If updating those, make sure to use Typst syntax, not latex. Watch out for curly braces and backslashes. Those are Latex syntax, not Typst.
-- When 
 
 
 ### Memory
@@ -221,15 +221,19 @@ type so that `Tables.columns` is inferred. Arithmetic/vcat/hcat/sub-selection ke
 out = describe(simseries; filters = (uncond = Returns(true), crisis = x -> x.K < threshold))
 out.moments.crisis  # MomentArray for crisis filter (out.stderrs: standard errors)
 
-# Moments are lazy specs; getmoment(source, moment) dispatches on both (describe output / IRFResult /
-# EconomyResults / NamedTuple of economies / MomentTable)
+# Moments are lazy specs; momentvalues(source, moment) -> (value, basis) is the one reading function and
+# getmoment(source, moment) applies the transformation. Sources: describe output (SimulationMoment), IRFResult
+# (ImpulseMoment), EconomyResult(; stats, irf, params), NamedTuple of economies, or a project's own source type
+# (OutputVault: a Dict per economy of saved rows). CalculatedMoment reads from any source serving its inputs.
 moment_defs = (
     MeanC = SimulationMoment(:C),
     StdK  = SimulationMoment(:K; stat=:std),
     irf_C = ImpulseMoment(:C, :shock_5, 2; transformation = Transformations.DiffLevel()),
+    beta  = ParameterMoment(:β),
+    mean_ratio = @CalculatedMoment mean(:C) / mean(:K),   # with mean(v) = SimulationMoment(v); see the moments guide
 )
-compare_economies(moment_defs, (; baseline = EconomyResults(stats_b, irf_b), alt = EconomyResults(stats_a, irf_a)))
-compare_economies(moment_defs, (:baseline, :alt), long_table)   # MomentTable columns: economy, kind, group, variable, stat, period, value
+compare_economies(moment_defs, (; baseline = EconomyResult(; stats = stats_b, irf = irf_b, params = collect_parameters(obj_b)),
+                                  alt      = EconomyResult(; stats = stats_a, irf = irf_a, params = collect_parameters(obj_a))))
 ```
 
 ### Logging
@@ -256,9 +260,8 @@ conditional_distro(exogenv, state_idx)
 
 ---
 
-## Active work (branch rev202603)
+## Active work
 
 - `examples/intermedap.jl` is an intermediary asset pricing model under active development.
-- `augment_simulation` and related code is being updated and tested.
 
 ---
