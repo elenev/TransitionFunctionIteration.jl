@@ -1,6 +1,7 @@
 name = "TransitionFunctionIteration"
 uuid = "7ca8190d-a0e2-4989-8875-c3198677b17d"
 version = "0.5.0"
+authors = ["Vadim Elenev <47358678+elenev@users.noreply.github.com>"]
 
 [deps]
 DataAPI = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"

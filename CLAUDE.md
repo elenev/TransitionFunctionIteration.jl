@@ -1,7 +1,7 @@
 # TransitionFunctionIteration.jl
 
 Generic Julia infrastructure for solving discrete-time dynamic equilibrium models globally via
-Transition Function Iteration (TFI). Developed by Vadim Elenev. Julia 1.11+.
+Transition Function Iteration (TFI). Developed by Vadim Elenev. Julia 1.12+.
 
 ---
 
@@ -51,7 +51,8 @@ src/
 
 examples/
   ngm.jl                  -- Neoclassical Growth Model (canonical reference implementation)
-  intermedap.jl           -- Intermediary AP model (more complex, in-progress on rev202603)
+  intermedap.jl           -- Intermediary AP model (more complex; derivation in intermedap.typ/.pdf)
+  interpolations.jl       -- Interpolation examples
 
 test/
   runtests.jl             -- Test suite entry point
@@ -156,8 +157,8 @@ test/runtests.jl   -- loads all test_*.jl files
 ```
 
 Run with `julia --project -e "using Pkg; Pkg.test()"` or `]test` in the package REPL.
-Each test file covers one subsystem (statespace, exogenv, bounded, economics, interpolant,
-execution, simulation, momentarray, logging, plotting, irfplotting, linearize, ngm).
+Each `test_*.jl` file covers one subsystem (statespace, exogenv, bounded, economics, interpolant,
+execution, simulation, moments, tables, forecasts, template, Aqua, performance, ngm, and so on).
 
 ---
 
@@ -187,7 +188,6 @@ execution, simulation, momentarray, logging, plotting, irfplotting, linearize, n
 
 ### Math
 - Standalone mathematical derivations files are usually in Typst. If updating those, make sure to use Typst syntax, not latex. Watch out for curly braces and backslashes. Those are Latex syntax, not Typst.
-- When 
 
 
 ### Memory
@@ -260,9 +260,8 @@ conditional_distro(exogenv, state_idx)
 
 ---
 
-## Active work (branch rev202603)
+## Active work
 
 - `examples/intermedap.jl` is an intermediary asset pricing model under active development.
-- `augment_simulation` and related code is being updated and tested.
 
 ---
