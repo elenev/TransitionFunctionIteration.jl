@@ -142,6 +142,7 @@ end
         scaled(x; by) = x * by
         @test getmoment(res, @CalculatedMoment scaled(K; by = 3.0)) == 12.0      # keywords are constants
         @test getmoment(res, @CalculatedMoment max(C, K, 10.0)) == 10.0          # constants among moments
+        @test getmoment(res, @CalculatedMoment (a = 2; C * a)) == 2.0            # blocks and assignments pass through
         # a call with no moment among its arguments is the plain call
         @test (@CalculatedMoment SimulationMoment(:C)) isa SimulationMoment
         @test (@CalculatedMoment 1 + 2) == 3

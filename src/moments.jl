@@ -34,12 +34,17 @@ abstract type AbstractMoment end
 
 """
     transformation(moment)
-    compare_transformation(moment)
 
-The transformation applied when `moment` is reported, and the one applied to a non-base economy's
-value with the base economy's as the basis. Both default to the field of the same name.
+The transformation applied when `moment` is reported. Defaults to the field of the same name.
 """
 transformation(m::AbstractMoment) = m.transformation
+
+"""
+    compare_transformation(moment)
+
+The transformation applied to a non-base economy's value with the base economy's as the basis.
+Defaults to the field of the same name.
+"""
 compare_transformation(m::AbstractMoment) = m.compare_transformation
 
 """
