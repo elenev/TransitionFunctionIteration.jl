@@ -21,8 +21,7 @@ exogenous variables.
 
 The solver starts from the deterministic steady state and iterates to convergence. The package also
 simulates, computes impulse responses, summarizes and compares results, and plots them. Results are
-Tables.jl tables with provenance in their metadata; [OutputVault.jl](https://github.com/elenev/OutputVault.jl)
-saves them.
+Tables.jl tables with provenance in their metadata.
 
 ## Installation
 
@@ -86,3 +85,7 @@ The `examples` folder holds two models, and is the reference for how a model is 
    errors, augmented simulation variables, and `solve_and_simulate` with options for each stage,
    conditional moments and IRF paths. It runs as shipped in about 20 seconds with one thread
    (`julia --project=. examples/intermedap.jl`).
+
+## See also
+
+- [OutputVault.jl](https://github.com/elenev/OutputVault.jl) saves solutions, simulations, moments and IRFs in a fixed layout of plain files. TransitionFunctionIteration does not depend on it.
