@@ -122,7 +122,7 @@ mean is then used. Keyword arguments:
 | `T` | `20` | Length of each path, including the starting period |
 | `N` | `5_000` | Number of simulated paths per shock |
 | `seed` | `100` | RNG seed |
-| `shocks` | one per other exogenous state | `NamedTuple` of forced exogenous paths, each a state index or a vector of indices, e.g. `(up = 5, up2 = [5, 5])`; `uncond`, which forces nothing, is always added |
+| `shocks` | one per other exogenous state | `NamedTuple` of forced exogenous paths, each a state index or a vector of indices, e.g. `(up = 5, up2 = [5, 5])`; by default, `uncond`, which forces nothing, is included. With custom shocks, include it explicitly if needed: `(uncond = Int[], up = 5)` |
 | `exog_start` | steady-state index | Exogenous state in the starting period |
 | `hold_periods` | `dynamic_depth(model)` | Periods the exogenous state is held at `exog_start` before the starting period, to fill the variables of `augment_simulation`; not output |
 | `path_vars` | `()` | Variables whose individual paths are kept in `irf.paths`, needed for fan charts |
@@ -217,7 +217,7 @@ plot(irf, page, :shock_5; sd = 2, size = (900, 300))
 ```
 
 The third argument is a shock in `irf.means`. Each panel plots the mean path of the variable under
-that shock, transformed with the `uncond` path as its basis, against the periods `0:T-1`, counting
+that shock, transformed with the first path (`uncond` in this example) as its basis, against the periods `0:T-1`, counting
 the starting period as 0. Here `RatioPct()` gives the percentage response relative to the no-shock
 path, `100 (x / basis - 1)`, and `sd = 2` shades two standard deviations of the paths around the
 mean.
@@ -254,7 +254,7 @@ Keyword arguments, for a page and a single variable:
 | keyword     | default                  | meaning |
 |:------------|:-------------------------|:--------|
 | `pers`      | `0:T-1`                  | periods to plot, counting the starting period as 0 |
-| `basis`     | `:uncond`                | the path, a key of `irf.means`, used as the basis of the transformation |
+| `basis`     | first key of `irf.means` | the path, a key of `irf.means`, used as the basis of the transformation (`:uncond` in this example) |
 | `init`      | `nothing`                | a variable whose first value is the `init` of `DiffInitLevel` and `DiffInitPct`; by default the first value of the plotted variable |
 | `trend`     | `nothing`                | a variable passed to the transformation as `trend`, for transformations of your own; the built-in ones ignore it |
 | `sd`        | `false`                  | `true` or a multiplier `m`: shade `m` standard deviations around the mean |

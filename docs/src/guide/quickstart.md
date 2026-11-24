@@ -113,7 +113,7 @@ errstats = calc_error_stats(errs)
 
 There is one row per equilibrium condition (`fx1`, the Euler equation) and one per transition
 (`K`), and the columns are the mean and percentiles of the absolute error, with `p100` the
-largest. Errors of the order of `1e-5` mean the solution is accurate; if they are large, use a finer
+largest. Errors of the order of `1e-5` suggest the solution is accurate; if they are large, use a finer
 grid where the simulation goes. `simulate` also reports the simulated range of each state against
 its grid.
 
