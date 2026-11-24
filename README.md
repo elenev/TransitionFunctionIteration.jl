@@ -17,12 +17,11 @@ exogenous variables.
 - **`Vfct`**: equilibrium quantities and prices whose next-period values enter today's conditions.
 - **`Tfct`**: next-period values of the endogenous states, for each realization of the exogenous state.
 - **`Ffct`** (optional): forecasting values, current-period quantities that next-period expectations
-  depend on. A model that has them needs STPFI.
+  depend on.
 
 The solver starts from the deterministic steady state and iterates to convergence. The package also
 simulates, computes impulse responses, summarizes and compares results, and plots them. Results are
-Tables.jl tables with provenance in their metadata; [OutputVault.jl](https://github.com/elenev/OutputVault.jl)
-saves them.
+Tables.jl tables with provenance in their metadata.
 
 ## Installation
 
@@ -54,7 +53,7 @@ With `mdl = MyModel()`:
 
 ```julia
 obj, stv = main_setup(mdl)                    # steady state, grids, initial functions
-main_execute!(obj; maxiter = 1000)            # iterate to convergence (tol = -5 means a distance of 1e-5)
+main_execute!(obj; maxiter = 1000)            # iterate (tol = -5 means a distance of 1e-5); .status says how it ended
 
 simseries, errs = simulate(obj, stv)          # stochastic simulation
 stats    = describe(simseries).moments.uncond # MomentArray of moments
@@ -62,10 +61,12 @@ errstats = calc_error_stats(errs)             # equation errors on the simulated
 irf      = simulate_irf(obj, simseries)       # impulse responses
 ```
 
-**Choosing the method.** Ordinary models use `TFIMethod()` (the default), which computes expectations
-before solving at each grid point. A model in which the current choice changes next period's
-expectations, for example a portfolio that enters next period's consumption stage, declares those
-quantities with `forecasts_from_policy` and is solved with
+**Choosing the method.** `TFIMethod()` (the default) computes expectations at each grid point once,
+from the stored transition and forecasting functions, and then solves for the policy.
+`STPFIMethod()` solves for the policy and the next-period states together, recomputing expectations
+at every step. Both support forecasting functions and have the same solution. TFI fails only when a
+policy variable enters the equilibrium conditions solely through next period's state or forecasting
+values; `main_execute!` then stops with `status = :all_failed`, and such a model needs
 `main_execute!(obj; solmethod = STPFIMethod())`.
 
 The [documentation](https://elenev.github.io/TransitionFunctionIteration.jl/dev/) has a quick start
@@ -86,3 +87,7 @@ The `examples` folder holds two models, and is the reference for how a model is 
    errors, augmented simulation variables, and `solve_and_simulate` with options for each stage,
    conditional moments and IRF paths. It runs as shipped in about 20 seconds with one thread
    (`julia --project=. examples/intermedap.jl`).
+
+## See also
+
+- [OutputVault.jl](https://github.com/elenev/OutputVault.jl) saves solutions, simulations, moments and IRFs in a fixed layout of plain files.

@@ -48,6 +48,31 @@ function calc_eqm(state, policy, m::ForecastNGM, np::NextPeriod, mode::Evaluatio
     return (; fx, trans, simvars = (; Y, C))
 end
 
+# A variant whose Euler residual uses the expectation as it is, so today's C enters it only through
+# the forecast Cnow. Within a TFI solve the forecast is fixed, so the residual does not depend on the
+# policy and the solver fails at every point.
+struct OnlyForecastNGM <: AbstractModel
+    base::ForecastNGM
+end
+for f in (:forecasts_from_policy, :vals_from_policy)
+    @eval $f(state, policy, m::OnlyForecastNGM) = $f(state, policy, m.base)
+end
+Exogenv(m::OnlyForecastNGM) = Exogenv(m.base)
+define_endog_grids(m::OnlyForecastNGM, stv::AbstractSteadyState) = define_endog_grids(m.base.base, stv)
+function steadystate(m::OnlyForecastNGM, mode::AnalyticalSteadyStateMode)
+    s, ok = steadystate(m.base.base, mode)
+    SteadyState(; model = m, exog = s.exog, endog = s.endog, values = s.values, guess = s.guess), ok
+end
+bounds(::SteadyState{OnlyForecastNGM}) = ((C = TransitionFunctionIteration.PositiveBounded(),),
+                                           (K = TransitionFunctionIteration.PositiveBounded(),))
+compute_next_period_values(next, m::OnlyForecastNGM, mode::EvaluationMode) = compute_next_period_values(next, m.base, mode)
+function calc_eqm(state, policy, m::OnlyForecastNGM, np::NextPeriod, mode::EvaluationMode = SolveMode())
+    out = calc_eqm(state, policy, m.base, np, mode)
+    fx = SVector(1 - np.expectations.euler_kernel,)
+    mode isa SolveMode && return fx
+    return merge(out, (; fx))
+end
+
 @testset "Forecasting functions" begin
     fm = ForecastNGM(NeoclassicalGrowthModel())
 
@@ -72,6 +97,7 @@ end
     @testset "TFIMethod reproduces the NGM solution" begin
         objf, _ = main_setup(fm)
         res = main_execute!(objf; maxiter = 1000, tol = -7, logging = COMPLETE, solmethod = TFIMethod())
+        @test res.status == :converged
         @test res.distF < -7
         @test isapprox(coefficients(objf.Pfct), coefficients(obj.Pfct); rtol = 1e-5)
         # the stored forecasts equal the solved policy at every point (up to the iteration tolerance)
@@ -79,6 +105,28 @@ end
                        TransitionFunctionIteration.to_constrained(coefficients(objf.Pfct)[i][1], objf.Pfct_bounds.C);
                        atol = 1e-6),
                   eachindex(coefficients(objf.Ffct)))
+    end
+
+    @testset "main_execute! exit states" begin
+        # every point fails: exits after the first iteration with status :all_failed, logged at COMPLETE
+        objo, _ = main_setup(OnlyForecastNGM(fm))
+        buf = IOBuffer()
+        res = main_execute!(objo; maxiter = 50, solmethod = TFIMethod(), logging = TerminalLogger(COMPLETE; io = buf))
+        @test res.status == :all_failed
+        @test res.iter == 1
+        @test contains(String(take!(buf)), "Solver failed at every grid point.")
+        # A point that fails keeps its own policy, also when its guesses come from its neighbors in
+        # the second pass. Start from a policy that differs at every point, so a neighbor's guess differs.
+        objn, _ = main_setup(OnlyForecastNGM(fm))
+        pc = coefficients(objn.Pfct)
+        foreach(k -> pc[k] = pc[k] .+ 0.01k, eachindex(pc))
+        pfct_before = copy(pc)
+        resn = main_execute!(objn; maxiter = 1, npasses = 2, solmethod = TFIMethod(), logging = COMPLETE)
+        @test resn.status == :all_failed
+        @test coefficients(objn.Pfct) == pfct_before
+        # maximum iterations
+        objm, _ = main_setup(fm)
+        @test main_execute!(objm; maxiter = 2, logging = COMPLETE).status == :maxiter
     end
 
     @testset "STPFIMethod reproduces the NGM solution" begin

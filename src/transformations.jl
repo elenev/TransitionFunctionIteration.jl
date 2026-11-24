@@ -3,6 +3,15 @@ module Transformations
 
 abstract type AbstractTransformation end
 
+"""
+    requires_basis(transformation) -> Bool
+
+Whether reading an impulse moment needs a separate baseline path. Defaults to `true` for
+custom transformations; overload with `false` when the transformation ignores `basis`.
+This controls data retrieval, not the default numeric basis of a transformation call.
+"""
+requires_basis(::AbstractTransformation) = true
+
 Base.broadcastable(t::Type{<:AbstractTransformation}) = Ref(t)
 
 # Levels
@@ -36,6 +45,9 @@ struct RatioAnnPct    <: AbstractTransformation end
 struct DiffInitLevel        <: AbstractTransformation end
 struct DiffInitPct          <: AbstractTransformation end
 
+requires_basis(::Union{Level,AnnLevel,AnnInvLevel,AnnQuadLevel,
+                      Pct,AnnPct,AnnInvPct,AnnQuadPct,DiffInitLevel,DiffInitPct}) = false
+
 ## Functions
 
 const ANN = 4
@@ -58,7 +70,7 @@ end
 (t::AnnQuadLevel)(x, basis, trend, basistrend, init) = x * sqrt(ANN)
 (t::Pct)(x, basis, trend, basistrend, init) = x * PCT
 (t::AnnPct)(x, basis, trend, basistrend, init) = x * ANN * PCT
-(t::AnnInvPct)(x, basis, trend, basistrend, init) = x / ANN
+(t::AnnInvPct)(x, basis, trend, basistrend, init) = x / ANN * PCT
 (t::AnnQuadPct)(x, basis, trend, basistrend, init) = x * sqrt(ANN) * PCT
 (t::DiffLevel)(x, basis, trend, basistrend, init) = x - basis
 (t::DiffAnnLevel)(x, basis, trend, basistrend, init) = (x - basis) * ANN

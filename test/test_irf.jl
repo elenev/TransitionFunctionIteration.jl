@@ -29,6 +29,24 @@ end
     @test :C in propertynames(irf2.paths.pos_shock)
 end
 
+@testset "fan chart of simulate_irf paths: bands are quantiles across paths by period" begin
+    # T ≠ N, so reading the stored T × N paths the wrong way round cannot pass
+    # (RecipesBase.is_key_supported is stubbed in test_irfplotting.jl)
+    irf_f = simulate_irf(obj, simseries; shocks = (up = 5,), path_vars = (:C,), T = 10, N = 100)
+    paths = irf_f.paths.up.C
+    @test size(paths) == (10, 100)
+    specs = RecipesBase.apply_recipe(Dict{Symbol,Any}(:fan => 2, :tail_pct => 5.0),
+                                     irf_f, TFI.ReportedVariable(:C), :up)
+    for (k, p_lo) in enumerate((0.05, 0.275))
+        pers, y_lo = specs[k].args
+        @test pers == 0:9
+        @test y_lo ≈ [quantile(paths[t, :], p_lo) for t in 1:10]
+        @test specs[k].plotattributes[:fillrange] ≈ [quantile(paths[t, :], 1 - p_lo) for t in 1:10]
+    end
+    # every path starts at the same state, so the fan has zero width in the starting period
+    @test specs[1].args[2][1] ≈ specs[1].plotattributes[:fillrange][1]
+end
+
 @testset "simulate_irf — NamedTuple endogstart" begin
     irf3 = simulate_irf(obj, stv.endog)
     irf_ref = simulate_irf(obj, simseries)

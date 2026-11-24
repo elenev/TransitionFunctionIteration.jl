@@ -176,7 +176,8 @@ end
 # Forecasting values: current-period quantities, beyond the next-period state, that next period's
 # expectations depend on (e.g. a portfolio entering next period's consumption stage). They are
 # stored in a forecasting function Ffct and appear in `next` in compute_next_period_values.
-# A model with forecasting values is solved with STPFIMethod:
+# Both TFIMethod and STPFIMethod support them. TFIMethod needs every policy variable to enter the
+# residuals directly, not only through next-period states or forecasts; otherwise use
 #     main_execute!(obj; solmethod = STPFIMethod())
 import TransitionFunctionIteration: forecasts_from_policy
 function forecasts_from_policy(state, policy, mdl::$T)
@@ -188,7 +189,7 @@ end
 
 # mdl = $T()
 # obj, stv = main_setup(mdl)
-# main_execute!(obj)        # tol = -5 means a distance of 1e-5; STPFIMethod for forecasting values
+# main_execute!(obj)        # tol = -5 means a distance of 1e-5
 # simseries, errs = simulate(obj, stv)
 # stats = describe(simseries).moments.uncond
 """

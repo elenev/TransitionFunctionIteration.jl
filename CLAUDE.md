@@ -16,9 +16,14 @@ Two solution methods:
 - `TFIMethod` (default): pre-computes expectations from the transition function before solving policy.
 - `STPFIMethod`: solves policy and transition functions simultaneously (Cao, Luo, Nie).
 
-Which method a model needs: `TFIMethod` computes expectations before solving for the policy,
-so it misses any effect of the policy on next period's expectations. Models where a policy acts
-only through those expectations need `STPFIMethod`.
+Which method a model needs: within a grid-point solve, `TFIMethod` holds the expectations fixed
+(built from the stored Tfct and Ffct) and varies only the policy; `STPFIMethod` adds the transitions
+as unknowns and recomputes forecasts and expectations from the current guess. Both support
+forecasting functions (`Ffct`) and share the same fixed point (test/test_forecasts.jl). TFI fails only
+when a policy variable enters the `calc_eqm` residuals solely through next-period states or forecasts:
+the system is singular at every point and `main_execute!` exits with `status = :all_failed`
+("Solver failed at every grid point."). Such models need
+`STPFIMethod` or a residual in which the policy also enters directly.
 
 ---
 
@@ -135,7 +140,7 @@ return NextPeriod(; expectations, continuations)
 
 ```julia
 obj, stv = main_setup(model)            # builds ModelSolution with initial guess
-main_execute!(obj; maxiter=200, tol=-5) # iterates to convergence (modifies obj in-place)
+main_execute!(obj; maxiter=200, tol=-5) # iterates (modifies obj in-place); result.status is :converged, :maxiter or :all_failed
 simseries, errs = simulate(obj, stv)    # stochastic simulation -> SimulationPanel
 stats = describe(simseries).moments.uncond
 errstats = calc_error_stats(errs)

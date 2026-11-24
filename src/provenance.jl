@@ -1,5 +1,5 @@
-# Ingredients of provenance records: the TFI version and solution ids. Saving and loading
-# solutions (and model metadata) belong to OutputVault.
+# Ingredients of provenance records: the TFI version and solution ids. The package itself does
+# not write solutions to disk.
 
 "TFI version string, recorded in provenance"
 tfi_version() = string(pkgversion(@__MODULE__))

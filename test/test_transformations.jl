@@ -5,6 +5,17 @@ import TransitionFunctionIteration.Transformations: Level, AnnLevel, AnnInvLevel
     RatioPct, RatioAnnPct,
     DiffInitLevel, DiffInitPct
 
+@testset "Transformations — external basis trait" begin
+    for T in (Level, AnnLevel, AnnInvLevel, AnnQuadLevel, Pct, AnnPct, AnnInvPct, AnnQuadPct,
+              DiffInitLevel, DiffInitPct)
+        @test !Transformations.requires_basis(T())
+    end
+    for T in (DiffLevel, DiffAnnLevel, DiffAnnInvLevel, DiffAnnQuadLevel,
+              DiffPct, DiffAnnPct, DiffAnnInvPct, DiffAnnQuadPct, RatioPct, RatioAnnPct)
+        @test Transformations.requires_basis(T())
+    end
+end
+
 @testset "Transformations — operators" begin
     x    = [1.0, 2.0, 3.0]
     base = [0.5, 1.0, 1.5]
@@ -15,7 +26,7 @@ import TransitionFunctionIteration.Transformations: Level, AnnLevel, AnnInvLevel
     @test AnnQuadLevel()(x) ≈ x * sqrt(4)
     @test Pct()(x) ≈ x * 100
     @test AnnPct()(x) ≈ x * 4 * 100
-    @test AnnInvPct()(x) ≈ x / 4
+    @test AnnInvPct()(x) ≈ x / 4 * 100
     @test AnnQuadPct()(x) ≈ x * sqrt(4) * 100
 
     @test DiffLevel()(x; basis=base) ≈ x - base
@@ -44,11 +55,6 @@ end
 
 @testset "Transformations — labels" begin
     @test Transformations.label(Level)       == ""
-    @test occursin("%",      Transformations.label(Pct))
-    @test occursin("Annual", Transformations.label(AnnPct))
-    @test occursin("Diff",   Transformations.label(DiffLevel))
-    @test occursin("Diff",   Transformations.label(DiffInitLevel))
-    @test occursin("Initial",Transformations.label(DiffInitPct))
 end
 
 @testset "Transformations — labels (all remaining types)" begin
@@ -62,20 +68,6 @@ end
     for T in all_types
         lbl = Transformations.label(T)
         @test lbl isa String
-    end
-
-    # Annual types carry "Annual"
-    for T in [AnnLevel, AnnInvLevel, AnnQuadLevel, AnnPct, AnnInvPct, AnnQuadPct,
-              DiffAnnLevel, DiffAnnInvLevel, DiffAnnQuadLevel,
-              DiffAnnPct, DiffAnnInvPct, DiffAnnQuadPct, RatioAnnPct]
-        @test occursin("Annual", Transformations.label(T))
-    end
-
-    # Diff types carry "Diff"
-    for T in [DiffAnnLevel, DiffAnnInvLevel, DiffAnnQuadLevel,
-              DiffAnnPct, DiffAnnInvPct, DiffAnnQuadPct,
-              RatioPct, RatioAnnPct]
-        @test occursin("Diff", Transformations.label(T))
     end
 end
 

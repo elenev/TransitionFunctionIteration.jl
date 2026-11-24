@@ -12,8 +12,8 @@
 #   from the same source and needs nothing more.
 # - Sources in this package: `SamplesTuple` (describe output) for simulation moments, `IRFResult` for
 #   impulse moments, `EconomyResult` (all three kinds). A NamedTuple of sources, keyed by economy, is
-#   what the comparisons across economies read. Sources of saved results (OutputVault's per-economy
-#   tables) are defined where the saved layout is known, not here.
+#   what the comparisons across economies read. Sources defined outside this package (over tables
+#   read from files, say) need only the `momentvalues` methods.
 # - `@CalculatedMoment` writes a `CalculatedMoment` as an expression: every function call is
 #   replaced by `lifted(f, args...)`, which is the plain call unless an argument is a moment, so any
 #   function of numbers works on moments with no list of supported functions.
@@ -70,15 +70,17 @@ end
 SimulationMoment(var::Symbol; kwargs...) = SimulationMoment(; var, kwargs...)
 
 """
-    ImpulseMoment(; var, shock, period, stat=:mean, transformation=Transformations.Level,
+    ImpulseMoment(; var, shock, period, stat=:mean, basis=:uncond, transformation=Transformations.Level,
                     compare_transformation=Transformations.Level)
 
 A point on an impulse response: `stat` of `var` under `shock`, `period` periods into the IRF
 (`period` indexes the IRF lines, so it is the `__period` of the IRF table; 1 is the starting period).
 
-The `transformation` is applied with the same statistic of the unconditional path, `uncond`, at the
-same period as its basis, so `DiffLevel` is the response and `RatioPct` the percentage response. The
-IRF is assumed to start at the stochastic steady state, where `uncond` is the no-shock baseline.
+For a transformation that needs a basis, `basis` names the reference shock path (default `:uncond`),
+read at the same variable, statistic and period. Thus `DiffLevel` is the response and `RatioPct`
+the percentage response relative to that path. A transformation that ignores the basis, such as
+`Level`, reads only `shock`; the reference path need not exist. See
+[`Transformations.requires_basis`](@ref).
 `compare_transformation` is applied to the shock path's values in two economies, as for a
 [`SimulationMoment`](@ref).
 """
@@ -87,6 +89,7 @@ IRF is assumed to start at the stochastic steady state, where `uncond` is the no
     shock::Symbol
     period::Int
     stat::Symbol = :mean
+    basis::Symbol = :uncond
     transformation::T = Transformations.Level()
     compare_transformation::CT = Transformations.Level()
 end
@@ -230,8 +233,8 @@ end
 """
     collect_parameters(obj_or_model) -> MomentArray
 
-The model's parameters as a table, one row per parameter and one column `value`: the `params` of an
-[`EconomyResult`](@ref), and what OutputVault saves in a run's `params` component. The default takes
+The model's parameters as a table, one row per parameter and one column `value`, as the `params` of
+an [`EconomyResult`](@ref) expects them. The default takes
 every scalar real or Boolean property of the model (a Boolean is 0 or 1), so a model that forwards the
 properties of its parts is covered; a project can add a method for its model type to choose differently.
 """
@@ -295,7 +298,7 @@ function momentvalues(irf::IRFResult, m::ImpulseMoment)
         1 <= m.period <= length(line) || throw(BoundsError(line, m.period))
         getproperty(line, m.var)[m.period]
     end
-    return path(m.shock), path(:uncond)
+    return path(m.shock), Transformations.requires_basis(transformation(m)) ? path(m.basis) : nothing
 end
 
 function _parameter(params::MomentArray, name::Symbol)

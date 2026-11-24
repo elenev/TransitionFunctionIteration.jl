@@ -1,172 +1,254 @@
 # Moments and Comparing Economies
 
-A *moment* is a lazy specification of one number per economy: it says which statistic of which
-variable, which point of which impulse response, or which parameter, and how to transform it.
-Nothing is computed when a moment is defined, so the same list of moments can be read from
-economies held in memory or from saved results, and tabulated with [`compare_economies`](@ref).
+A typical table of results reports the same numbers (a mean, a volatility, a point of an impulse
+response, a parameter) for several economies. This page builds such a table for two versions of the
+neoclassical growth model of the [Quick Start](@ref), then explains its parts. The baseline economy
+is the solution `obj` of `examples/ngm.jl`, which the hidden first block of this page runs.
 
-## Defining moments
-
-```julia
+```@setup mom
 using TransitionFunctionIteration
-using TransitionFunctionIteration.Transformations: DiffLevel, Pct
+include(joinpath(pkgdir(TransitionFunctionIteration), "examples", "ngm.jl"))
+```
+
+## Two economies
+
+The second economy has more volatile productivity. Its solution starts from the baseline one:
+
+```@example mom
+ngm_hi = update_model(ngm; σ = 0.03)
+obj_hi, stv_hi = main_setup(ngm_hi, obj)      # warm start from the baseline solution
+main_execute!(obj_hi; logging = COMPLETE)
+sim_hi, errs_hi = simulate(obj_hi, stv_hi)
+calc_error_stats(errs_hi)
+```
+
+For each economy, collect its moments (with a sample of low-capital periods), its impulse responses
+and its parameters in an [`EconomyResult`](@ref):
+
+```@example mom
+samples = (uncond = Returns(true), low_K = x -> x.K < 0.97 * stv.endog.K)
+
+economies = (
+    baseline = EconomyResult(; stats  = describe(simseries; filters = samples).moments,
+                               irf    = simulate_irf(obj, simseries),
+                               params = collect_parameters(obj)),
+    high_vol = EconomyResult(; stats  = describe(sim_hi; filters = samples).moments,
+                               irf    = simulate_irf(obj_hi, sim_hi),
+                               params = collect_parameters(obj_hi)),
+)
+nothing # hide
+```
+
+## A table of moments
+
+```@example mom
+using TransitionFunctionIteration.Transformations: RatioPct, DiffPct
 
 moments = (
-    mean_C = SimulationMoment(:C),                          # mean of C in the unconditional sample
-    std_K  = SimulationMoment(:K; stat = :std),
-    ac_Y   = SimulationMoment(:Y; stat = :ac, transformation = Pct()),
-    mean_K_crisis = SimulationMoment(:K; sample = :crisis),
-    irf_C  = ImpulseMoment(:C, :shock_5, 2; transformation = DiffLevel()),
-    beta   = ParameterMoment(:β),
+    mean_C      = SimulationMoment(:C),
+    std_C       = SimulationMoment(:C; stat = :std, compare_transformation = RatioPct()),
+    mean_K_lowK = SimulationMoment(:K; sample = :low_K),
+    beta        = ParameterMoment(:β),
 )
+compare_economies(moments, economies; models = (baseline = ngm, high_vol = ngm_hi))
 ```
 
-- [`SimulationMoment`](@ref)`(var; sample = :uncond, stat = :mean, transformation, compare_transformation)`
-  is a statistic of a simulated variable in one sample of `describe`.
-- [`ImpulseMoment`](@ref)`(var, shock, period; stat = :mean, transformation, compare_transformation)`
-  is a point on an impulse response: `stat` of `var` under `shock`, `period` periods into the IRF
-  (`period` is the index into the IRF lines, so 1 is the starting period). Its transformation is
-  applied with the `uncond` path at the same period as the basis, so `DiffLevel()` is the response
-  and `RatioPct()` the percentage response. The IRF is assumed to start at the stochastic steady
-  state, where `uncond` is the no-shock baseline.
-- [`ParameterMoment`](@ref)`(name; transformation, compare_transformation)` is a model parameter, as
-  [`collect_parameters`](@ref) returns it.
-- [`CalculatedMoment`](@ref)`(f, inputs; transformation, compare_transformation)` is a function of
-  other moments. `inputs` is a `NamedTuple` of moments (which may be calculated moments too), and
-  `f` receives a `NamedTuple` with the same keys and the inputs' values in one economy:
+Each entry of `moments` names one number per economy. Defining it computes nothing: it is a
+recipe that says where to find the number, and `compare_economies` reads it from each economy. The
+rows of the table are the moments and its columns the economies:
 
-```julia
-irf_ratio = CalculatedMoment(nt -> nt.irf_C / nt.irf_Y,
-                             (irf_C = ImpulseMoment(:C, :shock_5, 2; transformation = DiffLevel()),
-                              irf_Y = ImpulseMoment(:Y, :shock_5, 2; transformation = DiffLevel())))
-```
+- `mean_C` is the mean of `C` in the unconditional sample.
+- `std_C` is the standard deviation of `C`. In the baseline economy it is the value itself; in
+  `high_vol` it is reported relative to the baseline, as `100 (value / baseline - 1)`, so consumption
+  is that many percent more volatile.
+- `mean_K_lowK` is the mean of `K` in the `low_K` sample defined above.
+- `beta` is the parameter `β`.
+- `models` adds a row for each parameter that differs between the models, here `σ`, so the table
+  shows what was varied.
 
-  Each input is read with its own `transformation` (its `compare_transformation` is ignored); the
-  calculated moment's own `transformation` and `compare_transformation` apply to the result, as
-  for any moment, and its transformation gets no basis. It reads from any source that serves all
-  its inputs. A lambda is convenient, but two specs with equal lambdas are not `==`; use a named
-  function if the spec must be stored.
+A bare variable name in place of a moment means `SimulationMoment(name)`, so `(C = :C, K = :K)` is a
+valid collection of moments.
 
-All are subtypes of [`AbstractMoment`](@ref). A new kind of moment is a new subtype with a
-`momentvalues` method per source that can serve it, and the accessors
-`TransitionFunctionIteration.transformation` and `compare_transformation` (the fields of those
-names by default).
+## Kinds of moments
 
-### Calculated moments as expressions
+- [`SimulationMoment`](@ref)`(var; sample = :uncond, stat = :mean)` is a statistic of a simulated
+  variable in one sample of `describe` (see [Computing moments](@ref) for the statistics).
+- [`ImpulseMoment`](@ref)`(var, shock, period; stat = :mean)` is a point of an impulse response:
+  `stat` of `var` under `shock` in `period`, where period 1 is the starting period and the forced
+  exogenous path starts in period 2. (Plots count the starting period as 0, so `period = 2` is the
+  point plotted at 1.)
+- [`ParameterMoment`](@ref)`(name)` is a model parameter, as [`collect_parameters`](@ref) returns it.
+- [`CalculatedMoment`](@ref) is a function of other moments (below).
 
-[`@CalculatedMoment`](@ref) writes a calculated moment as an expression of moments. Every function
-call in it is made through [`lifted`](@ref TransitionFunctionIteration.lifted): the plain call if no
-argument is a moment, otherwise a calculated moment of the moment arguments. So any function of
-numbers works, operators included, with no list of supported functions:
+Each takes two more keywords, `transformation` and `compare_transformation`, described next.
+An `ImpulseMoment` also accepts `basis = :uncond`, the name of its reference shock path.
+For example, `ImpulseMoment(:C, :up, 2; transformation = RatioPct(), basis = :control)`
+reports the percentage response relative to `:control`. The reference path is read only when
+[`Transformations.requires_basis`](@ref) is true: levels and percentages need only the requested
+shock, while differences and ratios need the reference path too. A missing required path is a
+`KeyError`; path ordering does not affect the choice. Unlike moments, plots default to the first path.
 
-```julia
-mean(v) = SimulationMoment(v)
-sd(v)   = SimulationMoment(v; stat = :std)
-cor_r(v) = SimulationMoment(v; stat = :cor_r_lag0)
+## Transformations
 
-ols_r(v) = @CalculatedMoment cor_r(v) * sd(v) / sd(:r)        # sd(:r) is a plain call: a SimulationMoment
-total    = @CalculatedMoment sqrt(sd(:C)^2 + 2 * mean(:K))
-mean_Y_floored = @CalculatedMoment max(mean(:Y), 1.5)         # any function, constants carried along (a number: mean Y, at least 1.5)
-```
-
-With a collection of named moments as the first argument, a bare name that is not a variable in
-scope is read from it:
-
-```julia
-@CalculatedMoment moments mean_C / std_K
-```
-
-Only calls are lifted: `if`, `&&`, broadcasting and anonymous functions are left as they are, and a
-moment passed as a keyword argument is not lifted.
-
-### Transformations
-
-`transformation` is applied when the moment is reported, and `compare_transformation` when a
-non-base economy is compared with the base one (below). They come from the `Transformations`
-module and are called as `t(x; basis = ...)`:
+A transformation turns a value `x` into the number reported, using a reference value, its *basis*:
 
 | Family | Types | Result |
 |:--|:--|:--|
-| levels | `Level`, `AnnLevel`, `AnnInvLevel`, `AnnQuadLevel` | `x`, times 4, divided by 4, times 2 |
+| levels | `Level`, `AnnLevel`, `AnnInvLevel`, `AnnQuadLevel` | `x`, `4x`, `x / 4`, `2x` |
 | percent | `Pct`, `AnnPct`, `AnnInvPct`, `AnnQuadPct` | the same, times 100 |
-| differences | `DiffLevel`, `DiffAnnLevel`, ..., `DiffPct`, `DiffAnnPct`, ... | `x - basis` with the scaling of the prefix |
-| ratios | `RatioPct`, `RatioAnnPct` | `(x / basis - 1) * 100` |
-| from the start | `DiffInitLevel`, `DiffInitPct` | difference from the first element |
+| differences | `DiffLevel`, `DiffAnnLevel`, `DiffAnnInvLevel`, `DiffAnnQuadLevel` | `x - basis`, with the scaling of the level type |
+| | `DiffPct`, `DiffAnnPct`, `DiffAnnInvPct`, `DiffAnnQuadPct` | the same, times 100 |
+| ratios | `RatioPct`, `RatioAnnPct` | `100 (x / basis - 1)` |
+| from the start | `DiffInitLevel`, `DiffInitPct` | `x - init`, `100 (x - init) / init`, with `init` the first value |
 
-## Reading a moment
+The `Ann` prefixes annualize quarterly values: a flow is multiplied by 4, a standard deviation by 2
+(the square root of 4), and `AnnInv` divides by 4. The types are in the `Transformations`
+submodule, which exports no names: import the ones you use, as above.
 
-[`getmoment`](@ref)`(source, moment)` reads a moment from a source of results, and which property
-it reads follows from the pair (source, moment type):
+`DiffPct` and `RatioPct` answer different questions. Comparing 2.2 with a basis of 2.0, `DiffPct`
+gives `100 (2.2 - 2.0) = 20` and `RatioPct` gives `100 (2.2 / 2.0 - 1) = 10`. For a rate, such as an
+interest rate of 0.022 against 0.020, `DiffPct` is the difference in percentage points (0.2) and
+`RatioPct` the relative change in percent (10). For a level, such as consumption, the relative
+change `RatioPct` is usually what you want.
 
-| Source | Moments it can serve |
-|:--|:--|
-| `describe(...).moments` (a `NamedTuple` of `MomentArray`s by sample) | `SimulationMoment` |
-| an `IRFResult` | `ImpulseMoment` |
-| [`EconomyResult`](@ref)`(; stats, irf, params)` | all three; each part is optional |
+A moment has two transformations, applied in different places:
 
-A calculated moment reads from any source that serves its inputs. Saved results are read through
-OutputVault, which provides a source for the runs of one economy.
+- `transformation` (default `Level()`) is applied to the value within one economy, and only in the
+  base economy of a table. For a `SimulationMoment` or a `ParameterMoment` the basis is the default
+  of the transformation, so only the level and percent types are meaningful. For an
+  `ImpulseMoment` the basis is the path named by `basis` (`:uncond` by default) at the same period, so `DiffLevel()` gives the
+  response and `RatioPct()` the percentage response.
+- `compare_transformation` (default `Level()`) is applied in every other economy, to that economy's
+  value with the base economy's value as the basis. The `transformation` is not applied there.
 
-```julia
-simseries, errs = simulate(obj, stv)
-irf = simulate_irf(obj, simseries)
-results = EconomyResult(; stats = describe(simseries).moments, irf, params = collect_parameters(obj))
+The base economy is the first by default; choose another with `base`:
 
-getmoment(results, moments.std_K)
-getmoment(results, moments.irf_C)
-getmoment(results, moments.beta)
+```@example mom
+compare_economies(moments, economies; base = :high_vol)
 ```
 
-A missing sample, variable, statistic, shock or parameter is a `KeyError` that names it, a period
-outside the IRF is a `BoundsError`, and a moment that needs a part the `EconomyResult` lacks (an
-`ImpulseMoment` without an IRF, say) is an `ArgumentError`, as is reading a moment from a source that
-cannot serve its type.
+Now `high_vol` shows the values themselves, and `std_C` in the baseline column is relative to
+`high_vol`: consumption is that many percent less volatile in the baseline.
 
-## Writing a source
+## Impulse responses across economies
 
-A source is any object that can serve moments. [`getmoment`](@ref) and [`compare_economies`](@ref)
-read through one function, `momentvalues(source, moment)`, which returns the pair `(value, basis)`:
-the moment's value before its transformation, and the basis for the transformation (`nothing` for its
-default, which is what every moment but an `ImpulseMoment` has). A source needs one method per kind of
-moment it can serve, and a calculated moment then works on it with no further code, since it reads
-its inputs from the same source:
+An `ImpulseMoment` with a `transformation` reports the response in the base economy:
 
-```julia
+```@example mom
+response_C = ImpulseMoment(:C, :shock_5, 2; transformation = RatioPct())
+compare_economies((; response_C), economies)
+```
+
+In `high_vol` the cell is `C` itself on the shock path, not the response, because only the
+`compare_transformation` is applied there. To compare the responses themselves, compute the response
+in each economy first with a calculated moment, whose inputs are read with their own
+transformations in every economy:
+
+```@example mom
+using TransitionFunctionIteration.Transformations: DiffLevel
+
+response_both = CalculatedMoment(nt -> nt.r, (r = response_C,))
+response_diff = CalculatedMoment(nt -> nt.r, (r = response_C,); compare_transformation = DiffLevel())
+compare_economies((; response_both, response_diff), economies)
+```
+
+`response_both` is the percentage response in each economy. `response_diff` is the baseline
+response in the base column and, in the `high_vol` column, the difference of the `high_vol` response
+from the baseline one, in percentage points.
+
+## Calculated moments
+
+[`CalculatedMoment`](@ref)`(f, inputs)` is a function of other moments. `inputs` is a `NamedTuple` of
+moments, and `f` receives a `NamedTuple` with the same names and the inputs' values in one economy:
+
+```@example mom
+C_over_Y = CalculatedMoment(nt -> nt.C / nt.Y, (C = SimulationMoment(:C), Y = SimulationMoment(:Y)))
+compare_economies((; C_over_Y), economies)
+```
+
+Each input is read with its own `transformation`, and its `compare_transformation` is ignored. The
+calculated moment's own `transformation` and `compare_transformation` apply to the result, as for any
+moment. Two moments built from equal anonymous functions are not equal (`==`); use a named function
+if you need to compare or store them.
+
+[`@CalculatedMoment`](@ref) writes the same thing as an expression. Every function call whose
+arguments include a moment becomes a calculated moment, so any function of numbers works, operators
+included:
+
+```@example mom
+avg(v) = SimulationMoment(v)
+sd(v)  = SimulationMoment(v; stat = :std)
+
+C_over_Y_expr = @CalculatedMoment avg(:C) / avg(:Y)
+rel_vol       = @CalculatedMoment sd(:C) / sd(:Y)
+log_C         = @CalculatedMoment log(avg(:C))
+compare_economies((; C_over_Y_expr, rel_vol, log_C), economies)
+```
+
+With a collection of moments as the first argument, a name that is not a variable in scope is read
+from the collection:
+
+```@example mom
+ratio = @CalculatedMoment moments std_C / mean_C
+compare_economies((; ratio), economies)
+```
+
+Only function calls become calculated moments: `if`, `&&`, broadcasting and anonymous functions are
+left as they are, and a moment passed as a keyword argument is not converted.
+
+## Reading one moment
+
+[`getmoment`](@ref)`(source, moment)` reads one moment, transformed, from one economy:
+
+```@example mom
+getmoment(economies.baseline, response_C)
+```
+
+The *source* is the object the moment is read from. It can be an `EconomyResult`, whose parts are
+each optional; the `moments` of a `describe` output, for `SimulationMoment`s; or an `IRFResult`, for
+`ImpulseMoment`s. These can also be the economies of `compare_economies`.
+`getmoment(economies, moment, economy, base)` reads one cell of a table.
+
+A missing sample, variable, statistic, shock or parameter is a `KeyError` that names it:
+
+```@example mom
+try
+    getmoment(economies.baseline, SimulationMoment(:C; sample = :crisis))
+catch err
+    err
+end
+```
+
+A period outside the impulse response is a `BoundsError`. A moment that needs a part the
+`EconomyResult` lacks, such as an `ImpulseMoment` without an IRF, is an `ArgumentError`, as is a
+moment read from a source that cannot serve it.
+
+## Advanced: reading moments from your own results
+
+Results kept in your own format can be a source too. `getmoment` and `compare_economies` read every
+moment through one function, `momentvalues(source, moment)`, which returns the pair
+`(value, basis)`: the value before its transformation, and the basis of the transformation
+(`nothing` for the default basis, which every moment but an `ImpulseMoment` uses). A source needs a
+method for each kind of moment it serves; calculated moments then work with no further code, since
+they read their inputs from the same source:
+
+```@example mom
 struct MyEconomy
     values::Dict{Symbol, Float64}
 end
 
 TransitionFunctionIteration.momentvalues(e::MyEconomy, m::SimulationMoment) =
-    (e.values[Symbol(m.stat, "_", m.var)], nothing)     # a missing key is a KeyError that names it
+    (e.values[Symbol(m.stat, "_", m.var)], nothing)
 
-getmoment(MyEconomy(Dict(:mean_C => 1.0, :std_K => 0.2)), SimulationMoment(:K; stat = :std))
+mine = (a = MyEconomy(Dict(:mean_C => 1.0, :std_C => 0.02)),
+        b = MyEconomy(Dict(:mean_C => 1.1, :std_C => 0.03)))
+compare_economies((mean_C = SimulationMoment(:C), cv_C = @CalculatedMoment sd(:C) / avg(:C)), mine)
 ```
 
-A moment type with no method for a source is an `ArgumentError`. OutputVault's saved results are a
-source in this sense: one `Dict` per economy, read through `momentvalues`. Both its row layout and
-its DuckDB queries are described in OutputVault's guide on querying with DuckDB.
+A moment type with no method for a source is an `ArgumentError`. A new kind of moment is a subtype of
+[`AbstractMoment`](@ref) with a `momentvalues` method for each source that can serve it, and methods
+of `TransitionFunctionIteration.transformation` and `compare_transformation` if it does not have
+fields of those names.
 
-## Comparing economies
-
-[`compare_economies`](@ref) tabulates moments (rows) across economies (columns) in a `MomentArray`
-whose row key is `moment`:
-
-```julia
-economies = (baseline = EconomyResult(; stats = stats_base, irf = irf_base),
-             alt      = EconomyResult(; stats = stats_alt,  irf = irf_alt))
-compare_economies(moments, economies)
-compare_economies(moments, economies; base = :alt)
-```
-
-- In the base economy (the first by default) a moment is its `transformation` of the value.
-- In every other economy it is the `compare_transformation` of the value with the base economy's
-  value as the basis. With `compare_transformation = DiffPct()` the table shows the difference from
-  the base in percent; with the default, `Level()`, it shows the value itself.
-- A bare variable name in place of a moment means `SimulationMoment(name)`: `(C = :C, K = :K)`.
-- With `models = (; baseline = mdl_base, alt = mdl_alt)`, the parameters that differ between the
-  models are added as rows, so that the table shows what was varied.
-
-The economies may also be `describe` outputs (a `NamedTuple` of `MomentArray`s by sample) when
-all moments are `SimulationMoment`s. `getmoment(economies, moment, economy, base)` reads one cell.
-Any source with the `momentvalues` methods works as an economy, so results saved to disk give the
-same numbers as the same economies in memory.
+[OutputVault.jl](https://github.com/elenev/OutputVault.jl), a separate package for saving and
+organizing research runs, provides such a source for its saved results.

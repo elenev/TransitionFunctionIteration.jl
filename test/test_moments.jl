@@ -1,5 +1,39 @@
 using Tables, DataAPI
 
+struct CustomBasisTransformation <: Transformations.AbstractTransformation end
+(::CustomBasisTransformation)(x, basis, trend, basistrend, init) = x - basis
+struct CustomNoBasisTransformation <: Transformations.AbstractTransformation end
+Transformations.requires_basis(::CustomNoBasisTransformation) = false
+(::CustomNoBasisTransformation)(x, basis, trend, basistrend, init) = 2x
+
+@testset "Impulse moments — optional and named basis" begin
+    T = Transformations
+    table = (__shock = repeat(["up", "control", "uncond"], 2), __stat = repeat(["mean", "std"], inner = 3),
+             __period = ones(Int, 6), C = [6.0, 2.0, 3.0, 0.6, 0.2, 0.3])
+    irf = IRFResult(table)
+    single = IRFResult(map(v -> v[[1, 4]], table))
+    level = ImpulseMoment(:C, :up, 1; basis = :absent, compare_transformation = T.DiffLevel())
+    diff = ImpulseMoment(:C, :up, 1; basis = :control, transformation = T.DiffLevel())
+    ratio = ImpulseMoment(:C, :up, 1; basis = :control, transformation = T.RatioPct())
+    @test getmoment(single, level) == 6.0
+    @test getmoment(single, ImpulseMoment(:C, :up, 1; transformation = CustomNoBasisTransformation())) == 12.0
+    @test getmoment(irf, diff) == 4.0
+    @test getmoment(irf, ImpulseMoment(:C, :up, 1; stat = :std, basis = :control, transformation = T.DiffLevel())) ≈ 0.4
+    @test getmoment(irf, ratio) == 200.0
+    @test getmoment(irf, ImpulseMoment(:C, :up, 1; transformation = T.DiffLevel())) == 3.0
+    @test getmoment(irf, ImpulseMoment(:C, :up, 1; transformation = T.RatioPct())) == 100.0
+    @test getmoment(irf, ImpulseMoment(:C, :up, 1; basis = :up, transformation = T.DiffLevel())) == 0.0
+    @test_throws KeyError getmoment(single, diff)
+    @test_throws KeyError getmoment(single, ImpulseMoment(:C, :up, 1; transformation = T.RatioPct()))
+    @test getmoment(irf, ImpulseMoment(:C, :up, 1; basis = :control, transformation = CustomBasisTransformation())) == 4.0
+    reordered = IRFResult(map(v -> v[[3, 2, 1, 6, 5, 4]], table))
+    @test getmoment(reordered, ratio) == getmoment(irf, ratio)
+    nested = CalculatedMoment(nt -> nt.x * 2, (x = CalculatedMoment(nt -> nt.r, (r = ratio,)),))
+    @test getmoment(irf, nested) == 400.0
+    economies = (a = single, b = single)
+    @test compare_economies((; level), economies).data == [6.0 0.0]
+end
+
 @testset "Moments — SimulationMoment and ImpulseMoment" begin
     T = TFI.Transformations
 
