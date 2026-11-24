@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="referrer" content="no-referrer"/><title>Quick Start · TransitionFunctionIteration.jl</title><meta name="title" content="Quick Start · TransitionFunctionIteration.jl"/><meta property="og:title" content="Quick Start · TransitionFunctionIteration.jl"/><meta property="twitter:title" content="Quick Start · TransitionFunctionIteration.jl"/><meta name="description" content="Documentation for TransitionFunctionIteration.jl."/><meta property="og:description" content="Documentation for TransitionFunctionIteration.jl."/><meta property="twitter:description" content="Documentation for TransitionFunctionIteration.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">TransitionFunctionIteration.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Guide</span><ul><li class="is-active"><a class="tocitem" href>Quick Start</a><ul class="internal"><li><a class="tocitem" href="#Step-1:-Define-the-model"><span>Step 1: Define the model</span></a></li><li><a class="tocitem" href="#Step-2:-Implement-the-model-interface"><span>Step 2: Implement the model interface</span></a></li><li><a class="tocitem" href="#Step-3:-Solve"><span>Step 3: Solve</span></a></li><li><a class="tocitem" href="#Step-4:-Check-accuracy"><span>Step 4: Check accuracy</span></a></li><li><a class="tocitem" href="#Step-5:-Moments"><span>Step 5: Moments</span></a></li><li><a class="tocitem" href="#Step-6:-Impulse-responses"><span>Step 6: Impulse responses</span></a></li><li><a class="tocitem" href="#Step-7:-All-steps-at-once"><span>Step 7: All steps at once</span></a></li><li><a class="tocitem" href="#Next-steps"><span>Next steps</span></a></li></ul></li><li><a class="tocitem" href="../model/">Implementing a Model</a></li><li><a class="tocitem" href="../simulation/">Simulation and Analysis</a></li><li><a class="tocitem" href="../moments/">Moments and Comparing Economies</a></li><li><a class="tocitem" href="../tables/">Tables and Provenance</a></li></ul></li><li><a class="tocitem" href="../../api/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Guide</a></li><li class="is-active"><a href>Quick Start</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Quick Start</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/elenev/TransitionFunctionIteration.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/elenev/TransitionFunctionIteration.jl/blob/main/docs/src/guide/quickstart.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Quick-Start"><a class="docs-heading-anchor" href="#Quick-Start">Quick Start</a><a id="Quick-Start-1"></a><a class="docs-heading-anchor-permalink" href="#Quick-Start" title="Permalink"></a></h1><p>This page solves the neoclassical growth model (NGM), checks the accuracy of the solution, simulates it and computes moments and impulse responses. The same model is in <code>examples/ngm.jl</code>, and the later pages of this guide continue with it. The NGM is simple enough that its global solution is close to the log-linear one, which makes it easy to check.</p><h2 id="Step-1:-Define-the-model"><a class="docs-heading-anchor" href="#Step-1:-Define-the-model">Step 1: Define the model</a><a id="Step-1:-Define-the-model-1"></a><a class="docs-heading-anchor-permalink" href="#Step-1:-Define-the-model" title="Permalink"></a></h2><p>A model is a struct that subtypes <code>AbstractModel</code> and holds all parameters:</p><pre><code class="language-julia hljs">using TransitionFunctionIteration, StaticArrays
+
+import TransitionFunctionIteration: Exogenv, calc_eqm, define_endog_grids,
+                                     steadystate, compute_next_period_values, bounds,
+                                     PositiveBounded
+
+@kwdef struct NeoclassicalGrowthModel &lt;: AbstractModel
+    α::Float64 = 0.33   # capital share
+    β::Float64 = 0.96   # discount factor
+    δ::Float64 = 0.10   # depreciation
+    γ::Float64 = 2.0    # CRRA risk aversion
+    σ::Float64 = 0.02   # shock volatility
+    ρ::Float64 = 0.9    # shock persistence
+    N_A::Int   = 5      # exogenous grid points
+end</code></pre><h2 id="Step-2:-Implement-the-model-interface"><a class="docs-heading-anchor" href="#Step-2:-Implement-the-model-interface">Step 2: Implement the model interface</a><a id="Step-2:-Implement-the-model-interface-1"></a><a class="docs-heading-anchor-permalink" href="#Step-2:-Implement-the-model-interface" title="Permalink"></a></h2><p>These functions describe the economics. <a href="../model/#Implementing-a-Model">Implementing a Model</a> explains each one.</p><pre><code class="language-julia hljs"># Exogenous process: discretized AR(1) log productivity
+function Exogenv(mdl::NeoclassicalGrowthModel)
+    ExogenvAR1(ρ=mdl.ρ, σ=mdl.σ, n=mdl.N_A, transform=exp, jensen=true, shock_name=:A)
+end
+
+# Deterministic steady state, in closed form
+function steadystate(model::NeoclassicalGrowthModel, ::AnalyticalSteadyStateMode)
+    (; α, β, δ) = model
+    K = (α * β / (1 - β * (1 - δ)))^(1/(1-α))
+    C = K^α - δ * K
+    return SteadyState(; model, exog=(; A=1.0), endog=(; K), values=(; C), guess=(; C)), true
+end
+
+# Grid for the endogenous state, capital
+function define_endog_grids(model::NeoclassicalGrowthModel, stv::AbstractSteadyState)
+    K_grid = range(0.8, 1.2, length=20) * stv.endog.K
+    return (; K = K_grid)
+end
+
+# Consumption and capital must be positive
+function bounds(::SteadyState{NeoclassicalGrowthModel})
+    return (C = PositiveBounded(),), (K = PositiveBounded(),)
+end
+
+# Quantities in one next-period exogenous state
+function compute_next_period_values(next, mdl::NeoclassicalGrowthModel, ::EvaluationMode)
+    (; A, K, C) = next
+    (; α, β, δ, γ) = mdl
+    MPK     = α * A * K^(α-1)
+    MU      = C^(-γ)
+    Kpayoff = MPK + (1 - δ)
+    return NextPeriod(; expectations=(; Ek = β * MU * Kpayoff), continuations=(; Kpayoff, MPK, MU))
+end
+
+# Equilibrium conditions at one point of the state space
+function calc_eqm(state, policy, mdl::NeoclassicalGrowthModel, np::NextPeriod, mode::EvaluationMode)
+    (; A, K) = state;  (; C) = policy;  (; α, δ, γ) = mdl
+    Y  = A * K^α
+    I  = Y - C
+    K′ = (1 - δ) * K + I
+    MU = C^(-γ)
+    fx = SVector(1 - np.expectations.Ek / MU)     # Euler equation residual
+    mode isa SolveMode    &amp;&amp; return fx
+    mode isa IterateMode  &amp;&amp; return (; fx, trans=(; K=K′), vals=(; C))
+    mode isa SimulateMode &amp;&amp; return (; fx, trans=(; K=K′), simvars=(; Y, I, C))
+end</code></pre><h2 id="Step-3:-Solve"><a class="docs-heading-anchor" href="#Step-3:-Solve">Step 3: Solve</a><a id="Step-3:-Solve-1"></a><a class="docs-heading-anchor-permalink" href="#Step-3:-Solve" title="Permalink"></a></h2><pre><code class="language-julia hljs">ngm = NeoclassicalGrowthModel()
+obj, stv = main_setup(ngm)
+res = main_execute!(obj; maxiter=1000, logging=COMPLETE)
+(res.status, res.iter, res.distV, res.distT)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(:converged, 78, -5.043540332141058, -5.043540332130397)</code></pre><p><code>main_setup</code> computes the steady state, builds the grid and starts the solution there. <code>main_execute!</code> iterates until the largest change between successive iterates of the value and transition functions is below <code>10^tol</code>; the default <code>tol = -5</code> means <code>1e-5</code>. It stops in one of three states, returned as <code>status</code>: <code>:converged</code>; <code>:maxiter</code>, when <code>maxiter</code> iterations ran without convergence; or <code>:all_failed</code>, when the solver failed at every grid point (see <a href="../model/#Choosing-a-solution-method">Choosing a solution method</a> for a common cause). The output above is the status, the number of iterations and the final distances of the value and transition functions in <code>log10</code>. <code>damp</code> is the weight on the previous iterate (0 is a full update, 1 freezes the functions). <code>logging = COMPLETE</code> prints only the final message; the default prints every iteration.</p><h2 id="Step-4:-Check-accuracy"><a class="docs-heading-anchor" href="#Step-4:-Check-accuracy">Step 4: Check accuracy</a><a id="Step-4:-Check-accuracy-1"></a><a class="docs-heading-anchor-permalink" href="#Step-4:-Check-accuracy" title="Permalink"></a></h2><p>Convergence of the iteration does not mean the solution is accurate. Simulate the model and look at the equation errors along the simulated path:</p><pre><code class="language-julia hljs">simseries, errs = simulate(obj, stv)
+errstats = calc_error_stats(errs)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">MomentArray (2 × 7):
+┌─────┬────────────┬────────────┬────────────┬────────────┬────────────┬────────
+│<span class="sgr1">     </span>│<span class="sgr1">       mean </span>│<span class="sgr1">        p50 </span>│<span class="sgr1">        p75 </span>│<span class="sgr1">        p90 </span>│<span class="sgr1">        p95 </span>│<span class="sgr1">      </span> ⋯
+├─────┼────────────┼────────────┼────────────┼────────────┼────────────┼────────
+│<span class="sgr1"> fx1 </span>│ 2.27263e-5 │ 2.21074e-5 │ 2.96423e-5 │ 3.98946e-5 │ 4.46621e-5 │ 5.554 ⋯
+│<span class="sgr1">   K </span>│ 1.98182e-5 │ 2.19629e-5 │ 2.74244e-5 │ 3.01498e-5 │ 3.15049e-5 │ 3.356 ⋯
+└─────┴────────────┴────────────┴────────────┴────────────┴────────────┴────────
+<span class="sgr36">                                                               2 columns omitted</span>
+</code></pre><p>There is one row per equilibrium condition (<code>fx1</code>, the Euler equation) and one per transition (<code>K</code>), and the columns are the mean and percentiles of the absolute error, with <code>p100</code> the largest. Errors of the order of <code>1e-5</code> suggest the solution is accurate; if they are large, use a finer grid where the simulation goes. <code>simulate</code> also reports the simulated range of each state against its grid.</p><h2 id="Step-5:-Moments"><a class="docs-heading-anchor" href="#Step-5:-Moments">Step 5: Moments</a><a id="Step-5:-Moments-1"></a><a class="docs-heading-anchor-permalink" href="#Step-5:-Moments" title="Permalink"></a></h2><pre><code class="language-julia hljs">stats = describe(simseries).moments.uncond
+stats((:C, :K, :Y), (:mean, :std, :ac))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">MomentArray (3 × 3):
+┌───┬─────────┬───────────┬──────────┐
+│<span class="sgr1">   </span>│<span class="sgr1">    mean </span>│<span class="sgr1">       std </span>│<span class="sgr1">       ac </span>│
+├───┼─────────┼───────────┼──────────┤
+│<span class="sgr1"> C </span>│ 1.16344 │ 0.0280906 │ 0.979461 │
+│<span class="sgr1"> K </span>│ 3.53629 │  0.128264 │ 0.994766 │
+│<span class="sgr1"> Y </span>│ 1.51709 │ 0.0447187 │ 0.955516 │
+└───┴─────────┴───────────┴──────────┘
+</code></pre><p><code>stats</code> holds one row per variable and one column per statistic: <code>:mean</code>, <code>:std</code>, <code>:minimum</code>, <code>:maximum</code>, <code>:ac</code> (first-order autocorrelation), the percentiles <code>:p5</code> to <code>:p95</code>, and the correlation with each endogenous state (<code>:cor_K_lag0</code>). Read single values by name:</p><pre><code class="language-julia hljs">stats(:C, :mean), stats(:K, :std)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(1.1634360651984113, 0.12826352660660764)</code></pre><h2 id="Step-6:-Impulse-responses"><a class="docs-heading-anchor" href="#Step-6:-Impulse-responses">Step 6: Impulse responses</a><a id="Step-6:-Impulse-responses-1"></a><a class="docs-heading-anchor-permalink" href="#Step-6:-Impulse-responses" title="Permalink"></a></h2><pre><code class="language-julia hljs">irf = simulate_irf(obj, simseries)
+propertynames(irf.means)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(:uncond, :shock_1, :shock_2, :shock_4, :shock_5)</code></pre><p>The default experiment starts at the mean of the simulated states and has one shock for each exogenous state other than the starting one (the steady-state index, 3 here). Under <code>shock_5</code>, the exogenous state moves to 5, the highest productivity, in period 2. <code>uncond</code> draws the exogenous state every period as usual and is the no-shock baseline. The response to a shock is the shock path compared with <code>uncond</code>:</p><pre><code class="language-julia hljs">irf.means.shock_5.C .- irf.means.uncond.C</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">20-element Vector{Float64}:
+ 0.0
+ 0.025962783575103954
+ 0.02834999287638129
+ 0.029965874348641952
+ 0.030914901136201323
+ 0.031388269566657856
+ 0.03159578850198819
+ 0.03148124904449645
+ 0.031009669320434474
+ 0.030243822982171986
+ 0.029450113327866845
+ 0.02845629627714552
+ 0.027385145124945165
+ 0.026276190382701126
+ 0.025121455048351837
+ 0.023941455809286305
+ 0.022779874721098325
+ 0.021553422961414048
+ 0.020356145964903538
+ 0.019200746867143126</code></pre><p>Name the shocks yourself by giving each a forced path of exogenous state indices:</p><pre><code class="language-julia hljs">irf_named = simulate_irf(obj, simseries; shocks = (up = 5, down = 1))
+propertynames(irf_named.means)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(:up, :down)</code></pre><h2 id="Step-7:-All-steps-at-once"><a class="docs-heading-anchor" href="#Step-7:-All-steps-at-once">Step 7: All steps at once</a><a id="Step-7:-All-steps-at-once-1"></a><a class="docs-heading-anchor-permalink" href="#Step-7:-All-steps-at-once" title="Permalink"></a></h2><p><code>solve_and_simulate</code> runs steps 3 to 6 and returns their results:</p><pre><code class="language-julia hljs">result = solve_and_simulate(ngm; execute_kwargs = (; logging = COMPLETE))
+keys(result)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(:obj, :stv, :simseries, :errs, :stats, :errstats, :irf)</code></pre><p><code>result.stats</code> is the <code>NamedTuple</code> of moments by sample that <code>describe</code> returns, so <code>result.stats.uncond</code> is the <code>stats</code> of step 5.</p><h2 id="Next-steps"><a class="docs-heading-anchor" href="#Next-steps">Next steps</a><a id="Next-steps-1"></a><a class="docs-heading-anchor-permalink" href="#Next-steps" title="Permalink"></a></h2><ul><li><a href="../simulation/#Simulation-and-Analysis">Simulation and Analysis</a>: simulation options, conditional moments, impulse responses and plots.</li><li><a href="../moments/#Moments-and-Comparing-Economies">Moments and Comparing Economies</a>: tables of moments across economies.</li><li><a href="../tables/#Tables-and-Provenance">Tables and Provenance</a>: passing results to any Tables.jl-compatible writer, and saving them.</li></ul></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../">« Home</a><a class="docs-footer-nextpage" href="../model/">Implementing a Model »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.20.0 on <span class="colophon-date" title="Tuesday 24 November 2026 03:40">Tuesday 24 November 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
