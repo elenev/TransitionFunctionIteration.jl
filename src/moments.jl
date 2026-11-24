@@ -12,8 +12,8 @@
 #   from the same source and needs nothing more.
 # - Sources in this package: `SamplesTuple` (describe output) for simulation moments, `IRFResult` for
 #   impulse moments, `EconomyResult` (all three kinds). A NamedTuple of sources, keyed by economy, is
-#   what the comparisons across economies read. Sources of saved results (OutputVault's per-economy
-#   tables) are defined where the saved layout is known, not here.
+#   what the comparisons across economies read. Sources defined outside this package (over tables
+#   read from files, say) need only the `momentvalues` methods.
 # - `@CalculatedMoment` writes a `CalculatedMoment` as an expression: every function call is
 #   replaced by `lifted(f, args...)`, which is the plain call unless an argument is a moment, so any
 #   function of numbers works on moments with no list of supported functions.

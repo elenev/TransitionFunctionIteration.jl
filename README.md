@@ -53,7 +53,7 @@ With `mdl = MyModel()`:
 
 ```julia
 obj, stv = main_setup(mdl)                    # steady state, grids, initial functions
-main_execute!(obj; maxiter = 1000)            # iterate to convergence (tol = -5 means a distance of 1e-5)
+main_execute!(obj; maxiter = 1000)            # iterate (tol = -5 means a distance of 1e-5); .status says how it ended
 
 simseries, errs = simulate(obj, stv)          # stochastic simulation
 stats    = describe(simseries).moments.uncond # MomentArray of moments
@@ -61,11 +61,13 @@ errstats = calc_error_stats(errs)             # equation errors on the simulated
 irf      = simulate_irf(obj, simseries)       # impulse responses
 ```
 
-**Choosing the method.** Ordinary models use `TFIMethod()` (the default), which computes expectations
-before solving at each grid point and therefore misses any effect of the policy on next period's
-expectations. `STPFIMethod()` recomputes them from the solver's current guess; use it when a policy
-acts on the equilibrium only through those expectations, for example a portfolio that enters next
-period's consumption stage: `main_execute!(obj; solmethod = STPFIMethod())`.
+**Choosing the method.** `TFIMethod()` (the default) computes expectations at each grid point once,
+from the stored transition and forecasting functions, and then solves for the policy.
+`STPFIMethod()` solves for the policy and the next-period states together, recomputing expectations
+at every step. Both support forecasting functions and have the same solution. TFI fails only when a
+policy variable enters the equilibrium conditions solely through next period's state or forecasting
+values; `main_execute!` then stops with `status = :all_failed`, and such a model needs
+`main_execute!(obj; solmethod = STPFIMethod())`.
 
 The [documentation](https://elenev.github.io/TransitionFunctionIteration.jl/dev/) has a quick start
 that builds and solves the neoclassical growth model step by step, the full model interface
@@ -88,4 +90,4 @@ The `examples` folder holds two models, and is the reference for how a model is 
 
 ## See also
 
-- [OutputVault.jl](https://github.com/elenev/OutputVault.jl) saves solutions, simulations, moments and IRFs in a fixed layout of plain files. TransitionFunctionIteration does not depend on it.
+- [OutputVault.jl](https://github.com/elenev/OutputVault.jl) saves solutions, simulations, moments and IRFs in a fixed layout of plain files.
