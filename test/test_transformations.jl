@@ -15,7 +15,7 @@ import TransitionFunctionIteration.Transformations: Level, AnnLevel, AnnInvLevel
     @test AnnQuadLevel()(x) ≈ x * sqrt(4)
     @test Pct()(x) ≈ x * 100
     @test AnnPct()(x) ≈ x * 4 * 100
-    @test AnnInvPct()(x) ≈ x / 4
+    @test AnnInvPct()(x) ≈ x / 4 * 100
     @test AnnQuadPct()(x) ≈ x * sqrt(4) * 100
 
     @test DiffLevel()(x; basis=base) ≈ x - base

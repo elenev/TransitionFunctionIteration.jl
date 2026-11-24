@@ -58,7 +58,7 @@ end
 (t::AnnQuadLevel)(x, basis, trend, basistrend, init) = x * sqrt(ANN)
 (t::Pct)(x, basis, trend, basistrend, init) = x * PCT
 (t::AnnPct)(x, basis, trend, basistrend, init) = x * ANN * PCT
-(t::AnnInvPct)(x, basis, trend, basistrend, init) = x / ANN
+(t::AnnInvPct)(x, basis, trend, basistrend, init) = x / ANN * PCT
 (t::AnnQuadPct)(x, basis, trend, basistrend, init) = x * sqrt(ANN) * PCT
 (t::DiffLevel)(x, basis, trend, basistrend, init) = x - basis
 (t::DiffAnnLevel)(x, basis, trend, basistrend, init) = (x - basis) * ANN
