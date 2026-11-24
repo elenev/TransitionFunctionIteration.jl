@@ -1,102 +1,146 @@
 # Tables and Provenance
 
-Every result type of the package is a [Tables.jl](https://tables.juliadata.org) column table, so
-it can go straight into a `DataFrame`, a CSV or Parquet writer, or DuckDB, without copying its
-data: the columns are views of the stored arrays. Each table also carries table-level metadata
-(DataAPI.jl), which records what it is and where it came from, so that it can be restored as the
-same type from a file that keeps metadata, such as Parquet.
+Every result of the package is a [Tables.jl](https://tables.juliadata.org) table: moments and error
+statistics (`MomentArray`), simulations (`SimulationPanel`, `SimulationErrorPanel`) and impulse
+responses (`IRFResult`). Any package that accepts a Tables.jl table, such as a CSV or Parquet writer
+or a database, accepts them as they are, without a copy of the data. Each table also carries
+metadata ([DataAPI.jl](https://github.com/JuliaData/DataAPI.jl)) that records what it is and where
+it came from, so that it can be restored as the same type from a file that keeps the metadata.
 
-```julia
-using DataFrames
-DataFrame(stats)       # a MomentArray
-DataFrame(simseries)   # a SimulationPanel
-DataFrame(irf)         # an IRFResult
+This page uses the solved neoclassical growth model of `examples/ngm.jl`, which the hidden first
+block runs.
+
+```@setup tab
+using TransitionFunctionIteration
+include(joinpath(pkgdir(TransitionFunctionIteration), "examples", "ngm.jl"))
+irf = simulate_irf(obj, simseries; path_vars = (:C, :K))
 ```
 
 ## The tables
 
-| Type | Columns |
-|:--|:--|
-| `MomentArray` | the row names, in the column named by the array's row key, then one column per statistic |
-| `SimulationPanel`, `SimulationErrorPanel` | `__run`, `__period`, then one column per variable |
-| `IRFResult` | `__shock`, `__stat`, `__period`, then one column per variable |
-| `irf_paths(irf)` | `__shock`, `__run`, `__period`, then the saved variables |
-
-Names are written as strings, since file formats such as Parquet have no symbol type, and turned
-back into symbols when a table is read.
-
-### Row keys
-
-The row names of a `MomentArray` are written in a column of their own. Its name, the *row key*, is
-part of the array's type (`MomentArray{ROWS,COLS,T,M,ROWKEY}`), and whoever creates the array
-chooses it to say what the rows are:
-
-| Created by | Row key |
-|:--|:--|
-| `describe` (moments and standard errors), `linearize` | `variable` |
-| `calc_error_stats` | `equation` |
-| `compare_economies` | `moment` |
-| the parameter rows of `compare_economies` | `parameter` |
-| `MomentArray(data, rows, cols)` | `__row` |
-
-```julia
-m = MomentArray(data, (:a, :b), (:mean, :std); rowkey = :variable)
-row_key(m)                                   # :variable
-Tables.columnnames(Tables.columns(m))        # (:variable, :mean, :std)
+```@example tab
+using Tables
+Tables.istable(simseries)
 ```
 
-Arithmetic, `vcat`, `hcat` and sub-selection keep the key; `vcat` of arrays with different keys
-gives `__row`. A column name cannot equal the row key. Because the key is in the type, writing the
-table is type-stable and allocates nothing beyond the column tuple.
+```@example tab
+Tables.columnnames(Tables.columns(simseries))
+```
+
+| Type | Columns |
+|:--|:--|
+| `MomentArray` | the row names, then one column per statistic |
+| `SimulationPanel`, `SimulationErrorPanel` | `__run`, `__period`, then one column per variable |
+| `IRFResult` | `__shock`, `__stat`, `__period`, then one column per variable |
+| `irf_paths(irf)` | `__shock`, `__run`, `__period`, then the variables in `path_vars` |
+
+Names, such as the row names of a `MomentArray` or the shock names of an IRF, are written as strings,
+since file formats such as Parquet have no symbol type, and are turned back into symbols when a table
+is restored.
+
+The first column of a `MomentArray` holds its row names, and its name says what the rows are:
+
+```@example tab
+Tables.columnnames(Tables.columns(errstats))
+```
+
+| Created by | Name of the row column |
+|:--|:--|
+| `describe`, `linearize` | `variable` |
+| `calc_error_stats` | `equation` |
+| `compare_economies` | `moment` (and `parameter` for the rows that `models` adds) |
+| `MomentArray(data, rows, cols)` | `__row`, or the `rowkey` keyword |
+
+`row_key(m)` returns the name. A statistic cannot have the same name.
 
 ## Metadata
 
-The table-level metadata are strings, ready for any writer, and DataAPI's `metadata` reads them:
+The metadata are strings, read with `DataAPI.metadata`:
+
+```@example tab
+import DataAPI
+DataAPI.metadata(simseries)
+```
 
 | Key | Meaning |
 |:--|:--|
-| `tfi.kind` | the type that wrote the table (`MomentArray`, `SimulationPanel`, ...) |
-| `tfi.rowkey` | a `MomentArray`'s row key |
+| `tfi.kind` | the type of the table (`MomentArray`, `SimulationPanel`, ...) |
+| `tfi.rowkey` | a `MomentArray`'s row column |
 | `tfi.endog` | a `SimulationPanel`'s endogenous state names (a JSON array) |
 | `tfi.provenance` | the provenance of a simulation or an IRF (JSON) |
 
-## Restoring from a table
-
-Each type has a constructor from any Tables.jl source:
-
-```julia
-stats = MomentArray(table)                       # names and row key from the table and its metadata
-stats = MomentArray(table; rowkey = :variable)   # a table without metadata: say where the names are
-simseries = SimulationPanel(table)               # needs "tfi.endog", or: SimulationPanel(table, (:K,))
-irf = IRFResult(stats_table, paths_table)
-```
-
-The restore checks `tfi.kind` when the source has it, so a table of one kind cannot be read as
-another. For a `MomentArray` you can fix more of the type to get a restore whose result type is
-known at compile time:
-
-```julia
-MomentArray{ROWS,COLS}(table)                    # the table's names are checked against ROWS and COLS
-MomentArray{ROWS,COLS,Float64,SMatrix{3,2,Float64,6},:variable}(table)   # inferred, no allocation
-```
-
-A static matrix type is filled straight from the table's columns.
-
 ## Provenance
 
-A `SimulationPanel`, `SimulationErrorPanel` and `IRFResult` carry a `Provenance`:
+A `SimulationPanel`, `SimulationErrorPanel` and `IRFResult` record where they came from:
 
-- the id of the solution they were computed from, [`solution_id`](@ref), a SHA-1 hash of the grid
-  and of the values of the policy, value, transition and forecasting functions, so that solutions with
-  identical values have identical ids, including one restored from a file;
-- the TFI version;
-- the settings of the run (`SimulationSettings`: seed, burn-in, alignment and starting states;
-  `IRFSettings`: seed, number of draws, shocks).
+- the id of the solution they were computed from, [`solution_id`](@ref). It is a hash of the grid and
+  of the values of the solution's functions, so two solutions with the same values have the same id,
+  including a solution restored from a file;
+- the version of TransitionFunctionIteration.jl;
+- the settings of the run: for a simulation the seed, burn-in and starting states, for an IRF the
+  seed, number of paths and shocks.
 
-It is published as JSON under `tfi.provenance`, which DuckDB reads with `json_extract`.
+```@example tab
+simseries.provenance
+```
 
-## Saving to disk
+## Saving and restoring results
 
-The package defines the tables and their metadata and does not write files. The companion package
-OutputVault.jl saves solutions, simulations, moments and IRFs in a fixed layout, with the git
-commit that produced them, in plain formats that other languages read.
+The package does not write files: pass the tables to any Tables.jl writer. To restore a table as its
+type later, use a format that keeps the metadata, such as Parquet. With
+[Parquet2.jl](https://gitlab.com/ExpandingMan/Parquet2.jl), pass the metadata to the writer:
+
+```@example tab
+using Parquet2
+dir = mktempdir()
+
+Parquet2.writefile(joinpath(dir, "stats.parquet"), stats; metadata = DataAPI.metadata(stats))
+Parquet2.writefile(joinpath(dir, "sim.parquet"), simseries; metadata = DataAPI.metadata(simseries))
+Parquet2.writefile(joinpath(dir, "irf.parquet"), irf; metadata = DataAPI.metadata(irf))
+Parquet2.writefile(joinpath(dir, "irf_paths.parquet"), irf_paths(irf); metadata = DataAPI.metadata(irf_paths(irf)))
+nothing # hide
+```
+
+Each type has a constructor from any Tables.jl table:
+
+```@example tab
+stats2 = MomentArray(Parquet2.Dataset(joinpath(dir, "stats.parquet")))
+stats2 == stats
+```
+
+```@example tab
+sim2 = SimulationPanel(Parquet2.Dataset(joinpath(dir, "sim.parquet")))
+sim2.provenance == simseries.provenance
+```
+
+```@example tab
+irf2 = IRFResult(Parquet2.Dataset(joinpath(dir, "irf.parquet")),
+                 Parquet2.Dataset(joinpath(dir, "irf_paths.parquet")))
+irf2.means.shock_5.C == irf.means.shock_5.C
+```
+
+A constructor checks `tfi.kind` when the table has it, so a table of one kind cannot be restored as
+another. A table without metadata, such as one read from a CSV file, needs what the metadata would
+have said:
+
+```julia
+MomentArray(table; rowkey = :variable)   # the name of the row column
+SimulationPanel(table, (:K,))            # the endogenous states
+```
+
+`MomentArray{ROWS,COLS}(table)` also checks that the table has the row names `ROWS` and the
+statistics `COLS`.
+
+A solution (`ModelSolution`) is not a table. Julia's standard library `Serialization` saves and
+restores it, in a file that is read back with the same versions of Julia and the packages:
+
+```@example tab
+using Serialization
+serialize(joinpath(dir, "obj.jls"), obj)
+obj2 = deserialize(joinpath(dir, "obj.jls"))
+solution_id(obj2) == solution_id(obj)
+```
+
+[OutputVault.jl](https://github.com/elenev/OutputVault.jl) is a separate, optional package that
+saves solutions and results of research runs in an organized layout of plain files, using the tables
+and metadata described here.

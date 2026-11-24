@@ -1,6 +1,8 @@
 using Documenter
 using TransitionFunctionIteration
 
+ENV["GKSwstype"] = "100"   # headless GR for the plots of the @example blocks
+
 makedocs(
     sitename = "TransitionFunctionIteration.jl",
     modules = [TransitionFunctionIteration],

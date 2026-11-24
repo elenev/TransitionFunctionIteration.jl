@@ -230,8 +230,8 @@ end
 """
     collect_parameters(obj_or_model) -> MomentArray
 
-The model's parameters as a table, one row per parameter and one column `value`: the `params` of an
-[`EconomyResult`](@ref), and what OutputVault saves in a run's `params` component. The default takes
+The model's parameters as a table, one row per parameter and one column `value`, as the `params` of
+an [`EconomyResult`](@ref) expects them. The default takes
 every scalar real or Boolean property of the model (a Boolean is 0 or 1), so a model that forwards the
 properties of its parts is covered; a project can add a method for its model type to choose differently.
 """

@@ -61,12 +61,19 @@ end
 """
     compute_next_period_values(next, model, mode) -> NextPeriod
 
-Compute next-period auxiliary quantities given next-period state `next`. Interface stub --
-model packages must add methods dispatching on their `AbstractModel` subtype.
+Next-period quantities in one next-period exogenous state. Interface stub -- model packages must
+add methods dispatching on their `AbstractModel` subtype.
 
-Return a `NextPeriod(; expectations, continuations)` where:
-- `expectations`: probability-weighted scalars (averaged by `compute_expectations`)
-- `continuations`: per-state raw values (stacked into an `SVector` across exogenous states)
+It is called once for each exogenous state that can follow the current one. `next` holds that
+state's exogenous variables, the next-period endogenous state, the `Vfct` values there and any
+forecasting values. Return a `NextPeriod(; expectations, continuations)` of this state's values,
+normally scalars:
+- `expectations`: terms to take the expectation of; `compute_expectations` weights them by the
+  transition probabilities and sums, so `calc_eqm` receives scalars in `np.expectations`
+- `continuations`: other values needed by state; `compute_expectations` stacks them, so `calc_eqm`
+  receives one entry per next-period exogenous state in `np.continuations`
+
+Do not weight by the probabilities or return values for several exogenous states.
 """
 function compute_next_period_values(next, mdl::AbstractModel, mode::EvaluationMode)::NextPeriod
     throw(MethodNotImplementedError(:compute_next_period_values, typeof(mdl)))

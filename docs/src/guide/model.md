@@ -79,13 +79,25 @@ end
 
 ### `compute_next_period_values` return contract
 
-Returns a `NextPeriod(; expectations, continuations)` where:
+`compute_next_period_values(next, mdl, mode)` describes one next-period exogenous state. The package
+calls it once for each exogenous state that can follow the current one, so it never deals with
+probabilities or with more than one state at a time.
 
-- `expectations`: a `NamedTuple` of probability-weighted scalars (one per quantity), computed
-  by `compute_expectations` as `E_t[f(x_{t+1})]`. These enter `calc_eqm` via `np.expectations`.
-- `continuations`: a `NamedTuple` of per-state raw values (one entry for each exogenous state
-  realization). These enter `calc_eqm` via `np.continuations` and are available in `SimulateMode`
-  for the realized next-period state.
+`next` is that state: its exogenous variables (`A`), the next-period endogenous state from the
+transition functions (`K`), the value functions there (`C`), and the forecasting values if the model
+has any. The function returns `NextPeriod(; expectations, continuations)`, two `NamedTuple`s of
+this state's values, normally scalars:
+
+- `expectations`: the terms whose conditional expectation enters the equilibrium conditions. The
+  package multiplies each by the probability of the state and sums over states, so `calc_eqm`
+  receives `np.expectations.Ek`, a scalar equal to the expectation.
+- `continuations`: other next-period values the equilibrium conditions need state by state. The
+  package collects them across states, so `calc_eqm` receives `np.continuations.MU`, a vector with
+  one entry per next-period exogenous state; `np.prnext` holds the probabilities of those states, and
+  `np.continuations` also holds the variables of `next` by state.
+
+So do not weight by probabilities and do not return a vector over exogenous states: both are done
+for you.
 
 ```julia
 function compute_next_period_values(next, mdl::MyModel, ::EvaluationMode)
@@ -156,7 +168,7 @@ These functions have sensible defaults but can be overloaded:
 | `normalize_next_period_values(np, mdl, mode)` | Transform expectations before they enter `calc_eqm` |
 | `normalize_fx_errors(mdl, fx_nt, simvars)` | Normalize residuals for comparability |
 | `initial_guess_from_stv(stv, mdl)` | Adjust the steady-state values before initializing interpolants |
-| `vals_from_policy(state, policy, mdl)` | Needed when `Vfct` variables are not a subset of policy variables |
+| `vals_from_policy(state, policy, mdl)` | `Vfct` values as functions of the policy, for the fixed-point steady state (default: the policy itself) |
 
 ### Variable bounds
 
@@ -198,41 +210,60 @@ dynamic_depth(::MyModel) = 1
 
 ### Forecasting functions
 
-In some models next period's calculations need a current-period choice that is not a state variable: for
-example a portfolio chosen today enters next period's consumption stage. Such a model declares those
-choices as *forecasting values*:
+Next period's expectations sometimes depend on current-period quantities besides next period's
+state. For example, the stochastic discount factor `β (C′/C)^(-γ)` needs today's consumption `C`
+as well as next period's `C′`. Declare such quantities with `forecasts_from_policy`, which returns a
+`NamedTuple` computed from the state and the policy; each name then appears in `next` in
+`compute_next_period_values`:
 
 ```julia
-forecasts_from_policy(state, policy, mdl::MyModel) = (; portfolio = policy.m)   # names must not clash with state or Vfct names
+import TransitionFunctionIteration: forecasts_from_policy
+
+forecasts_from_policy(state, policy, mdl::MyModel) = (; Cnow = policy.C)   # names must differ from state and Vfct names
+
+function compute_next_period_values(next, mdl::MyModel, ::EvaluationMode)
+    (; A, K, C, Cnow) = next
+    # ... β * (C / Cnow)^(-γ) * (MPK + 1 - δ) ...
+end
 ```
 
-- `forecasts_from_policy(state, policy, mdl)` returns a `NamedTuple` of current-period quantities beyond the
-  next-period state. The solution then has a forecasting function `Ffct` over the state space, iterated
-  together with `Pfct`, `Vfct` and `Tfct`; the forecasting values appear in `next` in
-  `compute_next_period_values`.
-- `Ffct` is saved with the solution and is part of its identity (`solution_id`). Switching a model
-  between having forecasting values and not changes the solution architecture; treat the two as
-  different solutions.
-- Convergence is reported separately for the value, transition and forecasting functions.
+The solution then has a forecasting function `Ffct`, which stores these values at every grid point.
+After each iteration it is updated from the newly solved policy, with the same damping as the value
+and transition functions, and the iteration converges only when it has stopped changing too
+(`distF` in the result of `main_execute!`). Both solution methods support forecasting functions;
+they differ in which forecasting values a grid-point solve uses, as described next.
 
-Forecasting values work with either solution method.
+### Choosing a solution method
 
-### Choice of solution method
+Each iteration solves the equilibrium conditions at every grid point, then updates the value,
+transition and forecasting functions. The two methods differ in what the solver varies at a grid
+point:
 
-`TFIMethod` (the default) computes the expectations at a grid point once, before solving for the policy at
-that point, and holds them fixed during the solve. It therefore misses any effect of the policy on next
-period's expectations. That is harmless when the policy also enters the equilibrium conditions directly.
-Where the policy acts on the equilibrium only through those expectations, the choice has no effect in the
-solve, and the model needs `STPFIMethod` (Simultaneous Transition and Policy Function Iteration), which
-recomputes the expectations from the solver's current guess instead of precomputing them:
+- `TFIMethod` (the default) computes the expectations once, before solving, from the next-period
+  states given by the current transition functions and from the stored forecasting values. The
+  solver then varies only the policy. Its effect on next period's state and on the forecasting
+  values enters the expectations at the next iteration, when the updated functions are used.
+- `STPFIMethod` (Cao, Luo, and Nie) makes the next-period states unknowns of the solve alongside
+  the policy, with the transitions computed by `calc_eqm` as extra equations, and recomputes the
+  forecasting values from the solver's current policy. The expectations are recomputed at every
+  evaluation, so the policy's effect on them is part of the solve. The system at each point is
+  larger: the policy variables plus one next-period value of each endogenous state per exogenous
+  state.
 
 ```julia
-obj, stv = main_setup(mdl)
 main_execute!(obj; solmethod = STPFIMethod())
 ```
 
-Whether a model has forecasting values does not decide the method; either method can be used with or without
-them.
+At a converged solution both methods satisfy the same equilibrium conditions, and TFI is cheaper
+at each point. TFI fails when a policy variable affects the residuals of `calc_eqm` only through
+next period's state or the forecasting values. Within the solve those are fixed, so the residuals
+do not depend on that variable, the system is singular, and the solver fails at every point: the
+variable stays at its initial guess. In the example above, if `calc_eqm` uses the expectation as
+it is, `1 - E[β (C′/Cnow)^(-γ) (MPK′ + 1 - δ)]`, the residual depends on today's `C` only through
+`Cnow`; TFI cannot solve it and `STPFIMethod` can. Writing the residual so that `C` also enters
+directly, `1 - E[...] (Cnow/C)^(-γ)`, gives the same equation at the solution, where `Cnow = C`, and
+TFI solves it. When TFI fails in this way, `main_execute!` stops after the first
+iteration with the message "Solver failed at every grid point." and `status = :all_failed`.
 
 ### Extra error diagnostics
 

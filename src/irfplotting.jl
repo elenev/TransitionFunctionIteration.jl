@@ -26,18 +26,21 @@ id(rv::ReportedVariable{ID}) where ID = ID
 """
     IRFPage(vars)
 
-An `AbstractArray` of `ReportedVariable`s that defines one page (subplot group) in an IRF figure.
-Construct from a vector or matrix of `ReportedVariable` specs; each element becomes one subplot.
+A matrix of `ReportedVariable`s that defines one page of an IRF figure: each element is one panel,
+laid out as in the matrix. A vector is one row of panels. Elements may also be variable names,
+which become `ReportedVariable(name)`.
 
-    page = IRFPage([ReportedVariable(:C), ReportedVariable(:K; transformation=DiffLevel())])
+    page = IRFPage([ReportedVariable(:C), ReportedVariable(:K; transformation=DiffLevel())])   # 1 × 2
+    page = IRFPage([:C :K; :Y :I])                                                              # 2 × 2
 """
 struct IRFPage{T<:ReportedVariable,N,A<:AbstractVecOrMat{T}} <: AbstractArray{T,N}
     data::A
 end
-function IRFPage(data)
+function IRFPage(data::AbstractMatrix)
     data = ReportedVariable.(data)
-    IRFPage{eltype(data), ndims(data), typeof(data)}(data)
+    IRFPage{eltype(data), 2, typeof(data)}(data)
 end
+IRFPage(data::AbstractVector) = IRFPage(permutedims(data))   # a vector is one row of panels
 
 # --- AbstractMatrix Interface ---
 Base.size(sp::IRFPage) = size(sp.data)
@@ -88,13 +91,13 @@ end
         n_t = length(_pers)
 
         paths_data = getproperty(irf.paths, shock)
-        paths_mat  = getproperty(paths_data, rv.varname)   # N × T_full
-        N          = size(paths_mat, 1)
+        paths_mat  = getproperty(paths_data, rv.varname)   # T × N: periods by paths, as simulate_irf stores them
+        N          = size(paths_mat, 2)
 
         # Apply transformation to each simulation path
         trans_paths = Matrix{Float64}(undef, N, n_t)
         for i in 1:N
-            trans_paths[i, :] = rv.transformation(paths_mat[i, 1:T]; kw...)[_pers .+ 1]
+            trans_paths[i, :] = rv.transformation(paths_mat[1:T, i]; kw...)[_pers .+ 1]
         end
 
         pct_step = (50.0 - tail_pct) / n

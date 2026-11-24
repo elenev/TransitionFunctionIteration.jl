@@ -274,7 +274,7 @@ struct IterateMode <: EvaluationMode end
 "Evaluation context: Simulating the model."
 struct SimulateMode <: EvaluationMode end
 
-"Solution method: Transition Function Iteration (TFI) of Elenev and Landvoigt."
+"Solution method: Transition Function Iteration (TFI) of Elenev, Landvoigt, and Van Nieuwerburgh (2021)."
 struct TFIMethod <: SolutionMethod end
 
 "Solution method: Simultaneous Transition and Policy Function Iteration (STPFI) of Cao, Luo, and Nie."

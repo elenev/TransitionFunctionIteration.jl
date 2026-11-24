@@ -689,7 +689,7 @@ Build a labeled table of moments across multiple economies.
   variable name is a `SimulationMoment` with default settings
 - `economies`: NamedTuple of the economies' results (columns of the output table), each a source
   the moments can be read from: a `describe()` output (`SimulationMoment`s only) or an
-  [`EconomyResult`](@ref), or a project's own source type (OutputVault's tables of saved runs)
+  [`EconomyResult`](@ref), or any type with `momentvalues` methods
 
 Returns a `MomentArray` with moment names as rows and economy names as columns; each cell is
 `getmoment(economies, moment, economy, base)`.

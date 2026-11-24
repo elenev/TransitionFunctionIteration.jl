@@ -76,9 +76,20 @@
             ReportedVariable(:C),
             ReportedVariable(:C; transformation=Transformations.DiffLevel()),
         ])
-        @test size(page) == (2,)
+        @test size(page) == (1, 2)                    # a vector is one row of panels
         @test page[1].varname == :C
         @test page[2].transformation isa Transformations.DiffLevel
+        @test size(IRFPage([:C :K; :C :K])) == (2, 2)  # a matrix keeps its shape; names become ReportedVariables
+        @test IRFPage([:C, :K])[2] == ReportedVariable(:K)
+    end
+
+    @testset "IRFPage recipe — layout follows the page shape" begin
+        for (page, layout) in ((IRFPage([:C, :C, :C]), (1, 3)), (IRFPage(reshape([:C, :C, :C, :C], 2, 2)), (2, 2)))
+            attrs = Dict{Symbol,Any}()
+            specs = RecipesBase.apply_recipe(attrs, irf_mock, page, :shock_1)
+            @test attrs[:layout] == layout
+            @test [s.plotattributes[:subplot] for s in specs] == 1:length(page)
+        end
     end
 
     @testset "IRF recipe — pers parameter" begin
@@ -101,9 +112,10 @@
     end
 
     @testset "IRF recipe — fan chart" begin
-        # Need paths data for fan chart: irf.paths.shock_1.C is an N×T matrix
+        # irf.paths.shock_1.C is T × N (periods by paths), as simulate_irf stores it. All paths
+        # share the starting period, so the fan has zero width there.
         N_paths = 20
-        paths_C = randn(N_paths, T) .+ shock_C'  # N × T matrix
+        paths_C = shock_C .+ [zeros(1, N_paths); randn(Random.Xoshiro(1), T - 1, N_paths)]   # T × N
         irf_with_paths = IRFResult(
             irf_mock.means,
             irf_mock.stdevs,
@@ -116,7 +128,17 @@
             Dict{Symbol,Any}(:fan => true, :n_bands => 3, :tail_pct => 5.0),
             irf_with_paths, rv, :shock_1)
         # fan=true produces n_bands series + 1 mean line
-        @test length(specs) >= 4
+        @test length(specs) == 4
+
+        # each band spans quantiles across paths, period by period
+        for (k, p_lo) in enumerate((0.05, 0.05 + 0.15, 0.05 + 0.30))
+            pers, y_lo = specs[k].args
+            y_hi = specs[k].plotattributes[:fillrange]
+            @test pers == 0:T-1
+            @test y_lo ≈ [quantile(paths_C[t, :], p_lo) for t in 1:T]
+            @test y_hi ≈ [quantile(paths_C[t, :], 1 - p_lo) for t in 1:T]
+            @test y_lo[1] ≈ y_hi[1] ≈ shock_C[1]
+        end
     end
 
     @testset "IRFPage recipe — smoke test" begin

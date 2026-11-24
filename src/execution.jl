@@ -334,6 +334,12 @@ function perform_iteration!(obj, diag, damp, npasses, solmethod, use_threads::Bo
                 if success[i] break end
             end
 
+            # Still unsolved after a later pass, whose guesses come from neighbors: keep the pass-1
+            # result, computed from the point's own guess
+            if pass > 1 && !success[i]
+                return
+            end
+
             new_Pfct[i] = new.pfct
             distances[i] .= new.vfct - prev_vfct[i]
             new_Vfct[i] = @. damp * prev_vfct[i] + (1-damp) * new.vfct
@@ -518,7 +524,13 @@ end
 Iterate policy and value functions of `obj` to convergence.
 
 Solves equilibrium conditions at every grid point, damps the value function update, and
-repeats until `log₁₀(max_distance) < tol` or `maxiter` is reached.
+repeats until one of three exit states, each logged at level `COMPLETE` and returned as `status`:
+
+- `:converged`: the largest change of the value, transition and forecasting functions in the last
+  iteration is below `10^tol`;
+- `:maxiter`: `maxiter` iterations ran without convergence;
+- `:all_failed`: the solver failed at every grid point in the last iteration, so the policy was not
+  updated anywhere.
 
 - `tol`: convergence threshold as log₁₀ distance (`-5` means 1e-5)
 - `damp`: damping weight in [0,1], applied to value and transition functions
@@ -531,7 +543,7 @@ repeats until `log₁₀(max_distance) < tol` or `maxiter` is reached.
   (main_execute_update.m); a period-2 oscillation of `T` persists under this rule.
 - `npasses`: revisit passes for grid points where the solver failed on the first pass
 - `solmethod`: `TFIMethod()` (default) or `STPFIMethod()`, controls whether to precompute
-  expectations (Elenev and Landvoigt) or to add transition functions to the system (Cao et al)
+  expectations (TFI) or to add transition functions to the system (STPFI, Cao, Luo, and Nie)
 - `multithreaded`: `nothing` (default) threads over grid points when more than one thread
   is available and the problem is large enough; `true`/`false` forces the choice
 - `logging`: minimum `LogLevel` to display (`COMPLETE` suppresses iteration logs)
@@ -540,8 +552,11 @@ repeats until `log₁₀(max_distance) < tol` or `maxiter` is reached.
   StructVector of per-iteration snapshots, one entry per iteration, each a NamedTuple of
   full-grid arrays for the requested variables.
 
-Returns a NamedTuple with convergence info and, when `track_history` is set, a `history`
-StructVector field.
+Returns a NamedTuple with the settings above, `status`, the number of iterations `iter`, the final
+`log₁₀` distances of the value, transition and forecasting functions (`distV`, `distT`, `distF`) with
+the variables and grid points where they are largest, and `history` (`nothing` unless
+`track_history` is set). Judge the accuracy of a solution by its simulated errors
+([`calc_error_stats`](@ref)), not by `status` alone.
 """
 function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=TFIMethod(),
                         damping::Symbol=:damped_iterate,
@@ -612,13 +627,19 @@ function main_execute!(obj; maxiter=100, tol=-5, damp=0.5, npasses=2, solmethod=
             exec_update = (; iter, distV, worst_varV, worst_pointV, distT, worst_varT, worst_pointT, worst_exst,
                            distF, worst_varF, worst_pointF)
 
-            if iter >= maxiter
+            # Exit states: every point failed (the policy was not updated anywhere, so iterating
+            # further cannot help), maximum iterations, or convergence
+            if !any(diag.success)
+                @logmsg COMPLETE "Solver failed at every grid point."
+                exec = merge(exec, exec_update, (; status = :all_failed))
+                break
+            elseif iter >= maxiter
                 @logmsg COMPLETE "Maximum iterations reached without convergence." 
-                exec = merge(exec, exec_update)
+                exec = merge(exec, exec_update, (; status = :maxiter))
                 break
             elseif distV < tol && distT < tol && distF < tol
                 @logmsg COMPLETE "Converged."
-                exec = merge(exec, exec_update)
+                exec = merge(exec, exec_update, (; status = :converged))
                 break
             end
             iter += 1
