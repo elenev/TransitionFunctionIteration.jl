@@ -81,6 +81,12 @@ valid collection of moments.
 - [`CalculatedMoment`](@ref) is a function of other moments (below).
 
 Each takes two more keywords, `transformation` and `compare_transformation`, described next.
+An `ImpulseMoment` also accepts `basis = :uncond`, the name of its reference shock path.
+For example, `ImpulseMoment(:C, :up, 2; transformation = RatioPct(), basis = :control)`
+reports the percentage response relative to `:control`. The reference path is read only when
+[`Transformations.requires_basis`](@ref) is true: levels and percentages need only the requested
+shock, while differences and ratios need the reference path too. A missing required path is a
+`KeyError`; path ordering does not affect the choice. Unlike moments, plots default to the first path.
 
 ## Transformations
 
@@ -110,7 +116,7 @@ A moment has two transformations, applied in different places:
 - `transformation` (default `Level()`) is applied to the value within one economy, and only in the
   base economy of a table. For a `SimulationMoment` or a `ParameterMoment` the basis is the default
   of the transformation, so only the level and percent types are meaningful. For an
-  `ImpulseMoment` the basis is the `uncond` path at the same period, so `DiffLevel()` gives the
+  `ImpulseMoment` the basis is the path named by `basis` (`:uncond` by default) at the same period, so `DiffLevel()` gives the
   response and `RatioPct()` the percentage response.
 - `compare_transformation` (default `Level()`) is applied in every other economy, to that economy's
   value with the base economy's value as the basis. The `transformation` is not applied there.

@@ -5,6 +5,17 @@ import TransitionFunctionIteration.Transformations: Level, AnnLevel, AnnInvLevel
     RatioPct, RatioAnnPct,
     DiffInitLevel, DiffInitPct
 
+@testset "Transformations — external basis trait" begin
+    for T in (Level, AnnLevel, AnnInvLevel, AnnQuadLevel, Pct, AnnPct, AnnInvPct, AnnQuadPct,
+              DiffInitLevel, DiffInitPct)
+        @test !Transformations.requires_basis(T())
+    end
+    for T in (DiffLevel, DiffAnnLevel, DiffAnnInvLevel, DiffAnnQuadLevel,
+              DiffPct, DiffAnnPct, DiffAnnInvPct, DiffAnnQuadPct, RatioPct, RatioAnnPct)
+        @test Transformations.requires_basis(T())
+    end
+end
+
 @testset "Transformations — operators" begin
     x    = [1.0, 2.0, 3.0]
     base = [0.5, 1.0, 1.5]

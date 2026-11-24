@@ -3,6 +3,15 @@ module Transformations
 
 abstract type AbstractTransformation end
 
+"""
+    requires_basis(transformation) -> Bool
+
+Whether reading an impulse moment needs a separate baseline path. Defaults to `true` for
+custom transformations; overload with `false` when the transformation ignores `basis`.
+This controls data retrieval, not the default numeric basis of a transformation call.
+"""
+requires_basis(::AbstractTransformation) = true
+
 Base.broadcastable(t::Type{<:AbstractTransformation}) = Ref(t)
 
 # Levels
@@ -35,6 +44,9 @@ struct RatioAnnPct    <: AbstractTransformation end
 # Differences from initial level
 struct DiffInitLevel        <: AbstractTransformation end
 struct DiffInitPct          <: AbstractTransformation end
+
+requires_basis(::Union{Level,AnnLevel,AnnInvLevel,AnnQuadLevel,
+                      Pct,AnnPct,AnnInvPct,AnnQuadPct,DiffInitLevel,DiffInitPct}) = false
 
 ## Functions
 

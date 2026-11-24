@@ -108,6 +108,7 @@ row_key
 AbstractMoment
 TransitionFunctionIteration.transformation
 TransitionFunctionIteration.compare_transformation
+TransitionFunctionIteration.Transformations.requires_basis
 SimulationMoment
 ImpulseMoment
 ParameterMoment
@@ -216,6 +217,7 @@ Filter = t -> begin
         TransitionFunctionIteration.lifted,
         TransitionFunctionIteration.transformation,
         TransitionFunctionIteration.compare_transformation,
+        TransitionFunctionIteration.Transformations.requires_basis,
         TransitionFunctionIteration.EconomyResult,
         TransitionFunctionIteration.collect_parameters,
         TransitionFunctionIteration.getmoment,

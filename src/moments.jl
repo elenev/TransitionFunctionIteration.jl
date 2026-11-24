@@ -70,15 +70,17 @@ end
 SimulationMoment(var::Symbol; kwargs...) = SimulationMoment(; var, kwargs...)
 
 """
-    ImpulseMoment(; var, shock, period, stat=:mean, transformation=Transformations.Level,
+    ImpulseMoment(; var, shock, period, stat=:mean, basis=:uncond, transformation=Transformations.Level,
                     compare_transformation=Transformations.Level)
 
 A point on an impulse response: `stat` of `var` under `shock`, `period` periods into the IRF
 (`period` indexes the IRF lines, so it is the `__period` of the IRF table; 1 is the starting period).
 
-The `transformation` is applied with the same statistic of the unconditional path, `uncond`, at the
-same period as its basis, so `DiffLevel` is the response and `RatioPct` the percentage response. The
-IRF is assumed to start at the stochastic steady state, where `uncond` is the no-shock baseline.
+For a transformation that needs a basis, `basis` names the reference shock path (default `:uncond`),
+read at the same variable, statistic and period. Thus `DiffLevel` is the response and `RatioPct`
+the percentage response relative to that path. A transformation that ignores the basis, such as
+`Level`, reads only `shock`; the reference path need not exist. See
+[`Transformations.requires_basis`](@ref).
 `compare_transformation` is applied to the shock path's values in two economies, as for a
 [`SimulationMoment`](@ref).
 """
@@ -87,6 +89,7 @@ IRF is assumed to start at the stochastic steady state, where `uncond` is the no
     shock::Symbol
     period::Int
     stat::Symbol = :mean
+    basis::Symbol = :uncond
     transformation::T = Transformations.Level()
     compare_transformation::CT = Transformations.Level()
 end
@@ -295,7 +298,7 @@ function momentvalues(irf::IRFResult, m::ImpulseMoment)
         1 <= m.period <= length(line) || throw(BoundsError(line, m.period))
         getproperty(line, m.var)[m.period]
     end
-    return path(m.shock), path(:uncond)
+    return path(m.shock), Transformations.requires_basis(transformation(m)) ? path(m.basis) : nothing
 end
 
 function _parameter(params::MomentArray, name::Symbol)
