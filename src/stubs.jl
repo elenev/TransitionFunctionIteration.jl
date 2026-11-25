@@ -48,11 +48,12 @@ Compute equilibrium conditions at `state` given `policy`. Interface stub --
 model packages must add methods dispatching on their `AbstractModel` subtype.
 
 Expected return: depends on the evaluation mode:
-- in `SolveMode`: a NamedTuple with fields `fx` (residuals)
-- in `IterateMode`: a NamedTuple with fields `trans` (next-period endogenous state values for 
-  each  realization of exogenous state), and `vals` (this-period values of Vfct variables)
-- in `SimulateMode`: a NamedTuple with fields `trans` (same as in IterateMode) and `simvars` 
-  (value outputs and extra simulation variables in SimulateMode).
+- in `SolveMode`: the residuals `fx` themselves, as an `SVector` or a `NamedTuple`
+- in `IterateMode`: a NamedTuple `(; fx, trans, vals)` with the residuals, the next-period
+  endogenous state `trans` (each entry a scalar, or an `SVector` with one element per exogenous
+  state next period), and this period's values `vals` of the `Vfct` variables
+- in `SimulateMode`: a NamedTuple `(; fx, trans, simvars)`, with `fx` and `trans` as above and
+  `simvars` the variables to record in the simulation
 """
 function calc_eqm(state, policy, mdl::AbstractModel, np::NextPeriod, mode::EvaluationMode)
     throw(MethodNotImplementedError(:calc_eqm, typeof(mdl)))

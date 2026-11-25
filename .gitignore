@@ -35,3 +35,6 @@ coverage/
 
 # AI
 .claude/
+
+# Scratch files
+scratch*.jl
