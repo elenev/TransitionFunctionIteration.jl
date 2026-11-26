@@ -6,7 +6,7 @@
 #   metadata, so OutputVault writes them as table files; from_storage restores them from the table.
 # - An IRFResult is the folder (stats, paths): two tables, the statistics with the IRF's metadata.
 # - ModelSolution, SteadyState and Interpolant have a portable layout inside their .jld2 files
-#   (write_jld2, read_jld2), plain HDF5-compatible arrays and metadata without Julia objects, so they
+#   (write_portable_jld2, read_portable_jld2), plain HDF5-compatible arrays and metadata without Julia objects, so they
 #   read without the code that wrote them. Layout (schema version 2):
 #     meta/{schema_version, tfi_version, created, solution_id, model_type, singletons}
 #     meta/model/... (model_metadata tree)
@@ -28,7 +28,7 @@ module TransitionFunctionIterationOutputVaultExt
 
 using OutputVault
 using OutputVault: JLD2, RunHandle, RunPattern, QueryShape, find_runs, query_results
-import OutputVault: to_storage, from_storage, write_jld2, read_jld2
+import OutputVault: to_storage, from_storage, write_portable_jld2, read_portable_jld2
 import TransitionFunctionIteration as TFI
 using TransitionFunctionIteration: AbstractModel, ModelSolution, SteadyState, MomentArray,
     SimulationPanel, SimulationErrorPanel, IRFResult, irf_paths, solution_id, Exogenv,
@@ -57,7 +57,7 @@ end
 
 ## Portable .jld2 files: writing
 
-function write_jld2(io, obj::ModelSolution)
+function write_portable_jld2(io, obj::ModelSolution)
     write_header(io)
     io["meta/solution_id"] = solution_id(obj)
     io["meta/model_type"] = TFI._model_type_name(obj.model)
@@ -75,7 +75,7 @@ function write_jld2(io, obj::ModelSolution)
     write_bounds(io, "Tfct/__bounds", obj.Tfct_bounds)
 end
 
-function write_jld2(io, stv::SteadyState)
+function write_portable_jld2(io, stv::SteadyState)
     io["meta/schema_version"] = SCHEMA_VERSION
     io["meta/tfi_version"] = TFI.tfi_version()
     io["meta/model_type"] = TFI._model_type_name(stv.model)
@@ -87,7 +87,7 @@ end
 
 # an Interpolant over a state-space grid (e.g. recursions computed at a solution's policies): its
 # grid and one array per variable, as in a solution file, so that it loads without the solution
-function write_jld2(io, fct::Interpolant)
+function write_portable_jld2(io, fct::Interpolant)
     write_header(io)
     write_grid(io, fct.ssg)
     write_fct(io, "fct", fct)
@@ -171,7 +171,7 @@ function file_model(io, context)
     throw(ArgumentError("a portable solution or steady state stores no model: load it with a model or a model type (`model` in load_result, `context` in load_result_item), or read the native copy"))
 end
 
-function read_jld2(::Type{<:ModelSolution}, io; context = nothing)
+function read_portable_jld2(::Type{<:ModelSolution}, io; context = nothing)
     mdl = file_model(io, context)
     if context isa AbstractModel
         check_exogenv(io, mdl)
@@ -179,14 +179,14 @@ function read_jld2(::Type{<:ModelSolution}, io; context = nothing)
     return rebuild(io, mdl)
 end
 
-function read_jld2(::Type{<:SteadyState}, io; context = nothing)
+function read_portable_jld2(::Type{<:SteadyState}, io; context = nothing)
     mdl = file_model(io, context)
     check_schema(io)
     parts = NamedTuple{STV_PARTS}(map(part -> read_namedtuple(io, string(part)), STV_PARTS))
     return SteadyState(; model = mdl, parts...)
 end
 
-function read_jld2(::Type{<:Interpolant}, io; context = nothing)
+function read_portable_jld2(::Type{<:Interpolant}, io; context = nothing)
     check_schema(io)
     return read_fct(io, "fct", read_grid(io))
 end

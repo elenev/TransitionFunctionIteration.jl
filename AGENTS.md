@@ -68,8 +68,8 @@ not by `status` alone.
 
 ## OutputVault extension
 
-- OutputVault does all file I/O. The extension only defines `to_storage`, `from_storage`, `write_jld2`
-  and `read_jld2` for TFI's types, and conveniences built on OutputVault's functions.
+- OutputVault does all file I/O. The extension only defines `to_storage`, `from_storage`, `write_portable_jld2`
+  and `read_portable_jld2` for TFI's types, and conveniences built on OutputVault's functions.
 - The portable `.jld2` layout of solutions, steady states and interpolants is documented at the top
   of the extension. Bump its schema version only for changes that break readers of earlier files.
 - `assemble_moments` gives the same table for results in memory and for saved runs; a test checks it.
