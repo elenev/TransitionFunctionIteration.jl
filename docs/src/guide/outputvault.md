@@ -88,7 +88,7 @@ moments = (mean_K = SimulationMoment(:K), resp = ImpulseMoment(:K, :pos, 3), bet
 compare_economies(moments, RunPattern(experdef = "v1"); base = :base)
 ```
 
-The numbers the moments need are read with one query per kind (statistics, IRFs, parameters), which
+The numbers the moments need are read with one query per table (statistics, IRFs, parameters), which
 opens only the files of the selected runs. [`assemble_moments`](@ref) returns them as a long table, the
 same one it returns for results in memory:
 

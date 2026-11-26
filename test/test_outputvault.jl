@@ -209,7 +209,7 @@ sorted_rows(t) = sort(collect(zip(values(t)...)); by = r -> r[1:end-1])
             @test map(eltype, values(saved)) == map(eltype, values(memory))
             @test sorted_rows(saved) == sorted_rows(memory)
             @test length(saved.value) == 2 * 6          # per run: 3 simulation, 2 impulse (shock and basis), 1 parameter
-            @test Set(saved.kind) == Set(["simulation", "impulse", "parameter"])
+            @test Set(saved.shape) == Set([:stats, :irf, :params])
             @test sorted_rows(assemble_moments(moments, RunPattern(; experdef = "v1"))) == sorted_rows(saved)
 
             @test compare_economies(moments, runs) == compare_economies(moments, in_memory)

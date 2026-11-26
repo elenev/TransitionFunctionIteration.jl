@@ -183,15 +183,21 @@ end
 
 ## Moments from saved runs
 
-const SHAPES = (stats = QueryShape("stats/{sample}"; keys = (:variable,), column = :stat),
-                irf = QueryShape("irf/{start}/stats"; keys = (:__shock, :__stat, :__period), column = :variable),
-                params = QueryShape("params/params"; keys = (:parameter,), column = :stat))
+# TFI's tables and where the fields of a MomentRow are in each table's query output: a column, or
+# `nothing` for a fixed value (group "", period 0)
+const SHAPES = (
+    stats = (query = QueryShape("stats/{sample}"; keys = (:variable,), column = :stat),
+             group = :sample, variable = :variable, stat = :stat, period = nothing),
+    irf = (query = QueryShape("irf/{start}/stats"; keys = (:__shock, :__stat, :__period), column = :variable),
+           group = :__shock, variable = :variable, stat = :__stat, period = :__period),
+    params = (query = QueryShape("params/params"; keys = (:parameter,), column = :stat),
+              group = nothing, variable = :parameter, stat = :stat, period = nothing))
 
 function TFI.result_shape(kind::Symbol)
     if !haskey(SHAPES, kind)
         throw(ArgumentError("unknown shape :$kind; TFI's shapes are $(join(keys(SHAPES), ", "))"))
     end
-    return SHAPES[kind]
+    return SHAPES[kind].query
 end
 
 const Runs = Union{RunPattern, AbstractVector{<:RunHandle}, Tuple{Vararg{RunHandle}}}
@@ -199,57 +205,38 @@ const Runs = Union{RunPattern, AbstractVector{<:RunHandle}, Tuple{Vararg{RunHand
 function TFI.assemble_moments(moments::NamedTuple, runs::Runs; start = :ss)
     rows = TFI._requested_rows(moments)
     wanted = Set(rows)
-    out = TFI._empty_moment_table()
-    sim = filter(r -> r.kind == "simulation", rows)
-    if !isempty(sim)
-        add_simulation!(out, runs, sim, wanted)
+    tables = [shape_table(runs, name, filter(r -> r.shape === name, rows), wanted, Symbol(start))
+              for name in keys(SHAPES) if any(r -> r.shape === name, rows)]
+    if isempty(tables)
+        return Tables.columntable(TFI.MomentRecord[])
     end
-    imp = filter(r -> r.kind == "impulse", rows)
-    if !isempty(imp)
-        add_impulse!(out, runs, imp, wanted, Symbol(start))
-    end
-    par = filter(r -> r.kind == "parameter", rows)
-    if !isempty(par)
-        add_parameter!(out, runs, par, wanted)
-    end
-    return out
+    return reduce((a, b) -> map(vcat, a, b), tables)
 end
 
-# the distinct values of field `f` of the rows, as a query selection
-selection(rows, f) = collect(Set(Symbol(getfield(r, f)) for r in rows))
-
-# Each query selects every combination of the rows' values; only the rows a moment needs are kept.
-function add_simulation!(out, runs, rows, wanted)
-    t = query_results(runs, SHAPES.stats; sample = selection(rows, :group), variable = selection(rows, :variable),
-                      stat = selection(rows, :stat))
-    for i in eachindex(t.value)
-        r = TFI.MomentRow(("simulation", t.sample[i], t.variable[i], t.stat[i], 0))
-        if r in wanted
-            TFI._push_moment!(out, t.branch[i], t.experdef[i], t.variant[i], r, t.value[i])
-        end
+# The numbers `rows` from the shape `name`, in the columns of the moment table. The query selects
+# every combination of the rows' values, so only the numbers in `wanted` are kept.
+function shape_table(runs, name, rows, wanted, start)
+    spec = SHAPES[name]
+    fields = (group = spec.group, variable = spec.variable, stat = spec.stat, period = spec.period)
+    selections = (; (col => distinct(rows, f) for (f, col) in pairs(fields) if !isnothing(col))...)
+    if :start in spec.query.placeholders
+        selections = merge(selections, (; start))
     end
+    t = query_results(runs, spec.query; selections...)
+    n = length(t.value)
+    group = isnothing(spec.group) ? fill("", n) : t[spec.group]
+    period = isnothing(spec.period) ? zeros(Int, n) : t[spec.period]
+    variable, stat = t[spec.variable], t[spec.stat]
+    keep = [TFI.MomentRow((name, group[i], variable[i], stat[i], period[i])) in wanted for i in 1:n]
+    return (branch = t.branch[keep], experdef = t.experdef[keep], variant = t.variant[keep],
+            shape = fill(name, count(keep)), group = group[keep], variable = variable[keep], stat = stat[keep],
+            period = period[keep], value = t.value[keep])
 end
 
-function add_impulse!(out, runs, rows, wanted, start)
-    t = query_results(runs, SHAPES.irf; start, __shock = selection(rows, :group), __stat = selection(rows, :stat),
-                      __period = collect(Set(r.period for r in rows)), variable = selection(rows, :variable))
-    for i in eachindex(t.value)
-        r = TFI.MomentRow(("impulse", t.__shock[i], t.variable[i], t.__stat[i], t.__period[i]))
-        if r in wanted
-            TFI._push_moment!(out, t.branch[i], t.experdef[i], t.variant[i], r, t.value[i])
-        end
-    end
-end
-
-function add_parameter!(out, runs, rows, wanted)
-    t = query_results(runs, SHAPES.params; parameter = selection(rows, :variable), stat = :value)
-    for i in eachindex(t.value)
-        r = TFI.MomentRow(("parameter", "parameters", t.parameter[i], t.stat[i], 0))
-        if r in wanted
-            TFI._push_moment!(out, t.branch[i], t.experdef[i], t.variant[i], r, t.value[i])
-        end
-    end
-end
+# the distinct values of field `f` of the rows, as a selection: text as Symbols, which match exactly
+distinct(rows, f) = collect(Set(selector(getfield(r, f)) for r in rows))
+selector(x::AbstractString) = Symbol(x)
+selector(x) = x
 
 run_order(runs::RunPattern) = find_runs(runs)
 run_order(runs) = collect(RunHandle, runs)
