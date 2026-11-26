@@ -143,4 +143,4 @@ solution_id(obj2) == solution_id(obj)
 
 [OutputVault.jl](https://github.com/elenev/OutputVault.jl) is a separate, optional package that
 saves solutions and results of research runs in an organized layout of plain files, using the tables
-and metadata described here.
+and metadata described here ([Saving and Comparing Results with OutputVault](@ref)).

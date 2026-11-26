@@ -250,5 +250,5 @@ A moment type with no method for a source is an `ArgumentError`. A new kind of m
 of `TransitionFunctionIteration.transformation` and `compare_transformation` if it does not have
 fields of those names.
 
-[OutputVault.jl](https://github.com/elenev/OutputVault.jl), a separate package for saving and
-organizing research runs, provides such a source for its saved results.
+Saved runs are read through such a source, [`MomentRows`](@ref): with OutputVault loaded,
+`compare_economies` takes runs as economies ([Saving and Comparing Results with OutputVault](@ref)).

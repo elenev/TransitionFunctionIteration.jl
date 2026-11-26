@@ -90,4 +90,4 @@ The `examples` folder holds two models, and is the reference for how a model is 
 
 ## See also
 
-- [OutputVault.jl](https://github.com/elenev/OutputVault.jl) saves solutions, simulations, moments and IRFs in a fixed layout of plain files.
+- [OutputVault.jl](https://github.com/elenev/OutputVault.jl) saves solutions, simulations, moments and IRFs of research runs with the git state that produced them, and queries them across runs; TransitionFunctionIteration's support for it loads with `using OutputVault`.

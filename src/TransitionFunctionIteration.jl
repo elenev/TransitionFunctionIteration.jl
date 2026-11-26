@@ -45,6 +45,10 @@ export MomentArray, @MomentArray, row_names, col_names, row_key
 # Main interface
 export solve_and_simulate, generate_template, update_model
 
+# Saved results (methods with OutputVault) and moment tables
+export save_result, load_result, migrate_irf!, result_shape, assemble_moments, split_by_economy, MomentRows
+export model_metadata, model_from_metadata
+
 include("abstract_types.jl")
 include("named_interpolations.jl")
 include("solution_types.jl")
@@ -70,6 +74,9 @@ include("moments.jl")
 include("irfplotting.jl")
 include("provenance.jl")
 include("tables.jl")
+include("moment_tables.jl")
+include("model_metadata.jl")
+include("storage.jl")
 
 
 """

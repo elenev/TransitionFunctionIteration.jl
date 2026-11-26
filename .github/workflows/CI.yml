@@ -38,6 +38,17 @@ jobs:
           foreach ($p in @("$HOME\.julia", $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP, $env:RUNNER_TOOL_CACHE)) {
             Add-MpPreference -ExclusionPath $p
           }
+      # OutputVault (for the tests of the extension) is a private repository: check it out with a
+      # read-only deploy key next to this repository, where the path source in test/ expects it
+      - name: Check out OutputVault
+        uses: actions/checkout@v4
+        with:
+          repository: elenev/OutputVault.jl
+          ssh-key: ${{ secrets.OV_CHECKOUT_KEY }}
+          path: ov_checkout
+      - name: Move it next to the repository
+        shell: bash
+        run: mv ov_checkout ../OutputVault
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}

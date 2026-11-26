@@ -119,8 +119,22 @@ EconomyResult
 collect_parameters
 getmoment
 compare_economies
+assemble_moments
+split_by_economy
+MomentRows
 describe
 calc_error_stats
+```
+
+## Saved results (with OutputVault)
+
+```@docs
+save_result
+load_result
+migrate_irf!
+result_shape
+model_metadata
+model_from_metadata
 ```
 
 ## Simulation results and provenance
@@ -222,6 +236,15 @@ Filter = t -> begin
         TransitionFunctionIteration.collect_parameters,
         TransitionFunctionIteration.getmoment,
         TransitionFunctionIteration.compare_economies,
+        TransitionFunctionIteration.assemble_moments,
+        TransitionFunctionIteration.split_by_economy,
+        TransitionFunctionIteration.MomentRows,
+        TransitionFunctionIteration.save_result,
+        TransitionFunctionIteration.load_result,
+        TransitionFunctionIteration.migrate_irf!,
+        TransitionFunctionIteration.result_shape,
+        TransitionFunctionIteration.model_metadata,
+        TransitionFunctionIteration.model_from_metadata,
         TransitionFunctionIteration.describe,
         TransitionFunctionIteration.calc_error_stats,
         TransitionFunctionIteration.SimulationPanel,
