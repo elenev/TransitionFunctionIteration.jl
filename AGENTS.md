@@ -23,7 +23,8 @@ julia --project=docs docs/make.jl             # documentation, including the exe
 | Solver | `src/execution.jl` |
 | Simulation, IRFs, moments | `src/simulation.jl`, `src/irf.jl`, `src/moments.jl` |
 | Reference model | `examples/ngm.jl` |
-| Moments as a long table (`assemble_moments`, `MomentRows`) | `src/moments.jl` |
+| Moments, `getmoment`, `MomentRows` (the numbers of a saved run) | `src/moments.jl` |
+| `compare_economies` | `src/simulation.jl` |
 | Portable data of solutions, steady states, interpolants and models (`to_portable`, `from_portable`) | `src/portable.jl` |
 | `save_result`, `load_result` and the other functions with OutputVault methods | `src/TransitionFunctionIteration.jl` |
 | OutputVault extension: storage of TFI's types, `save_result`, queries | `ext/TransitionFunctionIterationOutputVaultExt.jl` |
@@ -74,8 +75,9 @@ not by `status` alone.
 - The portable data layout of solutions, steady states and interpolants is documented at the top of
   `src/portable.jl`; the extension writes it to `.jld2` one group per NamedTuple and knows nothing
   else about it. Bump its schema version only for changes that break readers of earlier files.
-- `assemble_moments` gives the same table for results in memory and for saved runs; a test checks it.
-  Change both methods together.
+- `compare_economies` is the one entry point for comparing moments. Saved runs are read only as
+  `MomentRows` through `extract_moment_values`, the same reader as results in memory, so both give
+  the same table; a test checks it with every option.
 - Runs saved with OutputVault 0.3 must keep loading with `load_result`.
 
 ## Code style

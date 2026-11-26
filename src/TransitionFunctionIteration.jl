@@ -45,8 +45,8 @@ export MomentArray, @MomentArray, row_names, col_names, row_key
 # Main interface
 export solve_and_simulate, generate_template, update_model
 
-# Saved results (methods with OutputVault) and moment tables
-export save_result, load_result, assemble_moments
+# Saved results (methods with OutputVault)
+export save_result, load_result
 
 include("abstract_types.jl")
 include("named_interpolations.jl")
@@ -122,7 +122,7 @@ end
 
 ## Saved results
 
-# Saving, loading and querying results. The methods come with the package extension
+# Saving and loading results. The methods come with the package extension
 # TransitionFunctionIterationOutputVaultExt, loaded with `using OutputVault`.
 
 """
@@ -169,15 +169,5 @@ Needs `using OutputVault`. A transition aid for runs saved with OutputVault 0.3:
 and to be removed in a later version.
 """
 function migrate_irf! end
-
-"""
-    result_shape(name::Symbol)
-
-The OutputVault `QueryShape` of TFI's saved tables: `:stats` (`"stats/{sample}"`, key `variable`,
-column `stat`), `:irf` (`"irf/{start}/stats"`, keys `__shock`, `__stat` and `__period`, column
-`variable`) or `:params` (`"params/params"`, key `parameter`, column `stat`). Needs
-`using OutputVault`.
-"""
-function result_shape end
 
 end

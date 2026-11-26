@@ -182,8 +182,12 @@ function TFI.migrate_irf!(pattern::RunPattern; move::Bool = false)
 end
 
 ## Moments from saved runs
+#
+# compare_economies over saved runs queries the numbers the moments need (TFI._moment_rows), one
+# query per table, collects each run's numbers into a TFI.MomentRows and calls the compare_economies
+# of results in memory, which reads them back with TFI.extract_moment_values.
 
-# TFI's tables and where the fields of a MomentRow are in each table's query output: a column, or
+# TFI's tables, and where the fields of a row are in each table's query output: a column, or
 # `nothing` for a fixed value (group "", period 0)
 const SHAPES = (
     stats = (query = QueryShape("stats/{sample}"; keys = (:variable,), column = :stat),
@@ -193,64 +197,75 @@ const SHAPES = (
     params = (query = QueryShape("params/params"; keys = (:parameter,), column = :stat),
               group = nothing, variable = :parameter, stat = :stat, period = nothing))
 
-function TFI.result_shape(name::Symbol)
-    if !haskey(SHAPES, name)
-        throw(ArgumentError("unknown shape :$name; TFI's shapes are $(join(keys(SHAPES), ", "))"))
-    end
-    return SHAPES[name].query
+const RunsByName = NamedTuple{<:Any, <:Tuple{Vararg{RunHandle}}}
+
+function TFI.compare_economies(moments::NamedTuple, runs::Union{RunPattern, RunsByName}; start = :ss,
+                               parameters = nothing, kwargs...)
+    moments = TFI._as_moments(moments)
+    named = runs_by_name(runs)
+    table = query_moments(moments, collect(RunHandle, values(named)), Symbol(start), parameters)
+    return TFI.compare_economies(moments, moment_rows_by_run(table, named); parameters, kwargs...)
 end
 
-const Runs = Union{RunPattern, AbstractVector{<:RunHandle}, Tuple{Vararg{RunHandle}}}
-
-function TFI.assemble_moments(moments::NamedTuple, runs::Runs; start = :ss)
-    rows = TFI._requested_rows(moments)
-    wanted = Set(rows)
-    tables = [shape_table(runs, name, filter(r -> r.shape === name, rows), wanted, Symbol(start))
-              for name in keys(SHAPES) if any(r -> r.shape === name, rows)]
-    if isempty(tables)
-        return Tables.columntable(TFI.MomentRecord[])
+runs_by_name(runs::NamedTuple) = runs
+function runs_by_name(pattern::RunPattern)
+    found = find_runs(pattern)
+    variants = [rf.variant for rf in found]
+    if !allunique(variants)
+        throw(ArgumentError("variants repeat across the runs ($(join(variants, ", "))); select runs with a narrower pattern"))
     end
-    return reduce((a, b) -> map(vcat, a, b), tables)
+    return NamedTuple{Tuple(Symbol.(variants))}(Tuple(found))
 end
 
-# The numbers `rows` from the shape `name`, in the columns of the moment table. The query selects
-# every combination of the rows' values, so only the numbers in `wanted` are kept.
-function shape_table(runs, name, rows, wanted, start)
+# The numbers the moments need from the runs, as long columns, one query per table. With
+# `parameters = :distinct` every saved parameter is read, since the names are not known beforehand;
+# named parameters are read like ParameterMoments.
+function query_moments(moments, runs, start, parameters)
+    wanted = collect(values(moments))
+    if !isnothing(parameters) && parameters !== :distinct
+        append!(wanted, [TFI.ParameterMoment(Symbol(p)) for p in parameters])
+    end
+    rows = unique(collect(Iterators.flatmap(TFI._moment_rows, wanted)))
+    all_params = parameters === :distinct
+    tables = [shape_table(runs, name, filter(r -> r.shape === name, rows), start, all_params && name === :params)
+              for name in keys(SHAPES) if any(r -> r.shape === name, rows) || (all_params && name === :params)]
+    return isempty(tables) ? nothing : reduce((a, b) -> map(vcat, a, b), tables)
+end
+
+# The numbers `rows` from the table `name`, or all of its numbers with `all`. The query selects
+# every combination of the rows' values, so only the requested rows are kept.
+function shape_table(runs, name, rows, start, all)
     spec = SHAPES[name]
     fields = (group = spec.group, variable = spec.variable, stat = spec.stat, period = spec.period)
-    selections = (; (col => distinct(rows, f) for (f, col) in pairs(fields) if !isnothing(col))...)
+    selections = all ? (;) : (; (col => unique(getfield.(rows, f)) for (f, col) in pairs(fields) if !isnothing(col))...)
     if :start in spec.query.placeholders
         selections = merge(selections, (; start))
     end
     t = query_results(runs, spec.query; selections...)
     n = length(t.value)
-    group = isnothing(spec.group) ? fill("", n) : t[spec.group]
+    # the query's text columns as Symbols, the types of the rows that moments build
+    group = isnothing(spec.group) ? fill(Symbol(""), n) : Symbol.(t[spec.group])
     period = isnothing(spec.period) ? zeros(Int, n) : t[spec.period]
-    variable, stat = t[spec.variable], t[spec.stat]
-    keep = [TFI.MomentRow((name, group[i], variable[i], stat[i], period[i])) in wanted for i in 1:n]
-    return (branch = t.branch[keep], experdef = t.experdef[keep], variant = t.variant[keep],
-            shape = fill(name, count(keep)), group = group[keep], variable = variable[keep], stat = stat[keep],
-            period = period[keep], value = t.value[keep])
+    variable, stat = Symbol.(t[spec.variable]), Symbol.(t[spec.stat])
+    found = [(; shape = name, group = group[i], variable = variable[i], stat = stat[i], period = period[i]) for i in 1:n]
+    keep = all ? trues(n) : in(Set(rows)).(found)
+    return (run = collect(zip(t.branch, t.experdef, t.variant))[keep], row = found[keep], value = t.value[keep])
 end
 
-# the distinct values of field `f` of the rows, as a selection: text as Symbols, which match exactly
-distinct(rows, f) = collect(Set(selector(getfield(r, f)) for r in rows))
-selector(x::AbstractString) = Symbol(x)
-selector(x) = x
-
-run_order(runs::RunPattern) = find_runs(runs)
-run_order(runs) = collect(RunHandle, runs)
-
-function TFI.compare_economies(moments::NamedTuple, runs::Runs; start = :ss, kwargs...)
-    moments = TFI._as_moments(moments)
-    table = TFI.assemble_moments(moments, runs; start)
-    order = run_order(runs)
-    variants = [rf.variant for rf in order]
-    if !allunique(variants)
-        throw(ArgumentError("variants repeat across the runs ($(join(variants, ", "))); select runs with a narrower pattern"))
+# one TFI.MomentRows per run that holds any of the numbers; the others are left out with a warning
+function moment_rows_by_run(table, runs::NamedTuple)
+    id(rf) = (rf.branch, rf.experdef, rf.variant)
+    held = isnothing(table) ? Set() : Set(table.run)
+    present = Tuple(k for k in keys(runs) if id(runs[k]) in held)
+    absent = setdiff(keys(runs), present)
+    if isempty(present)
+        throw(ArgumentError("none of the runs $(join(keys(runs), ", ")) holds the numbers the moments need"))
     end
-    economies = TFI.split_by_economy(table; order = variants)
-    return TFI.compare_economies(moments, economies; kwargs...)
+    if !isempty(absent)
+        @warn "Runs without the numbers the moments need are left out: $(join(absent, ", "))"
+    end
+    rows_of(rf) = Dict(table.row[j] => table.value[j] for j in eachindex(table.value) if table.run[j] == id(rf))
+    return NamedTuple{present}(map(k -> TFI.MomentRows(rows_of(runs[k])), present))
 end
 
 end # module

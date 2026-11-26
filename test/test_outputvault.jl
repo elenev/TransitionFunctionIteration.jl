@@ -44,7 +44,6 @@ function with_vault(f)
     end
 end
 
-sorted_rows(t) = sort(collect(zip(values(t)...)); by = r -> r[1:end-1])
 
 @testset "OutputVault extension" begin
     @testset "model metadata" begin
@@ -173,7 +172,7 @@ sorted_rows(t) = sort(collect(zip(values(t)...)); by = r -> r[1:end-1])
             OutputVault.Formats.write_table(OutputVault.Formats.ParquetFormat(), joinpath(dir, "irf_paths.parquet"), irf_paths(irf))
             r = load_result(rf, :irf)
             @test keys(r) == (:ss,) && r.ss.means == irf.means && r.ss.paths.pos == irf.paths.pos
-            shape = TFI.result_shape(:irf)
+            shape = OVExt.SHAPES.irf.query
             @test isempty(query_results([rf], shape).value)          # queries do not see the old files
             @test (@test_logs TFI.migrate_irf!(RunPattern(); move = false)) === nothing
             @test isfile(joinpath(OutputVault.run_path(rf), "irf", "irf.parquet"))
@@ -188,11 +187,11 @@ sorted_rows(t) = sort(collect(zip(values(t)...)); by = r -> r[1:end-1])
     @testset "moments from saved runs" begin
         with_vault() do root
             hi = NeoclassicalGrowthModel(σ = 2 * ngm.σ)
-            runs = [RunHandle("base"; branch = "main", experdef = "v1"), RunHandle("hi"; branch = "main", experdef = "v1")]
-            save_result(runs[1], (; obj, stats = samples, irf))
+            runs = (base = RunHandle("base"; branch = "main", experdef = "v1"), hi = RunHandle("hi"; branch = "main", experdef = "v1"))
+            save_result(runs.base, (; obj, stats = samples, irf))
             obj_hi = ModelSolution(; (f => getfield(obj, f) for f in fieldnames(typeof(obj)) if f != :model)..., model = hi)
             samples_hi = map(m -> MomentArray{row_names(m), col_names(m)}(2 .* m.data; rowkey = row_key(m)), samples)
-            save_result(runs[2], (; obj = obj_hi, stats = samples_hi, irf))
+            save_result(runs.hi, (; obj = obj_hi, stats = samples_hi, irf))
 
             moments = (mean_K = SimulationMoment(:K),
                        std_C_all = SimulationMoment(:C; sample = :a_all, stat = :std),
@@ -203,30 +202,33 @@ sorted_rows(t) = sort(collect(zip(values(t)...)); by = r -> r[1:end-1])
             in_memory = (base = EconomyResult(; stats = samples, irf, params = collect_parameters(obj)),
                          hi = EconomyResult(; stats = samples_hi, irf, params = collect_parameters(obj_hi)))
 
-            saved = assemble_moments(moments, runs)
-            memory = assemble_moments(moments, in_memory; branch = "main", experdef = "v1")
-            @test keys(saved) == keys(memory) == TransitionFunctionIteration.MOMENT_TABLE_COLUMNS
-            @test map(eltype, values(saved)) == map(eltype, values(memory))
-            @test sorted_rows(saved) == sorted_rows(memory)
-            @test length(saved.value) == 2 * 6          # per run: 3 simulation, 2 impulse (shock and basis), 1 parameter
-            @test Set(saved.shape) == Set([:stats, :irf, :params])
-            @test sorted_rows(assemble_moments(moments, RunPattern(; experdef = "v1"))) == sorted_rows(saved)
+            # saved runs and results in memory are read the same way, with every option
+            pattern = RunPattern(; experdef = "v1")
+            for opts in ((;), (; base = :hi), (; compare_transform = false), (; parameters = :distinct),
+                         (; parameters = (:σ, :β)), (; stacked = true, parameters = :distinct))
+                expected = compare_economies(moments, in_memory; opts...)
+                @test isequal(compare_economies(moments, runs; opts...), expected)
+                @test isequal(compare_economies(moments, pattern; opts...), expected)
+            end
+            @test row_names(compare_economies(moments, runs; parameters = :distinct))[1] == :σ
 
-            @test compare_economies(moments, runs) == compare_economies(moments, in_memory)
-            @test compare_economies(moments, runs; base = :hi) == compare_economies(moments, in_memory; base = :hi)
-            @test compare_economies(moments, RunPattern(; experdef = "v1")) == compare_economies(moments, in_memory)
+            # a number a run lacks is a missing cell, in memory and saved alike
+            lacking = (; moments..., p99 = SimulationMoment(:K; stat = :p99), late = ImpulseMoment(:K, :pos, 10_000))
+            expected = compare_economies(lacking, in_memory)
+            @test ismissing(expected(:p99, :base)) && ismissing(expected(:late, :hi))
+            @test isequal(compare_economies(lacking, runs), expected)
 
-            # a run without the numbers a moment needs
+            # a run with none of the numbers is left out with a warning
             save_result(RunHandle("bare"; branch = "main", experdef = "v1"), (; obj))
-            @test_throws KeyError compare_economies((; m = SimulationMoment(:K)), RunPattern(; experdef = "v1"))
+            t = @test_logs (:warn, r"left out: bare") match_mode = :any compare_economies((; m = SimulationMoment(:K)), pattern)
+            @test col_names(t) == (:base, :hi)
+            @test_throws ArgumentError compare_economies((; m = SimulationMoment(:K)), (; bare = RunHandle("bare"; branch = "main", experdef = "v1")))
             # variants that repeat across experdefs
             save_result(RunHandle("base"; branch = "main", experdef = "v2"), (; obj, stats = samples))
             err = try compare_economies((; m = SimulationMoment(:K)), RunPattern(; experdef = "*", variant = "base")); nothing catch e; e end
             @test err isa ArgumentError && occursin("narrower pattern", err.msg)
 
-            @test TFI.result_shape(:stats) isa QueryShape && TFI.result_shape(:params) isa QueryShape
-            @test_throws ArgumentError TFI.result_shape(:other)
-            p = query_results(runs, TFI.result_shape(:params); parameter = :σ)
+            p = query_results(collect(values(runs)), OVExt.SHAPES.params.query; parameter = :σ)
             @test p.value == [ngm.σ, hi.σ]
         end
     end

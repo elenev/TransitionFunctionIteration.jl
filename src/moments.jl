@@ -5,15 +5,17 @@
 #   reads it from a source of results, and dispatch on the pair (source, moment) picks the right
 #   property: `SimulationMoment`s read the `describe` statistics, `ImpulseMoment`s the IRFs and
 #   `ParameterMoment`s the model parameters.
-# - `momentvalues(source, moment)` is the single reading function: the value before the moment's
-#   transformation and the basis the transformation uses (`nothing`: its default). Every `getmoment`
-#   method is built on it, so a new source needs only a `momentvalues` method for each leaf moment
-#   (`SimulationMoment`, `ImpulseMoment`, `ParameterMoment`); a `CalculatedMoment` reads its inputs
-#   from the same source and needs nothing more.
+# - `extract_moment_values(source, moment)` is the single reading function: the value before the
+#   moment's transformation and the basis the transformation uses (`nothing`: its default). Every
+#   `getmoment` method, and so `compare_economies`, is built on it, so a new source needs only an
+#   `extract_moment_values` method for each leaf moment (`SimulationMoment`, `ImpulseMoment`,
+#   `ParameterMoment`); a `CalculatedMoment` reads its inputs from the same source and needs nothing
+#   more.
 # - Sources in this package: `SamplesTuple` (describe output) for simulation moments, `IRFResult` for
-#   impulse moments, `EconomyResult` (all three kinds). A NamedTuple of sources, keyed by economy, is
-#   what the comparisons across economies read. Sources defined outside this package (over tables
-#   read from files, say) need only the `momentvalues` methods.
+#   impulse moments, `EconomyResult` (all three kinds) and `MomentRows` (all three kinds, the numbers
+#   of a saved run). A NamedTuple of sources, keyed by economy, is what the comparisons across
+#   economies read. Saved runs are read only through `MomentRows`, so results in memory and saved
+#   results go through the same code.
 # - `@CalculatedMoment` writes a `CalculatedMoment` as an expression: every function call is
 #   replaced by `lifted(f, args...)`, which is the plain call unless an argument is a moment, so any
 #   function of numbers works on moments with no list of supported functions.
@@ -26,7 +28,7 @@ A specification of one number per economy: a statistic of a simulated variable
 parameter ([`ParameterMoment`](@ref)) or a function of other moments ([`CalculatedMoment`](@ref)).
 Read it with [`getmoment`](@ref), tabulate it with [`compare_economies`](@ref).
 
-The interface of a moment type: a `momentvalues` method for each kind of source it can be read from,
+The interface of a moment type: a `extract_moment_values` method for each kind of source it can be read from,
 and the accessors `transformation` and `compare_transformation` (by default the fields of those
 names).
 """
@@ -254,7 +256,7 @@ collect_parameters(obj::ModelSolution) = collect_parameters(obj.model)
 The results of one economy that moments are read from, each optional: `stats` is
 `describe(...).moments` (a `SamplesTuple`), `irf` an [`IRFResult`](@ref) and `params` the model's
 parameters, as [`collect_parameters`](@ref) returns them. A moment that needs a part the result lacks
-is an `ArgumentError` that names it.
+is a `KeyError` that names it.
 """
 @kwdef struct EconomyResult{S, I, P}
     stats::S  = nothing
@@ -265,17 +267,17 @@ end
 ## Reading a moment: value and basis
 
 """
-    momentvalues(source, moment) -> (value, basis)
+    extract_moment_values(source, moment) -> (value, basis)
 
 The moment's value in `source` before its transformation, and the basis the transformation uses
 (`nothing` for the transformation's default).
 """
-function momentvalues end
+function extract_moment_values end
 
-momentvalues(source, m::AbstractMoment) =
+extract_moment_values(source, m::AbstractMoment) =
     throw(ArgumentError("a $(nameof(typeof(m))) cannot be read from a $(nameof(typeof(source)))"))
 
-function momentvalues(s::SamplesTuple{SAMPLES}, m::SimulationMoment) where {SAMPLES}
+function extract_moment_values(s::SamplesTuple{SAMPLES}, m::SimulationMoment) where {SAMPLES}
     m.sample ∈ SAMPLES || throw(KeyError("Sample name $(m.sample) not found in describe() output"))
     m_array = s[m.sample]
     m.var  ∈ _get_vars(m_array)  || throw(KeyError("Variable name $(m.var) not found in moments for sample $(m.sample)"))
@@ -292,7 +294,7 @@ function _irf_line(irf::IRFResult, stat::Symbol, shock::Symbol)
     return getproperty(shocks, shock)
 end
 
-function momentvalues(irf::IRFResult, m::ImpulseMoment)
+function extract_moment_values(irf::IRFResult, m::ImpulseMoment)
     path(shock) = begin
         line = _irf_line(irf, m.stat, shock)
         m.var ∈ propertynames(line) || throw(KeyError("Variable name $(m.var) not found in the IRF"))
@@ -311,21 +313,21 @@ function _parameter(params::NamedTuple, name::Symbol)
     return params[name]
 end
 
-function momentvalues(r::EconomyResult, m::SimulationMoment)
-    isnothing(r.stats) && throw(ArgumentError("moment on variable $(m.var) needs simulation statistics, but this EconomyResult has none"))
-    return momentvalues(r.stats, m)
+function extract_moment_values(r::EconomyResult, m::SimulationMoment)
+    isnothing(r.stats) && throw(KeyError("moment on variable $(m.var) needs simulation statistics, but this EconomyResult has none"))
+    return extract_moment_values(r.stats, m)
 end
-function momentvalues(r::EconomyResult, m::ImpulseMoment)
-    isnothing(r.irf) && throw(ArgumentError("moment on shock $(m.shock) needs an IRF, but this EconomyResult has none"))
-    return momentvalues(r.irf, m)
+function extract_moment_values(r::EconomyResult, m::ImpulseMoment)
+    isnothing(r.irf) && throw(KeyError("moment on shock $(m.shock) needs an IRF, but this EconomyResult has none"))
+    return extract_moment_values(r.irf, m)
 end
-function momentvalues(r::EconomyResult, m::ParameterMoment)
-    isnothing(r.params) && throw(ArgumentError("moment on parameter $(m.name) needs the parameters, but this EconomyResult has none"))
+function extract_moment_values(r::EconomyResult, m::ParameterMoment)
+    isnothing(r.params) && throw(KeyError("moment on parameter $(m.name) needs the parameters, but this EconomyResult has none"))
     return _parameter(r.params, m.name), nothing
 end
 
 # a calculated moment reads its inputs from the same source; this also nests
-momentvalues(source, m::CalculatedMoment) = (m.f(map(c -> getmoment(source, c), m.inputs)), nothing)
+extract_moment_values(source, m::CalculatedMoment) = (m.f(map(c -> getmoment(source, c), m.inputs)), nothing)
 
 _transform(t, value, ::Nothing) = t(value)
 _transform(t, value, basis) = t(value; basis)
@@ -344,7 +346,7 @@ position), otherwise `compare_transformation` of the economy's reported value wi
 reported value as the basis. With the default `Level` comparison, every economy shows its own
 reported value.
 """
-getmoment(source, m::AbstractMoment) = _transform(transformation(m), momentvalues(source, m)...)
+getmoment(source, m::AbstractMoment) = _transform(transformation(m), extract_moment_values(source, m)...)
 
 ## Moments across economies
 
@@ -358,157 +360,62 @@ function getmoment(economies::NamedTuple, m::AbstractMoment, economy::Symbol, ba
     return compare_transformation(m)(value; basis = getmoment(economies[base], m))
 end
 
-## Moments as a long table
+## The numbers of a saved run
 #
-# The numbers that moments need, one row per economy and number, the same whether the results are
-# in memory or saved with OutputVault. `MomentRows` reads moments from such a table, so
-# `compare_economies` works on it unchanged.
-#
-# Maintainer notes
-# - A number is identified by a MomentRow (shape, group, variable, stat, period). `shape` names the
-#   saved table the number comes from, as in `result_shape`: :stats (group: the sample, period 0),
-#   :irf (group: the shock) or :params (group "", stat "value", period 0). A leaf moment needs one
-#   number, or two for an impulse moment whose transformation needs the basis path.
-# - The OutputVault method of assemble_moments (in the extension) queries the same numbers and must
-#   return the same table; a test checks it.
+# A number is identified by a row (shape, group, variable, stat, period) of Symbols and an Int:
+# `shape` names the saved table it comes from, :stats (group: the sample, period 0), :irf (group:
+# the shock) or :params (group Symbol(""), stat :value, period 0). `_moment_rows` is the only place
+# where moments meet that layout: the OutputVault extension queries the rows the moments need and
+# collects each run's into a `MomentRows`, and `extract_moment_values` reads them back.
 
-const MomentRow = NamedTuple{(:shape, :group, :variable, :stat, :period), Tuple{Symbol, String, String, String, Int}}
-
-# a row of the moment table: the run, then the number's MomentRow fields and its value
-const MomentRecord = NamedTuple{(:branch, :experdef, :variant, :shape, :group, :variable, :stat, :period, :value),
-                                Tuple{String, String, String, Symbol, String, String, String, Int, Float64}}
-
-const MOMENT_TABLE_COLUMNS = fieldnames(MomentRecord)
-
-_record(branch, experdef, variant, r::MomentRow, value) = MomentRecord((branch, experdef, variant, r..., value))
-
-# the numbers a moment needs
-_moment_rows(m::SimulationMoment) = [MomentRow((:stats, string(m.sample), string(m.var), string(m.stat), 0))]
+# the rows a moment needs: one, or two for an impulse moment whose transformation needs the basis
+_moment_rows(m::SimulationMoment) = [(; shape = :stats, group = m.sample, variable = m.var, stat = m.stat, period = 0)]
 function _moment_rows(m::ImpulseMoment)
-    rows = [MomentRow((:irf, string(m.shock), string(m.var), string(m.stat), m.period))]
+    rows = [(; shape = :irf, group = m.shock, variable = m.var, stat = m.stat, period = m.period)]
     if Transformations.requires_basis(transformation(m))
-        push!(rows, MomentRow((:irf, string(m.basis), string(m.var), string(m.stat), m.period)))
+        push!(rows, (; shape = :irf, group = m.basis, variable = m.var, stat = m.stat, period = m.period))
     end
     return rows
 end
-_moment_rows(m::ParameterMoment) = [MomentRow((:params, "", string(m.name), "value", 0))]
-_moment_rows(m::CalculatedMoment) = collect(MomentRow, Iterators.flatmap(_moment_rows, values(m.inputs)))
+_moment_rows(m::ParameterMoment) = [(; shape = :params, group = Symbol(""), variable = m.name, stat = :value, period = 0)]
+_moment_rows(m::CalculatedMoment) = collect(Iterators.flatmap(_moment_rows, values(m.inputs)))
 
 # a NamedTuple of moments, bare names read as SimulationMoments
 _as_moments(moments::NamedTuple) = map(v -> v isa AbstractMoment ? v : SimulationMoment(v), moments)
 
-# the numbers all moments need, each once
-_requested_rows(moments) = collect(Set(r for m in values(_as_moments(moments)) for r in _moment_rows(m)))
-
-## Results in memory
-
 """
-    assemble_moments(moments, economies::NamedTuple; branch = "memory", experdef = "default") -> NamedTuple
-    assemble_moments(moments, runs)
+    MomentRows{K}
 
-The numbers that `moments` (a NamedTuple of [`AbstractMoment`](@ref)s or variable names) need, as
-a long column table: `branch`, `experdef`, `variant`, `shape` (the saved table the number comes
-from: `:stats`, `:irf` or `:params`, as in [`result_shape`](@ref)), `group` (the sample, the shock,
-or `""` for a parameter), `variable`, `stat`, `period` (of an IRF; 0 otherwise) and `value`.
-
-With `economies` (the results of each economy in memory, as [`compare_economies`](@ref) takes
-them), every row gets `branch` and `experdef`, and the variant is the economy's name. With `runs`
-(OutputVault `RunHandle`s or a `RunPattern`; needs `using OutputVault`) the numbers are read from
-the saved runs, IRFs from the starting point `start` (keyword, default `:ss`). The same results
-give the same rows, though not necessarily in the same order. A number that a result lacks has no
-row.
+The numbers of one saved run, keyed by row: the source that [`compare_economies`](@ref) reads a
+saved run from. Built by the OutputVault extension; not constructed by users.
 """
-function assemble_moments(moments::NamedTuple, economies::NamedTuple; branch::AbstractString = "memory",
-                          experdef::AbstractString = "default")
-    rows = _requested_rows(moments)
-    found = ((name, r, _row_value(source, r)) for (name, source) in pairs(economies) for r in rows)
-    return Tables.columntable(MomentRecord[_record(branch, experdef, string(name), r, v) for (name, r, v) in found if !isnothing(v)])
+struct MomentRows{K}
+    values::Dict{K, Float64}
 end
 
-# the value of a number in a source of results, or `nothing` if the source lacks it
-function _row_value(r::EconomyResult, row)
-    part = row.shape === :stats ? r.stats : row.shape === :irf ? r.irf : r.params
-    return isnothing(part) ? nothing : _row_value(part, row)
-end
-function _row_value(s::SamplesTuple, row)
-    if row.shape !== :stats || !haskey(s, Symbol(row.group))
-        return nothing
-    end
-    return _row_value(s[Symbol(row.group)], row)
-end
-function _row_value(m::MomentArray, row)
-    var, stat = Symbol(row.variable), Symbol(row.stat)
-    if !(var in _get_vars(m) && stat in _get_stats(m))
-        return nothing
-    end
-    return Float64(getmoment(m, var, stat))
-end
-function _row_value(irf::IRFResult, row)
-    if row.shape !== :irf
-        return nothing
-    end
-    lines = merge((mean = irf.means, std = irf.stdevs), irf.other_stats)
-    stat, shock, var = Symbol(row.stat), Symbol(row.group), Symbol(row.variable)
-    if !(stat in keys(lines) && shock in keys(lines[stat]))
-        return nothing
-    end
-    line = lines[stat][shock]
-    if !(var in propertynames(line) && 1 <= row.period <= length(line))
-        return nothing
-    end
-    return Float64(getproperty(line, var)[row.period])
-end
-_row_value(params::NamedTuple, row) = row.shape === :params && haskey(params, Symbol(row.variable)) ? Float64(params[Symbol(row.variable)]) : nothing
-_row_value(source, row) = nothing
-
-## Reading moments from a long table
-
-"""
-    MomentRows
-
-The numbers of one economy from a long table of [`assemble_moments`](@ref), a source that
-[`getmoment`](@ref) and [`compare_economies`](@ref) read every moment from.
-"""
-struct MomentRows
-    values::Dict{MomentRow, Float64}
-end
-
-function momentvalues(d::MomentRows, m::Union{SimulationMoment, ImpulseMoment, ParameterMoment})
+function extract_moment_values(d::MomentRows, m::Union{SimulationMoment, ImpulseMoment, ParameterMoment})
     values = map(_moment_rows(m)) do r
         if !haskey(d.values, r)
-            throw(KeyError("the results have no $(r.shape) number $(r.group), $(r.variable), $(r.stat), period $(r.period)"))
+            throw(KeyError("the saved run has no $(r.shape) number $(r.group), $(r.variable), $(r.stat), period $(r.period)"))
         end
         d.values[r]
     end
     return first(values), length(values) == 2 ? values[2] : nothing
 end
 
-"""
-    split_by_economy(table; order = nothing) -> NamedTuple
+## Parameters of an economy
 
-The long table of [`assemble_moments`](@ref) as one [`MomentRows`](@ref) per economy, keyed by
-variant, the `economies` that [`compare_economies`](@ref) takes. Variants that repeat across
-branches or experdefs are an error: select fewer runs. `order` lists the variants to keep, in that
-order; without it, variants come in the order of the table.
-"""
-function split_by_economy(table; order = nothing)
-    runs = Dict{String, Set{Tuple{String, String}}}()           # variant => its (branch, experdef)s
-    for (b, e, v) in zip(table.branch, table.experdef, table.variant)
-        push!(get!(Set{Tuple{String, String}}, runs, v), (b, e))
+# the names of the parameters a source holds
+_parameter_names(r::EconomyResult) = _parameter_names(r.params)
+_parameter_names(p::MomentArray) = row_names(p)
+_parameter_names(p::NamedTuple) = keys(p)
+_parameter_names(d::MomentRows) = Tuple(r.variable for r in keys(d.values) if r.shape === :params)
+_parameter_names(source) = ()
+
+# a parameter's value in a source, `missing` if the source lacks it
+function _parameter_value(source, name::Symbol)
+    if !(name in _parameter_names(source))
+        return missing
     end
-    clashes = sort!([v for (v, rs) in runs if length(rs) > 1])
-    if !isempty(clashes)
-        throw(ArgumentError("variants $(join(clashes, ", ")) appear in several runs; select runs with a narrower pattern"))
-    end
-    dicts = Dict{String, Dict{MomentRow, Float64}}()
-    for j in eachindex(table.value)
-        row = MomentRow((table.shape[j], table.group[j], table.variable[j], table.stat[j], table.period[j]))
-        d = get!(Dict{MomentRow, Float64}, dicts, table.variant[j])
-        if haskey(d, row)
-            throw(ArgumentError("the table has two values of $row for variant $(table.variant[j])"))
-        end
-        d[row] = table.value[j]
-    end
-    names = isnothing(order) ? unique(table.variant) : [string(n) for n in order]
-    return NamedTuple{Tuple(Symbol(n) for n in names)}(Tuple(MomentRows(get(dicts, n, Dict{MomentRow, Float64}())) for n in names))
+    return first(extract_moment_values(source, ParameterMoment(name)))
 end

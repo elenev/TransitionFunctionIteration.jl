@@ -50,7 +50,7 @@ moments = (
     mean_K_lowK = SimulationMoment(:K; sample = :low_K),
     beta        = ParameterMoment(:β),
 )
-compare_economies(moments, economies; models = (baseline = ngm, high_vol = ngm_hi))
+compare_economies(moments, economies; parameters = :distinct)
 ```
 
 Each entry of `moments` names one number per economy. Defining it computes nothing: it is a
@@ -63,8 +63,9 @@ rows of the table are the moments and its columns the economies:
   is that many percent more volatile.
 - `mean_K_lowK` is the mean of `K` in the `low_K` sample defined above.
 - `beta` is the parameter `β`.
-- `models` adds a row for each parameter that differs between the models, here `σ`, so the table
-  shows what was varied.
+- `parameters = :distinct` adds a row above the moments for each parameter that differs between
+  the economies, here `σ`, so the table shows what was varied. The parameters are those of each
+  `EconomyResult`; `parameters = (:β, :σ)` shows the ones named instead.
 
 A bare variable name in place of a moment means `SimulationMoment(name)`, so `(C = :C, K = :K)` is a
 valid collection of moments.
@@ -129,6 +130,14 @@ compare_economies(moments, economies; base = :high_vol)
 
 Now `high_vol` shows the values themselves, and `std_C` in the baseline column is relative to
 `high_vol`: consumption is that many percent less volatile in the baseline.
+
+With `compare_transform = false` every economy shows the moment's own value, and with
+`stacked = true` the table comes as columns `economy`, `moment` and `value`, one row per cell, to
+save or to plot:
+
+```@example mom
+compare_economies(moments, economies; compare_transform = false, stacked = true)
+```
 
 ## Impulse responses across economies
 
@@ -210,14 +219,15 @@ catch err
 end
 ```
 
-A period outside the impulse response is a `BoundsError`. A moment that needs a part the
-`EconomyResult` lacks, such as an `ImpulseMoment` without an IRF, is an `ArgumentError`, as is a
-moment read from a source that cannot serve it.
+A period outside the impulse response is a `BoundsError`, and a moment that needs a part the
+`EconomyResult` lacks, such as an `ImpulseMoment` without an IRF, is a `KeyError`. A moment read
+from a source that cannot serve it is an `ArgumentError`. In a table of `compare_economies`, a
+moment that an economy lacks (a `KeyError` or `BoundsError`) is a `missing` cell instead.
 
 ## Advanced: reading moments from your own results
 
 Results kept in your own format can be a source too. `getmoment` and `compare_economies` read every
-moment through one function, `momentvalues(source, moment)`, which returns the pair
+moment through one function, `extract_moment_values(source, moment)`, which returns the pair
 `(value, basis)`: the value before its transformation, and the basis of the transformation
 (`nothing` for the default basis, which every moment but an `ImpulseMoment` uses). A source needs a
 method for each kind of moment it serves; calculated moments then work with no further code, since
@@ -228,7 +238,7 @@ struct MyEconomy
     values::Dict{Symbol, Float64}
 end
 
-TransitionFunctionIteration.momentvalues(e::MyEconomy, m::SimulationMoment) =
+TransitionFunctionIteration.extract_moment_values(e::MyEconomy, m::SimulationMoment) =
     (e.values[Symbol(m.stat, "_", m.var)], nothing)
 
 mine = (a = MyEconomy(Dict(:mean_C => 1.0, :std_C => 0.02)),
@@ -237,9 +247,9 @@ compare_economies((mean_C = SimulationMoment(:C), cv_C = @CalculatedMoment sd(:C
 ```
 
 A moment type with no method for a source is an `ArgumentError`. A new kind of moment is a subtype of
-[`AbstractMoment`](@ref) with a `momentvalues` method for each source that can serve it, and methods
+[`AbstractMoment`](@ref) with a `extract_moment_values` method for each source that can serve it, and methods
 of `TransitionFunctionIteration.transformation` and `compare_transformation` if it does not have
 fields of those names.
 
-Saved runs are read through such a source, built from [`assemble_moments`](@ref): with OutputVault loaded,
-`compare_economies` takes runs as economies ([Saving and Comparing Results with OutputVault](@ref)).
+With OutputVault loaded, `compare_economies` also takes saved runs as economies, and reads them
+through the same function ([Saving and Comparing Results with OutputVault](@ref)).

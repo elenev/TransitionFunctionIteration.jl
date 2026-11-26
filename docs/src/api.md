@@ -119,7 +119,6 @@ EconomyResult
 collect_parameters
 getmoment
 compare_economies
-assemble_moments
 describe
 calc_error_stats
 ```
@@ -129,7 +128,6 @@ calc_error_stats
 ```@docs
 save_result
 load_result
-TransitionFunctionIteration.result_shape
 TransitionFunctionIteration.migrate_irf!
 TransitionFunctionIteration.to_portable
 TransitionFunctionIteration.from_portable
@@ -234,11 +232,9 @@ Filter = t -> begin
         TransitionFunctionIteration.collect_parameters,
         TransitionFunctionIteration.getmoment,
         TransitionFunctionIteration.compare_economies,
-        TransitionFunctionIteration.assemble_moments,
         TransitionFunctionIteration.save_result,
         TransitionFunctionIteration.load_result,
         TransitionFunctionIteration.migrate_irf!,
-        TransitionFunctionIteration.result_shape,
         TransitionFunctionIteration.to_portable,
         TransitionFunctionIteration.from_portable,
         TransitionFunctionIteration.describe,

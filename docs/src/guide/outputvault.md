@@ -82,32 +82,21 @@ for one file outside any run.
 
 ## Comparing economies
 
-[`compare_economies`](@ref) and [`assemble_moments`](@ref) take saved runs as economies, a vector of
-`RunHandle`s or a `RunPattern`, keyed by variant:
+[`compare_economies`](@ref) takes saved runs as economies: a NamedTuple of `RunHandle`s, keyed by
+the economies' names, or a `RunPattern`, whose runs are named by their variant. It takes the same
+keywords as for results in memory and gives the same table for the same results:
 
 ```julia
 moments = (mean_K = SimulationMoment(:K), resp = ImpulseMoment(:K, :pos, 3), beta = ParameterMoment(:β))
-compare_economies(moments, RunPattern(experdef = "v1"); base = :base)
+compare_economies(moments, RunPattern(experdef = "v1"); base = :base, parameters = :distinct)
+compare_economies(moments, (; frm = RunHandle("frm"; experdef = "v1"), arm = RunHandle("arm"; experdef = "v1")))
 ```
 
 The numbers the moments need are read with one query per table (statistics, IRFs, parameters), which
-opens only the files of the selected runs. [`assemble_moments`](@ref) returns them as a long table, the
-same one it returns for results in memory:
-
-```julia
-assemble_moments(moments, RunPattern(experdef = "v1"))
-assemble_moments(moments, (; base = EconomyResult(; stats, irf, params)); experdef = "v1")
-```
-
-A run without a number that a moment needs is a `KeyError` that names it. Variants that repeat across
+opens only the files of the selected runs. A run that holds none of them is left out with a warning,
+and a number that a run lacks is a `missing` cell. Variants that repeat across
 branches or experdefs are an error: select runs with a narrower pattern. IRFs are read from the
 starting point `start` (keyword, default `:ss`).
-
-For other queries, [`TransitionFunctionIteration.result_shape`](@ref) gives the OutputVault `QueryShape` of TFI's tables:
-
-```julia
-query_results(RunPattern(experdef = "v1"), TFI.result_shape(:stats); sample = :uncond, variable = [:K, :C], stat = :mean)
-```
 
 ## Runs saved with OutputVault 0.3
 

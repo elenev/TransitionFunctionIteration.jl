@@ -70,7 +70,7 @@ end
         @test getmoment(stats(1.0), SimulationMoment(:C)) == 1.0
         @test getmoment(irf(1.0), ImpulseMoment(:C, :hike, 1)) == 1.0
         # errors name what is missing
-        @test_throws ArgumentError getmoment(EconomyResult(; stats = stats(1.0)), ImpulseMoment(:C, :hike, 2))
+        @test_throws KeyError getmoment(EconomyResult(; stats = stats(1.0)), ImpulseMoment(:C, :hike, 2))
         @test_throws KeyError getmoment(res, SimulationMoment(:nope))
         @test_throws KeyError getmoment(res, ImpulseMoment(:C, :cut, 2))
         @test_throws BoundsError getmoment(res, ImpulseMoment(:C, :hike, 9))
@@ -120,7 +120,7 @@ end
             @test getmoment(economies, child_cmp, :big, :base) == 8.0        # the child's DiffLevel is ignored
             tab = compare_economies((total = total, nested = nested, std_K = stdK), economies)
             @test tab(:total, :big) == 10.0 && tab(:nested, :base) == 9.0 && tab(:nested, :big) == 18.0
-            @test_throws ArgumentError getmoment(EconomyResult(; stats = stats(1.0)), total)
+            @test_throws KeyError getmoment(EconomyResult(; stats = stats(1.0)), total)
             @test_throws KeyError getmoment(res1, CalculatedMoment(nt -> nt.a, (a = SimulationMoment(:nope),)))
         end
 
@@ -157,8 +157,8 @@ end
         @test getmoment(EconomyResult(; params = (β = 0.5,)), ParameterMoment(:β)) == 0.5
         @test getmoment((a = res, b = EconomyResult(; params = (β = 0.5, σ = 1.0))), ParameterMoment(:σ), :b, :a) == 1.0
         @test_throws KeyError getmoment(res, ParameterMoment(:nope))
-        @test_throws ArgumentError getmoment(EconomyResult(; stats), ParameterMoment(:β))
-        @test_throws ArgumentError getmoment(EconomyResult(; params), SimulationMoment(:C))
+        @test_throws KeyError getmoment(EconomyResult(; stats), ParameterMoment(:β))
+        @test_throws KeyError getmoment(EconomyResult(; params), SimulationMoment(:C))
         @test_throws ArgumentError getmoment(stats, ParameterMoment(:β))     # a describe output cannot serve it
     end
 
@@ -200,7 +200,7 @@ end
     end
 
     @testset "fallback" begin
-        @test_throws ArgumentError TFI.momentvalues(1.0, C)
+        @test_throws ArgumentError TFI.extract_moment_values(1.0, C)
         err = try; getmoment(1.0, ParameterMoment(:β)); catch e; e; end
         @test occursin("ParameterMoment", err.msg) && occursin("Float64", err.msg)
     end

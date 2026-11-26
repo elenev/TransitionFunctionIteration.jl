@@ -655,73 +655,80 @@ function linearize(simseries::StructArray{T,2} where T, stv::SteadyState; loglin
 end
 
 ## Moment comparison across economies
-const ModelTuple{NAMES,N,T} = NamedTuple{NAMES, NTuple{N, T}}
-function _distinct_parameters(models::ModelTuple)
-    props = propertynames(first(models))
-    
-    mask = map(props) do p
-        val = getproperty(first(models), p)
-        if val isa Number && !allequal(getproperty(m, p) for m in models)
-            return p
-        else
-            return nothing
+
+"""
+    compare_economies(moments, economies; base = 1, compare_transform = true, stacked = false,
+                      parameters = nothing) -> MomentArray
+
+The `moments` across economies: one row per moment, one column per economy.
+
+- `moments`: a NamedTuple of [`AbstractMoment`](@ref)s; a bare variable name is a
+  [`SimulationMoment`](@ref) with default settings.
+- `economies`: the economies' results, keyed by name: a NamedTuple of [`EconomyResult`](@ref)s (or
+  `describe` outputs, for simulation moments only). With OutputVault loaded, also saved runs: a
+  NamedTuple of `RunHandle`s, or a `RunPattern`, whose runs are named by their variant. IRFs of
+  saved runs are read from the starting point `start` (keyword, default `:ss`), and runs that hold
+  none of the numbers the moments need are left out with a warning.
+- `base`: the economy (a name or position) the others are compared with.
+- `compare_transform`: with `true`, each economy other than `base` shows the moment's
+  `compare_transformation` of its value with the base's value as the basis; with `false`, every
+  economy shows the moment's own value.
+- `parameters`: model parameters shown as rows above the moments: `nothing` (none), `:distinct`
+  (those whose values differ across the economies, in alphabetical order; a parameter that some
+  economies lack differs, and is `missing` there) or a collection of parameter names. They are read
+  from the economies' parameters, as [`ParameterMoment`](@ref)s are.
+- `stacked`: with `true`, the table as columns `economy`, `moment` and `value`, one row per cell.
+
+Every cell is read with [`getmoment`](@ref), the same way for results in memory and for saved runs.
+A cell is `missing` where the economy lacks a number the moment needs (or, when compared, the base
+economy does).
+"""
+function compare_economies(moments::NamedTuple, economies::NamedTuple; base::Union{Integer, Symbol} = 1,
+                           compare_transform::Bool = true, stacked::Bool = false, parameters = nothing)
+    moments = _as_moments(moments)
+    base = base isa Integer ? keys(economies)[base] : base
+    table = MomentArray([_cell(economies, m, e, base, compare_transform) for m in values(moments), e in keys(economies)],
+                        moments, economies; rowkey = :moment)
+    if !isnothing(parameters)
+        table = [_parameter_table(economies, parameters); table]
+    end
+    return stacked ? _stack(table) : table
+end
+
+# a cell: the moment in economy `e`, or `missing` if the economy lacks a number it needs (a
+# KeyError, or a BoundsError for a period outside an IRF)
+function _cell(economies, m, e, base, compare_transform)
+    try
+        return compare_transform ? getmoment(economies, m, e, base) : getmoment(economies[e], m)
+    catch err
+        if !(err isa KeyError || err isa BoundsError)
+            rethrow()
         end
-    end
-    return filter(!isnothing, mask)
-end
-
-function _compare_parameters(params, models::NamedTuple)
-    data = [getproperty(models[econ], p) for p in params, econ in keys(models)]
-    return MomentArray(data, params, keys(models); rowkey = :parameter)
-end
-
-function _compare_parameters(models::NamedTuple)
-    params = _distinct_parameters(models)
-    return _compare_parameters(params, models)
-end
-
-"""
-    compare_economies(moment_defs, economies; base=1, models=nothing) -> MomentArray
-
-Build a labeled table of moments across multiple economies.
-
-- `moment_defs`: NamedTuple of [`AbstractMoment`](@ref)s (rows of the output table); a bare
-  variable name is a `SimulationMoment` with default settings
-- `economies`: NamedTuple of the economies' results (columns of the output table), each a source
-  the moments can be read from: a `describe()` output (`SimulationMoment`s only) or an
-  [`EconomyResult`](@ref), or any type with `momentvalues` methods. With OutputVault loaded,
-  `economies` can also be saved runs, a vector of `RunHandle`s or a `RunPattern`, keyed by variant
-  (IRFs from the starting point `start`, default `:ss`); see [`assemble_moments`](@ref).
-
-Returns a `MomentArray` with moment names as rows and economy names as columns; each cell is
-`getmoment(economies, moment, economy, base)`.
-"""
-function compare_economies(moment_defs::NamedTuple, economies::NamedTuple;
-    base::Union{Integer,Symbol}=1,
-    models::Union{Nothing,ModelTuple} = nothing,
-    parameters = isnothing(models) ? nothing : _distinct_parameters(models)
-    )
-
-    if base isa Integer
-        base = keys(economies)[base]
-    end
-
-    # Promote any non-moment entries in moment_defs to SimulationMoment with default specs
-    moment_defs  = map(v -> v isa AbstractMoment ? v : SimulationMoment(v), moment_defs)
-    moment_names = keys(moment_defs)
-    econ_names   = keys(economies)
-
-    data = [getmoment(economies, moment, econ, base)
-            for moment in values(moment_defs), econ in econ_names]
-
-
-    stats = MomentArray(data, moment_defs, economies; rowkey = :moment)
-
-    if models !== nothing
-        params = _compare_parameters(parameters, models)
-        return [params; stats]
-    else
-        return stats
+        return missing
     end
 end
 
+# the parameters as rows, one column per economy
+function _parameter_table(economies, parameters)
+    names = _parameter_list(economies, parameters)
+    data = [_parameter_value(e, p) for p in names, e in values(economies)]
+    return MomentArray(data, names, keys(economies); rowkey = :parameter)
+end
+
+function _parameter_list(economies, parameters)
+    if parameters === :distinct
+        names = sort!(unique(Iterators.flatmap(_parameter_names, values(economies))))
+        return Tuple(p for p in names if !allequal(_parameter_value(e, p) for e in values(economies)))
+    end
+    if parameters isa Symbol
+        throw(ArgumentError("parameters must be nothing, :distinct or a collection of parameter names, not :$parameters"))
+    end
+    return Tuple(Symbol(p) for p in parameters)
+end
+
+# a table as columns economy, moment and value: one row per cell, the economies in order
+function _stack(t::MomentArray)
+    cells = vec([(e, m) for m in eachindex(row_names(t)), e in eachindex(col_names(t))])
+    return (economy = [col_names(t)[e] for (e, m) in cells], moment = [row_names(t)[m] for (e, m) in cells],
+            value = [t[m, e] for (e, m) in cells])
+end
