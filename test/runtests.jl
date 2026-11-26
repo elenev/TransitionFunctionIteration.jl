@@ -100,6 +100,7 @@ end
     include("test_forecasts.jl") # uses ngm, obj from test_ngm.jl
     include("test_eqmvalguesses.jl") # uses ngm from test_ngm.jl
     include("test_tables.jl")    # uses obj, stv, simseries, errs from test_ngm.jl
+    include("test_portable.jl")  # uses obj, stv from test_ngm.jl and ForecastNGM from test_forecasts.jl
     include("test_outputvault.jl") # uses those fixtures and ForecastNGM from test_forecasts.jl
     include("test_Aqua.jl")
 end

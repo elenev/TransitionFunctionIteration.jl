@@ -49,8 +49,10 @@ Any other value can be saved at a path of your choice with OutputVault's `save_r
 
 ## Portable files
 
-Solutions, steady states and interpolants are stored as plain HDF5-compatible arrays and metadata,
-without Julia objects, so they read without the code that wrote them (h5py reads them too). The
+Solutions, steady states and interpolants are stored as their portable data, [`to_portable`](@ref):
+nested NamedTuples of numbers, strings and numeric arrays, without Julia objects, so they read
+without the code that wrote them (h5py reads the files too). [`from_portable`](@ref) rebuilds them;
+both work without OutputVault, for any storage of plain data. The
 model is not stored as an object: its plain description, [`model_metadata`](@ref), is. When a
 portable solution is loaded, the model is either supplied, and its metadata are compared with the
 stored ones (differences are a warning), or rebuilt from the stored metadata with

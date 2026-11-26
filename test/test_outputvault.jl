@@ -21,11 +21,6 @@ struct ParametersModel <: AbstractModel
     grid::Vector{Float64}
 end
 
-same_solution(a, b) = a.Pfct == b.Pfct && a.Vfct == b.Vfct && a.Tfct == b.Tfct &&
-    a.ssg == b.ssg && isapprox(a.exogenv, b.exogenv) &&
-    a.Pfct_bounds == b.Pfct_bounds && a.Tfct_bounds == b.Tfct_bounds &&
-    (isnothing(a.Ffct) ? isnothing(b.Ffct) : a.Ffct == b.Ffct)
-
 ov_git(dir, args...) = read(`git -C $dir -c user.name=Test -c user.email=test@example.com $args`, String)
 
 # f(root) with an OutputVault configuration over a temporary root, provenance from a throwaway
@@ -105,10 +100,6 @@ sorted_rows(t) = sort(collect(zip(values(t)...)); by = r -> r[1:end-1])
         fpath = write_object_file(joinpath(dir, "fct.jld2"), obj.Vfct)
         @test read_object_file(fpath, Interpolant) == obj.Vfct
 
-        for b in (TransitionFunctionIteration.Unbounded(), TransitionFunctionIteration.LowerBounded(-1.0),
-                  TransitionFunctionIteration.UpperBounded(2.0), TransitionFunctionIteration.IntervalBounded(0.0, 3.0))
-            @test OVExt.interval_bound(OVExt.bound_interval(b)) == b
-        end
     end
 
     irf = simulate_irf(obj, simseries; shocks = (pos = 2, uncond = Int64[]), path_vars = (:K,), T = 5, N = 20)
@@ -119,7 +110,7 @@ sorted_rows(t) = sort(collect(zip(values(t)...)); by = r -> r[1:end-1])
             rf = RunHandle("ngm"; branch = "main", experdef = "base")
             result = (; obj, stv, stats = samples, errstats, simseries, errs, irf)
             dir = save_result(rf, result)
-            for f in ("native.jld2", "provenance/git_commit.txt", "solution/obj.jld2", "solution/stv.jld2",
+            for f in ("native.jld2", ".provenance/git_commit.txt", "solution/obj.jld2", "solution/stv.jld2",
                       "params/params.parquet", "simulation/simseries.parquet", "simulation/errs.parquet",
                       "errstats/errstats.parquet", "stats/uncond.parquet", "stats/a_all.parquet",
                       "irf/ss/stats.parquet", "irf/ss/paths.parquet")

@@ -133,6 +133,8 @@ save_result
 load_result
 migrate_irf!
 result_shape
+to_portable
+from_portable
 model_metadata
 model_from_metadata
 ```

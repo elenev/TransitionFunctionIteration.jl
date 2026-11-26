@@ -24,8 +24,9 @@ julia --project=docs docs/make.jl             # documentation, including the exe
 | Simulation, IRFs, moments | `src/simulation.jl`, `src/irf.jl`, `src/moments.jl` |
 | Reference model | `examples/ngm.jl` |
 | Moments as a long table (`assemble_moments`, `MomentRows`) | `src/moment_tables.jl` |
+| Portable data of solutions, steady states, interpolants (`to_portable`, `from_portable`) | `src/portable.jl` |
 | Saving with OutputVault: stubs, model metadata | `src/storage.jl`, `src/model_metadata.jl` |
-| OutputVault extension: storage of TFI's types, portable files, `save_result`, queries | `ext/TransitionFunctionIterationOutputVaultExt.jl` |
+| OutputVault extension: storage of TFI's types, `save_result`, queries | `ext/TransitionFunctionIterationOutputVaultExt.jl` |
 
 Read the interface contracts in the model guide and the docstrings before changing them;
 `generate_template` (`src/template.jl`) must stay consistent with them.
@@ -70,8 +71,9 @@ not by `status` alone.
 
 - OutputVault does all file I/O. The extension only defines `to_storage`, `from_storage`, `write_portable_jld2`
   and `read_portable_jld2` for TFI's types, and conveniences built on OutputVault's functions.
-- The portable `.jld2` layout of solutions, steady states and interpolants is documented at the top
-  of the extension. Bump its schema version only for changes that break readers of earlier files.
+- The portable data layout of solutions, steady states and interpolants is documented at the top of
+  `src/portable.jl`; the extension writes it to `.jld2` one group per NamedTuple and knows nothing
+  else about it. Bump its schema version only for changes that break readers of earlier files.
 - `assemble_moments` gives the same table for results in memory and for saved runs; a test checks it.
   Change both methods together.
 - Runs saved with OutputVault 0.3 must keep loading with `load_result`.
