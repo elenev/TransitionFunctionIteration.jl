@@ -69,6 +69,18 @@ Tables.columns(m::MomentArray{ROWS,COLS,T,M,ROWKEY}) where {ROWS,COLS,T,M,ROWKEY
 tfi_metadata(::MomentArray{ROWS,COLS,T,M,ROWKEY}) where {ROWS,COLS,T,M,ROWKEY} =
     Dict("tfi.kind" => "MomentArray", "tfi.rowkey" => string(ROWKEY))
 
+"""
+    stack_moments(t::MomentArray; colkey = :economy) -> NamedTuple
+
+`t` in long form, one row per cell: a column table with columns `colkey` (the column names of `t`),
+`row_key(t)` (its row names) and `value`, the columns of `t` one after another. For a table of
+[`compare_economies`](@ref) the columns are `economy`, `moment` and `value`.
+"""
+function stack_moments(t::MomentArray; colkey::Symbol = :economy)
+    rows, cols = row_names(t), col_names(t)
+    return NamedTuple{(colkey, row_key(t), :value)}(([c for c in cols for _ in rows], [r for _ in cols for r in rows], vec(t.data)))
+end
+
 # the column of row names of a table: the argument, else the table's metadata, else the default
 _table_rowkey(table, rowkey) = something(rowkey, Symbol(_metadata_entry(table, "tfi.rowkey", DEFAULT_ROWKEY)))
 

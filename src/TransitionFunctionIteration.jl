@@ -40,7 +40,7 @@ export Provenance, SimulationSettings, IRFSettings, solution_id, irf_paths
 export IRFResult, Transformations, ReportedVariable, IRFPage, simulate_irf
 
 # MomentArray
-export MomentArray, @MomentArray, row_names, col_names, row_key
+export MomentArray, @MomentArray, row_names, col_names, row_key, stack_moments
 
 # Main interface
 export solve_and_simulate, generate_template, update_model

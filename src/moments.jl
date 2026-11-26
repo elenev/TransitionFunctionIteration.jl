@@ -28,7 +28,7 @@ A specification of one number per economy: a statistic of a simulated variable
 parameter ([`ParameterMoment`](@ref)) or a function of other moments ([`CalculatedMoment`](@ref)).
 Read it with [`getmoment`](@ref), tabulate it with [`compare_economies`](@ref).
 
-The interface of a moment type: a `extract_moment_values` method for each kind of source it can be read from,
+The interface of a moment type: an `extract_moment_values` method for each kind of source it can be read from,
 and the accessors `transformation` and `compare_transformation` (by default the fields of those
 names).
 """

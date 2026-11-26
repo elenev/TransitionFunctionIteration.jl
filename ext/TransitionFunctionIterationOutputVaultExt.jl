@@ -188,7 +188,7 @@ end
 # of results in memory, which reads them back with TFI.extract_moment_values.
 
 # TFI's tables, and where the fields of a row are in each table's query output: a column, or
-# `nothing` for a fixed value (group "", period 0)
+# `nothing` for a fixed value (group Symbol(""), period 0)
 const SHAPES = (
     stats = (query = QueryShape("stats/{sample}"; keys = (:variable,), column = :stat),
              group = :sample, variable = :variable, stat = :stat, period = nothing),

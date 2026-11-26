@@ -131,12 +131,12 @@ compare_economies(moments, economies; base = :high_vol)
 Now `high_vol` shows the values themselves, and `std_C` in the baseline column is relative to
 `high_vol`: consumption is that many percent less volatile in the baseline.
 
-With `compare_transform = false` every economy shows the moment's own value, and with
-`stacked = true` the table comes as columns `economy`, `moment` and `value`, one row per cell, to
-save or to plot:
+With `compare_transform = false` every economy shows the moment's own value. `stack_moments` puts
+the table in long form, columns `economy`, `moment` and `value` with one row per cell, to save or to
+plot:
 
 ```@example mom
-compare_economies(moments, economies; compare_transform = false, stacked = true)
+stack_moments(compare_economies(moments, economies; compare_transform = false))
 ```
 
 ## Impulse responses across economies
@@ -247,7 +247,7 @@ compare_economies((mean_C = SimulationMoment(:C), cv_C = @CalculatedMoment sd(:C
 ```
 
 A moment type with no method for a source is an `ArgumentError`. A new kind of moment is a subtype of
-[`AbstractMoment`](@ref) with a `extract_moment_values` method for each source that can serve it, and methods
+[`AbstractMoment`](@ref) with an `extract_moment_values` method for each source that can serve it, and methods
 of `TransitionFunctionIteration.transformation` and `compare_transformation` if it does not have
 fields of those names.
 

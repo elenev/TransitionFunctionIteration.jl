@@ -105,6 +105,7 @@ MomentArray
 row_names
 col_names
 row_key
+stack_moments
 AbstractMoment
 TransitionFunctionIteration.transformation
 TransitionFunctionIteration.compare_transformation
@@ -218,6 +219,7 @@ Filter = t -> begin
         TransitionFunctionIteration.row_names,
         TransitionFunctionIteration.col_names,
         TransitionFunctionIteration.row_key,
+        TransitionFunctionIteration.stack_moments,
         TransitionFunctionIteration.AbstractMoment,
         TransitionFunctionIteration.SimulationMoment,
         TransitionFunctionIteration.ImpulseMoment,

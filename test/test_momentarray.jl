@@ -244,7 +244,7 @@ end
     @test col_names(m123) == (:x, :y, :z, :w)
 end
 
-@testset "compare_economies — parameters, compare_transform, stacked" begin
+@testset "compare_economies — parameters, compare_transform; stack_moments" begin
     N_runs, N_periods = 3, 15
     Random.seed!(2)
 
@@ -279,12 +279,17 @@ end
     @test own(:mean_K, :scaled) != plain(:mean_K, :scaled)
     @test own(:mean_K, :baseline) == plain(:mean_K, :baseline)
 
-    # stacked: one row per cell, economies in order
-    long = compare_economies(moments, economies; stacked = true, parameters = :distinct)
+    # parameters and moments share the row key
+    @test row_key(table) == :moment
+
+    # long form: one row per cell, economies in order
+    long = stack_moments(table)
     @test keys(long) == (:economy, :moment, :value)
     @test long.economy == [:baseline, :baseline, :baseline, :baseline, :scaled, :scaled, :scaled, :scaled]
     @test long.moment[1:4] == [:alpha, :gamma, :mean_C, :mean_K]
     @test isequal(long.value, vec(table.data))
+    @test keys(stack_moments(table; colkey = :run)) == (:run, :moment, :value)
+    @test @inferred(stack_moments(plain)).value == vec(plain.data)
 end
 
 @testset "MomentArray — broadcasting keeps the wrapped matrix type" begin

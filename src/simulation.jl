@@ -657,10 +657,11 @@ end
 ## Moment comparison across economies
 
 """
-    compare_economies(moments, economies; base = 1, compare_transform = true, stacked = false,
+    compare_economies(moments, economies; base = 1, compare_transform = true,
                       parameters = nothing) -> MomentArray
 
-The `moments` across economies: one row per moment, one column per economy.
+The `moments` across economies: one row per moment, one column per economy, with row key `moment`.
+[`stack_moments`](@ref) turns the table into long form.
 
 - `moments`: a NamedTuple of [`AbstractMoment`](@ref)s; a bare variable name is a
   [`SimulationMoment`](@ref) with default settings.
@@ -677,14 +678,13 @@ The `moments` across economies: one row per moment, one column per economy.
   (those whose values differ across the economies, in alphabetical order; a parameter that some
   economies lack differs, and is `missing` there) or a collection of parameter names. They are read
   from the economies' parameters, as [`ParameterMoment`](@ref)s are.
-- `stacked`: with `true`, the table as columns `economy`, `moment` and `value`, one row per cell.
 
 Every cell is read with [`getmoment`](@ref), the same way for results in memory and for saved runs.
 A cell is `missing` where the economy lacks a number the moment needs (or, when compared, the base
 economy does).
 """
 function compare_economies(moments::NamedTuple, economies::NamedTuple; base::Union{Integer, Symbol} = 1,
-                           compare_transform::Bool = true, stacked::Bool = false, parameters = nothing)
+                           compare_transform::Bool = true, parameters = nothing)
     moments = _as_moments(moments)
     base = base isa Integer ? keys(economies)[base] : base
     table = MomentArray([_cell(economies, m, e, base, compare_transform) for m in values(moments), e in keys(economies)],
@@ -692,7 +692,7 @@ function compare_economies(moments::NamedTuple, economies::NamedTuple; base::Uni
     if !isnothing(parameters)
         table = [_parameter_table(economies, parameters); table]
     end
-    return stacked ? _stack(table) : table
+    return table
 end
 
 # a cell: the moment in economy `e`, or `missing` if the economy lacks a number it needs (a
@@ -708,11 +708,11 @@ function _cell(economies, m, e, base, compare_transform)
     end
 end
 
-# the parameters as rows, one column per economy
+# the parameters as rows, one column per economy, with the moments' row key
 function _parameter_table(economies, parameters)
     names = _parameter_list(economies, parameters)
     data = [_parameter_value(e, p) for p in names, e in values(economies)]
-    return MomentArray(data, names, keys(economies); rowkey = :parameter)
+    return MomentArray(data, names, keys(economies); rowkey = :moment)
 end
 
 function _parameter_list(economies, parameters)
@@ -724,11 +724,4 @@ function _parameter_list(economies, parameters)
         throw(ArgumentError("parameters must be nothing, :distinct or a collection of parameter names, not :$parameters"))
     end
     return Tuple(Symbol(p) for p in parameters)
-end
-
-# a table as columns economy, moment and value: one row per cell, the economies in order
-function _stack(t::MomentArray)
-    cells = vec([(e, m) for m in eachindex(row_names(t)), e in eachindex(col_names(t))])
-    return (economy = [col_names(t)[e] for (e, m) in cells], moment = [row_names(t)[m] for (e, m) in cells],
-            value = [t[m, e] for (e, m) in cells])
 end

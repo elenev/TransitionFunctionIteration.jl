@@ -205,12 +205,14 @@ end
             # saved runs and results in memory are read the same way, with every option
             pattern = RunPattern(; experdef = "v1")
             for opts in ((;), (; base = :hi), (; compare_transform = false), (; parameters = :distinct),
-                         (; parameters = (:σ, :β)), (; stacked = true, parameters = :distinct))
+                         (; parameters = (:σ, :β)))
                 expected = compare_economies(moments, in_memory; opts...)
                 @test isequal(compare_economies(moments, runs; opts...), expected)
                 @test isequal(compare_economies(moments, pattern; opts...), expected)
             end
             @test row_names(compare_economies(moments, runs; parameters = :distinct))[1] == :σ
+            @test isequal(stack_moments(compare_economies(moments, runs; parameters = :distinct)),
+                          stack_moments(compare_economies(moments, in_memory; parameters = :distinct)))
 
             # a number a run lacks is a missing cell, in memory and saved alike
             lacking = (; moments..., p99 = SimulationMoment(:K; stat = :p99), late = ImpulseMoment(:K, :pos, 10_000))
