@@ -277,7 +277,11 @@ function TFI.save_result(rf::RunHandle, result; start = :ss, dirty_repo_check::S
     has(p) = hasproperty(result, p) && !isnothing(getproperty(result, p))
     if has(:obj)
         solution = has(:stv) ? (; result.obj, result.stv) : (; result.obj)
-        save_solution(rf, solution; dirty_repo_check)
+        dir = save_solution(rf, solution; dirty_repo_check)
+        # the new solution was left in staging (see the warning): keep the old run untouched
+        if dir != OutputVault.run_path(rf)
+            return dir
+        end
         save_result_item(rf, "params/params", collect_parameters(result.obj))
     end
     # one item per panel: a NamedTuple of two panels of equal length would be one table

@@ -12,7 +12,9 @@ the parameters at `params/params` ([`collect_parameters`](@ref)). Then, for each
 `errstats/errstats`, `stats` at `stats/<sample>`, the IRF `irf` at `irf/<start>/stats` and
 `irf/<start>/paths`, and the interpolants of `recursions` (e.g. `claims`, `welfare`) at
 `recursions/<name>`. Without `obj` the run must exist, and only the other properties are saved.
-Returns the run's folder. Needs `using OutputVault`.
+Returns the run's folder. If the new solution cannot be moved into place (on Windows, open files can
+block it), `save_solution` warns and nothing else is saved; the staging folder holding the solution
+is returned and the old run is left as it was. Needs `using OutputVault`.
 """
 function save_result end
 
