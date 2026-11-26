@@ -85,11 +85,11 @@ end
         @test getmoment(economies, moments.mean_C, :big, :base) == 2.0
         @test getmoment(economies, moments.std_K, :big, :base) == 4.0     # DiffLevel against base: 8 - 4
         @test getmoment(economies, moments.std_K, :base, 1) == 4.0        # the base uses its transformation
-        @test getmoment(economies, moments.irf_C, :big) == 6.0        # non-base: compare_transformation (Level) of the path value
+        @test getmoment(economies, moments.irf_C, :big) == 2.0        # non-base: Level comparison of its own response (6 - 4)
         @test getmoment(economies, moments.irf_C, :base) == 1.0       # base: its own DiffLevel against uncond
         tab = compare_economies(moments, economies)
         @test tab isa TFI.MomentArray && size(tab) == (3, 2)
-        @test tab(:irf_C, :big) == 6.0
+        @test tab(:irf_C, :big) == 2.0
         # legacy form: describe outputs and bare variable names
         legacy = compare_economies((C = :C,), (base = stats(1.0), big = stats(2.0)))
         @test legacy(:C, :big) == 2.0

@@ -132,29 +132,20 @@ Now `high_vol` shows the values themselves, and `std_C` in the baseline column i
 
 ## Impulse responses across economies
 
-An `ImpulseMoment` with a `transformation` reports the response in the base economy:
-
-```@example mom
-response_C = ImpulseMoment(:C, :shock_5, 2; transformation = RatioPct())
-compare_economies((; response_C), economies)
-```
-
-In `high_vol` the cell is `C` itself on the shock path, not the response, because only the
-`compare_transformation` is applied there. To compare the responses themselves, compute the response
-in each economy first with a calculated moment, whose inputs are read with their own
-transformations in every economy:
+An `ImpulseMoment` with a `transformation` reports the response, here the percentage response of
+`C` relative to the unconditional path, in every economy:
 
 ```@example mom
 using TransitionFunctionIteration.Transformations: DiffLevel
 
-response_both = CalculatedMoment(nt -> nt.r, (r = response_C,))
-response_diff = CalculatedMoment(nt -> nt.r, (r = response_C,); compare_transformation = DiffLevel())
-compare_economies((; response_both, response_diff), economies)
+response_C = ImpulseMoment(:C, :shock_5, 2; transformation = RatioPct())
+response_diff = ImpulseMoment(:C, :shock_5, 2; transformation = RatioPct(), compare_transformation = DiffLevel())
+compare_economies((; response_C, response_diff), economies)
 ```
 
-`response_both` is the percentage response in each economy. `response_diff` is the baseline
-response in the base column and, in the `high_vol` column, the difference of the `high_vol` response
-from the baseline one, in percentage points.
+A `compare_transformation` compares the reported values: `response_diff` is the baseline response
+in the base column and, in the `high_vol` column, the difference of the `high_vol` response from the
+baseline one, in percentage points.
 
 ## Calculated moments
 
@@ -250,5 +241,5 @@ A moment type with no method for a source is an `ArgumentError`. A new kind of m
 of `TransitionFunctionIteration.transformation` and `compare_transformation` if it does not have
 fields of those names.
 
-Saved runs are read through such a source, [`MomentRows`](@ref): with OutputVault loaded,
+Saved runs are read through such a source, built from [`assemble_moments`](@ref): with OutputVault loaded,
 `compare_economies` takes runs as economies ([Saving and Comparing Results with OutputVault](@ref)).

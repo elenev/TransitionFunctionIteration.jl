@@ -2,6 +2,7 @@ using Test
 using TransitionFunctionIteration
 using ForwardDiff, StaticArrays, StructArrays, RecipesBase, Statistics, Random
 const TFI = TransitionFunctionIteration
+using TransitionFunctionIteration: to_portable, from_portable   # not exported
 
 # ── shared fixtures ────────────────────────────────────────────────────────────
 # All test files are included inside the outer @testset, so these bindings are

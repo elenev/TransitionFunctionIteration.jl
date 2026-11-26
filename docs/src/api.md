@@ -120,8 +120,6 @@ collect_parameters
 getmoment
 compare_economies
 assemble_moments
-split_by_economy
-MomentRows
 describe
 calc_error_stats
 ```
@@ -131,12 +129,10 @@ calc_error_stats
 ```@docs
 save_result
 load_result
-migrate_irf!
-result_shape
-to_portable
-from_portable
-model_metadata
-model_from_metadata
+TransitionFunctionIteration.result_shape
+TransitionFunctionIteration.migrate_irf!
+TransitionFunctionIteration.to_portable
+TransitionFunctionIteration.from_portable
 ```
 
 ## Simulation results and provenance
@@ -239,14 +235,12 @@ Filter = t -> begin
         TransitionFunctionIteration.getmoment,
         TransitionFunctionIteration.compare_economies,
         TransitionFunctionIteration.assemble_moments,
-        TransitionFunctionIteration.split_by_economy,
-        TransitionFunctionIteration.MomentRows,
         TransitionFunctionIteration.save_result,
         TransitionFunctionIteration.load_result,
         TransitionFunctionIteration.migrate_irf!,
         TransitionFunctionIteration.result_shape,
-        TransitionFunctionIteration.model_metadata,
-        TransitionFunctionIteration.model_from_metadata,
+        TransitionFunctionIteration.to_portable,
+        TransitionFunctionIteration.from_portable,
         TransitionFunctionIteration.describe,
         TransitionFunctionIteration.calc_error_stats,
         TransitionFunctionIteration.SimulationPanel,

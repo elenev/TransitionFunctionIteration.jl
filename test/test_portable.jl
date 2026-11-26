@@ -19,11 +19,11 @@ plain(x) = x isa Union{Number, AbstractString} || x isa AbstractArray{<:Union{Nu
         @test d.grid.__axes == ["exst", "K"] && size(d.Pfct.C) == (ngm.N_A, 20) && size(d.Tfct.K) == (ngm.N_A, 20, ngm.N_A)
         @test d.Pfct.__bounds.__names == ["C"] && d.Pfct.__bounds.C == [0.0, Inf]
 
-        o1 = from_portable(ModelSolution, d; model = NeoclassicalGrowthModel)   # model_from_metadata
+        o1 = from_portable(ModelSolution, d; model = NeoclassicalGrowthModel)   # from_portable(M, parameters)
         @test same_solution(o1, obj) && o1.model == ngm && solution_id(o1) == solution_id(obj)
         o2 = @test_logs from_portable(ModelSolution, d; model = ngm)
         @test same_solution(o2, obj)
-        @test_logs (:warn, r"metadata differ") match_mode = :any from_portable(ModelSolution, d; model = NeoclassicalGrowthModel(β = 0.95))
+        @test_logs (:warn, r"parameters differ") match_mode = :any from_portable(ModelSolution, d; model = NeoclassicalGrowthModel(β = 0.95))
         @test_throws ArgumentError from_portable(ModelSolution, d)
         @test_throws ArgumentError from_portable(ModelSolution, merge(d, (meta = merge(d.meta, (schema_version = 1,)),)); model = ngm)
         @test same_solution(from_portable(ModelSolution, merge(d, (extra = [1.0],)); model = ngm), obj)   # unknown keys ignored

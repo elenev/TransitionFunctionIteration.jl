@@ -48,12 +48,12 @@ sorted_rows(t) = sort(collect(zip(values(t)...)); by = r -> r[1:end-1])
 
 @testset "OutputVault extension" begin
     @testset "model metadata" begin
-        @test model_metadata(ngm) == (α = ngm.α, β = ngm.β, δ = ngm.δ, γ = ngm.γ, σ = ngm.σ, ρ = ngm.ρ, N_A = ngm.N_A)
-        @test model_from_metadata(NeoclassicalGrowthModel, model_metadata(ngm)) == ngm
+        @test to_portable(ngm) == (α = ngm.α, β = ngm.β, δ = ngm.δ, γ = ngm.γ, σ = ngm.σ, ρ = ngm.ρ, N_A = ngm.N_A)
+        @test from_portable(NeoclassicalGrowthModel, to_portable(ngm)) == ngm
         fm = ForecastNGM(NeoclassicalGrowthModel())
-        @test model_metadata(fm) == (base = model_metadata(fm.base),)
+        @test to_portable(fm) == (base = to_portable(fm.base),)
         m = MetaTestModel(1.0, sin, zeros(10_000), [1.0, 2.0], (x = :s, g = cos))   # derived objects left out
-        @test model_metadata(m) == (a = 1.0, small = [1.0, 2.0], nt = (x = :s,))
+        @test to_portable(m) == (a = 1.0, small = [1.0, 2.0], nt = (x = :s,))
     end
 
     @testset "default parameters are the scalar real and Boolean fields" begin
@@ -65,11 +65,11 @@ sorted_rows(t) = sort(collect(zip(values(t)...)); by = r -> r[1:end-1])
     @testset "portable files" begin
         dir = mktempdir()
         path = write_object_file(joinpath(dir, "sol.jld2"), obj)
-        o1 = read_object_file(path, ModelSolution; context = NeoclassicalGrowthModel)   # model_from_metadata
+        o1 = read_object_file(path, ModelSolution; context = NeoclassicalGrowthModel)   # from_portable(M, parameters)
         @test same_solution(o1, obj) && o1.model == ngm && solution_id(o1) == solution_id(obj)
-        o2 = @test_logs read_object_file(path, ModelSolution; context = ngm)            # matching metadata
+        o2 = @test_logs read_object_file(path, ModelSolution; context = ngm)            # matching parameters
         @test same_solution(o2, obj)
-        @test_logs (:warn, r"metadata differ") match_mode = :any read_object_file(path, ModelSolution; context = NeoclassicalGrowthModel(β = 0.95))
+        @test_logs (:warn, r"parameters differ") match_mode = :any read_object_file(path, ModelSolution; context = NeoclassicalGrowthModel(β = 0.95))
         @test_throws ArgumentError read_object_file(path, ModelSolution)
         pt = (exst = 2, K = 3.0)
         @test o1.Pfct(pt) == obj.Pfct(pt)
@@ -173,15 +173,15 @@ sorted_rows(t) = sort(collect(zip(values(t)...)); by = r -> r[1:end-1])
             OutputVault.Formats.write_table(OutputVault.Formats.ParquetFormat(), joinpath(dir, "irf_paths.parquet"), irf_paths(irf))
             r = load_result(rf, :irf)
             @test keys(r) == (:ss,) && r.ss.means == irf.means && r.ss.paths.pos == irf.paths.pos
-            shape = result_shape(:irf)
+            shape = TFI.result_shape(:irf)
             @test isempty(query_results([rf], shape).value)          # queries do not see the old files
-            @test (@test_logs migrate_irf!(RunPattern(); move = false)) === nothing
+            @test (@test_logs TFI.migrate_irf!(RunPattern(); move = false)) === nothing
             @test isfile(joinpath(OutputVault.run_path(rf), "irf", "irf.parquet"))
-            migrate_irf!(RunPattern(); move = true)
+            TFI.migrate_irf!(RunPattern(); move = true)
             @test isfile(joinpath(OutputVault.run_path(rf), "irf", "ss", "stats.parquet"))
             @test load_result(rf, :irf).ss.means == irf.means
             @test !isempty(query_results([rf], shape).value)
-            @test migrate_irf!(rf) == []
+            @test TFI.migrate_irf!(rf) == []
         end
     end
 
@@ -224,9 +224,9 @@ sorted_rows(t) = sort(collect(zip(values(t)...)); by = r -> r[1:end-1])
             err = try compare_economies((; m = SimulationMoment(:K)), RunPattern(; experdef = "*", variant = "base")); nothing catch e; e end
             @test err isa ArgumentError && occursin("narrower pattern", err.msg)
 
-            @test result_shape(:stats) isa QueryShape && result_shape(:params) isa QueryShape
-            @test_throws ArgumentError result_shape(:other)
-            p = query_results(runs, result_shape(:params); parameter = :σ)
+            @test TFI.result_shape(:stats) isa QueryShape && TFI.result_shape(:params) isa QueryShape
+            @test_throws ArgumentError TFI.result_shape(:other)
+            p = query_results(runs, TFI.result_shape(:params); parameter = :σ)
             @test p.value == [ngm.σ, hi.σ]
         end
     end

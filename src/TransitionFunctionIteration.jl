@@ -46,8 +46,7 @@ export MomentArray, @MomentArray, row_names, col_names, row_key
 export solve_and_simulate, generate_template, update_model
 
 # Saved results (methods with OutputVault) and moment tables
-export save_result, load_result, migrate_irf!, result_shape, assemble_moments, split_by_economy, MomentRows
-export model_metadata, model_from_metadata, to_portable, from_portable
+export save_result, load_result, assemble_moments
 
 include("abstract_types.jl")
 include("named_interpolations.jl")
@@ -74,10 +73,7 @@ include("moments.jl")
 include("irfplotting.jl")
 include("provenance.jl")
 include("tables.jl")
-include("moment_tables.jl")
-include("model_metadata.jl")
 include("portable.jl")
-include("storage.jl")
 
 
 """
@@ -123,5 +119,65 @@ function solve_and_simulate(model::AbstractModel;
 
     return (; obj, stv, simseries, errs, stats, errstats, irf)
 end
+
+## Saved results
+
+# Saving, loading and querying results. The methods come with the package extension
+# TransitionFunctionIterationOutputVaultExt, loaded with `using OutputVault`.
+
+"""
+    save_result(rf, result; start = :ss, dirty_repo_check = :warn) -> String
+
+Save the output of [`solve_and_simulate`](@ref) (or a NamedTuple with some of its properties) in
+the OutputVault run `rf`. With `obj`, the run starts over: `save_solution(rf, (; obj, stv))`, then
+the parameters at `params/params` ([`collect_parameters`](@ref)). Then, for each property present:
+`simseries` and `errs` at `simulation/simseries` and `simulation/errs`, `errstats` at
+`errstats/errstats`, `stats` at `stats/<sample>`, the IRF `irf` at `irf/<start>/stats` and
+`irf/<start>/paths`, and the interpolants of `recursions` (e.g. `claims`, `welfare`) at
+`recursions/<name>`. Without `obj` the run must exist, and only the other properties are saved.
+Returns the run's folder. If the new solution cannot be moved into place (on Windows, open files can
+block it), `save_solution` warns and nothing else is saved; the staging folder holding the solution
+is returned and the old run is left as it was. Needs `using OutputVault`.
+"""
+function save_result end
+
+"""
+    load_result(rf, item::Symbol; model = nothing, native = false)
+    load_result(rf; model = nothing, native = false) -> NamedTuple
+
+Load a saved item of the OutputVault run `rf` as TFI's types: `:solution` (`(; obj, stv)`),
+`:params` and `:errstats` (`MomentArray`s), `:simulation` (`(; simseries, errs)`), `:stats` (moments by
+sample), `:irf` (a NamedTuple of `IRFResult`s by starting point) or `:recursions` (a NamedTuple of
+`Interpolant`s). Without `item`, every item the run holds, in one NamedTuple with the properties
+of `solve_and_simulate`'s output.
+
+The portable solution files store the model's parameters ([`to_portable`](@ref)), not the model: `model` is a model (its
+parameters are compared with the stored ones, and differences are a warning) or a model type (the
+model is rebuilt with [`from_portable`](@ref)). `native = true` reads the solution's native
+copy instead, which needs no model but the code that saved it. Needs `using OutputVault`.
+"""
+function load_result end
+
+"""
+    migrate_irf!(rf)
+    migrate_irf!(pattern; move = false)
+
+Move the IRF files of runs saved with OutputVault 0.3 (`irf/irf` and `irf/irf_paths`) to the
+current paths `irf/ss/stats` and `irf/ss/paths`, so that queries find them. For a `RunPattern`,
+every run found is listed with what would move, and the files move only with `move = true`.
+Needs `using OutputVault`. A transition aid for runs saved with OutputVault 0.3: not exported,
+and to be removed in a later version.
+"""
+function migrate_irf! end
+
+"""
+    result_shape(name::Symbol)
+
+The OutputVault `QueryShape` of TFI's saved tables: `:stats` (`"stats/{sample}"`, key `variable`,
+column `stat`), `:irf` (`"irf/{start}/stats"`, keys `__shock`, `__stat` and `__period`, column
+`variable`) or `:params` (`"params/params"`, key `parameter`, column `stat`). Needs
+`using OutputVault`.
+"""
+function result_shape end
 
 end

@@ -23,9 +23,9 @@ julia --project=docs docs/make.jl             # documentation, including the exe
 | Solver | `src/execution.jl` |
 | Simulation, IRFs, moments | `src/simulation.jl`, `src/irf.jl`, `src/moments.jl` |
 | Reference model | `examples/ngm.jl` |
-| Moments as a long table (`assemble_moments`, `MomentRows`) | `src/moment_tables.jl` |
-| Portable data of solutions, steady states, interpolants (`to_portable`, `from_portable`) | `src/portable.jl` |
-| Saving with OutputVault: stubs, model metadata | `src/storage.jl`, `src/model_metadata.jl` |
+| Moments as a long table (`assemble_moments`, `MomentRows`) | `src/moments.jl` |
+| Portable data of solutions, steady states, interpolants and models (`to_portable`, `from_portable`) | `src/portable.jl` |
+| `save_result`, `load_result` and the other functions with OutputVault methods | `src/TransitionFunctionIteration.jl` |
 | OutputVault extension: storage of TFI's types, `save_result`, queries | `ext/TransitionFunctionIterationOutputVaultExt.jl` |
 
 Read the interface contracts in the model guide and the docstrings before changing them;

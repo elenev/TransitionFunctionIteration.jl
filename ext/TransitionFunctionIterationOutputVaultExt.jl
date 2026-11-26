@@ -193,11 +193,11 @@ const SHAPES = (
     params = (query = QueryShape("params/params"; keys = (:parameter,), column = :stat),
               group = nothing, variable = :parameter, stat = :stat, period = nothing))
 
-function TFI.result_shape(kind::Symbol)
-    if !haskey(SHAPES, kind)
-        throw(ArgumentError("unknown shape :$kind; TFI's shapes are $(join(keys(SHAPES), ", "))"))
+function TFI.result_shape(name::Symbol)
+    if !haskey(SHAPES, name)
+        throw(ArgumentError("unknown shape :$name; TFI's shapes are $(join(keys(SHAPES), ", "))"))
     end
-    return SHAPES[kind].query
+    return SHAPES[name].query
 end
 
 const Runs = Union{RunPattern, AbstractVector{<:RunHandle}, Tuple{Vararg{RunHandle}}}

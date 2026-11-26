@@ -9,6 +9,7 @@ it says how TFI's types are stored, and adds the functions on this page.
 
 ```julia
 using TransitionFunctionIteration, OutputVault, Parquet2
+const TFI = TransitionFunctionIteration
 
 set_config!(Config(output_root = "/path/to/outputs",
                    table_format = OutputVault.Formats.ParquetFormat()))   # TFI's tables as Parquet
@@ -49,15 +50,16 @@ Any other value can be saved at a path of your choice with OutputVault's `save_r
 
 ## Portable files
 
-Solutions, steady states and interpolants are stored as their portable data, [`to_portable`](@ref):
+Solutions, steady states and interpolants are stored as their portable data, [`TransitionFunctionIteration.to_portable`](@ref):
 nested NamedTuples of numbers, strings and numeric arrays, without Julia objects, so they read
-without the code that wrote them (h5py reads the files too). [`from_portable`](@ref) rebuilds them;
+without the code that wrote them (h5py reads the files too). [`TransitionFunctionIteration.from_portable`](@ref) rebuilds them;
 both work without OutputVault, for any storage of plain data. The
-model is not stored as an object: its plain description, [`model_metadata`](@ref), is. When a
-portable solution is loaded, the model is either supplied, and its metadata are compared with the
-stored ones (differences are a warning), or rebuilt from the stored metadata with
-[`model_from_metadata`](@ref) when a model type is supplied. Add methods of both for a model whose
-fields include derived objects.
+model is not stored as an object, only its parameters, `to_portable(model)`. When a portable
+solution is loaded, the model is either supplied, and its parameters are compared with the stored
+ones (differences are a warning), or rebuilt from the stored parameters with
+`from_portable(M, parameters)` when a model type `M` is supplied. A model package whose model has
+fields that are derived objects adds methods of both, imported from TransitionFunctionIteration
+(they are not exported).
 
 The native copy, `native.jld2`, holds the same solution as Julia objects: it reloads fastest, with
 the same code.
@@ -66,7 +68,7 @@ the same code.
 
 ```julia
 load_result(rf, :solution; model = mdl)          # (; obj, stv) from the portable files
-load_result(rf, :solution; model = MyModel)      # the model rebuilt from its metadata
+load_result(rf, :solution; model = MyModel)      # the model rebuilt from its parameters
 load_result(rf, :solution; native = true)        # the native copy
 load_result(rf, :stats)                          # moments by sample, in alphabetical order
 load_result(rf, :irf)                            # (ss = IRFResult, ...), by starting point
@@ -101,19 +103,19 @@ A run without a number that a moment needs is a `KeyError` that names it. Varian
 branches or experdefs are an error: select runs with a narrower pattern. IRFs are read from the
 starting point `start` (keyword, default `:ss`).
 
-For other queries, [`result_shape`](@ref) gives the OutputVault `QueryShape` of TFI's tables:
+For other queries, [`TransitionFunctionIteration.result_shape`](@ref) gives the OutputVault `QueryShape` of TFI's tables:
 
 ```julia
-query_results(RunPattern(experdef = "v1"), result_shape(:stats); sample = :uncond, variable = [:K, :C], stat = :mean)
+query_results(RunPattern(experdef = "v1"), TFI.result_shape(:stats); sample = :uncond, variable = [:K, :C], stat = :mean)
 ```
 
 ## Runs saved with OutputVault 0.3
 
 Runs saved with OutputVault 0.3 load with `load_result`. Their IRF is `irf/irf` and `irf/irf_paths`,
 which `load_result(rf, :irf)` returns as starting point `ss` but queries do not find.
-[`migrate_irf!`](@ref) moves them to `irf/ss/stats` and `irf/ss/paths`:
+[`TransitionFunctionIteration.migrate_irf!`](@ref), a transition aid to be removed in a later version, moves them to `irf/ss/stats` and `irf/ss/paths`:
 
 ```julia
-migrate_irf!(RunPattern(branch = "**"))                 # lists what would move
-migrate_irf!(RunPattern(branch = "**"); move = true)    # moves
+TFI.migrate_irf!(RunPattern(branch = "**"))             # lists what would move
+TFI.migrate_irf!(RunPattern(branch = "**"); move = true) # moves
 ```
