@@ -1,7 +1,7 @@
 # TransitionFunctionIteration.jl
 
 [![Build Status](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CI.yml)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://elenev.github.io/TransitionFunctionIteration.jl/dev/)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://elenev.github.io/TransitionFunctionIteration.jl/stable/)
 [![CompatHelper](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CompatHelper.yml/badge.svg)](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CompatHelper.yml)
 [![TagBot](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/TagBot.yml/badge.svg)](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/TagBot.yml)
 
