@@ -70,7 +70,7 @@ end
         @test getmoment(stats(1.0), SimulationMoment(:C)) == 1.0
         @test getmoment(irf(1.0), ImpulseMoment(:C, :hike, 1)) == 1.0
         # errors name what is missing
-        @test_throws ArgumentError getmoment(EconomyResult(; stats = stats(1.0)), ImpulseMoment(:C, :hike, 2))
+        @test_throws KeyError getmoment(EconomyResult(; stats = stats(1.0)), ImpulseMoment(:C, :hike, 2))
         @test_throws KeyError getmoment(res, SimulationMoment(:nope))
         @test_throws KeyError getmoment(res, ImpulseMoment(:C, :cut, 2))
         @test_throws BoundsError getmoment(res, ImpulseMoment(:C, :hike, 9))
@@ -85,11 +85,15 @@ end
         @test getmoment(economies, moments.mean_C, :big, :base) == 2.0
         @test getmoment(economies, moments.std_K, :big, :base) == 4.0     # DiffLevel against base: 8 - 4
         @test getmoment(economies, moments.std_K, :base, 1) == 4.0        # the base uses its transformation
-        @test getmoment(economies, moments.irf_C, :big) == 6.0        # non-base: compare_transformation (Level) of the path value
+        @test getmoment(economies, moments.irf_C, :big) == 2.0        # non-base: Level comparison of its own response (6 - 4)
         @test getmoment(economies, moments.irf_C, :base) == 1.0       # base: its own DiffLevel against uncond
+        both = ImpulseMoment(:C, :hike, 3; transformation = T.DiffLevel(), compare_transformation = T.DiffLevel())
+        @test getmoment(economies, both, :big, :base) == 1.0          # the responses compared: 2 - 1
+        # an error other than a missing number is not a missing cell
+        @test_throws ErrorException compare_economies((; bad = CalculatedMoment(nt -> error("boom"), (c = moments.mean_C,))), economies)
         tab = compare_economies(moments, economies)
         @test tab isa TFI.MomentArray && size(tab) == (3, 2)
-        @test tab(:irf_C, :big) == 6.0
+        @test tab(:irf_C, :big) == 2.0
         # legacy form: describe outputs and bare variable names
         legacy = compare_economies((C = :C,), (base = stats(1.0), big = stats(2.0)))
         @test legacy(:C, :big) == 2.0
@@ -120,7 +124,7 @@ end
             @test getmoment(economies, child_cmp, :big, :base) == 8.0        # the child's DiffLevel is ignored
             tab = compare_economies((total = total, nested = nested, std_K = stdK), economies)
             @test tab(:total, :big) == 10.0 && tab(:nested, :base) == 9.0 && tab(:nested, :big) == 18.0
-            @test_throws ArgumentError getmoment(EconomyResult(; stats = stats(1.0)), total)
+            @test_throws KeyError getmoment(EconomyResult(; stats = stats(1.0)), total)
             @test_throws KeyError getmoment(res1, CalculatedMoment(nt -> nt.a, (a = SimulationMoment(:nope),)))
         end
 
@@ -157,8 +161,8 @@ end
         @test getmoment(EconomyResult(; params = (β = 0.5,)), ParameterMoment(:β)) == 0.5
         @test getmoment((a = res, b = EconomyResult(; params = (β = 0.5, σ = 1.0))), ParameterMoment(:σ), :b, :a) == 1.0
         @test_throws KeyError getmoment(res, ParameterMoment(:nope))
-        @test_throws ArgumentError getmoment(EconomyResult(; stats), ParameterMoment(:β))
-        @test_throws ArgumentError getmoment(EconomyResult(; params), SimulationMoment(:C))
+        @test_throws KeyError getmoment(EconomyResult(; stats), ParameterMoment(:β))
+        @test_throws KeyError getmoment(EconomyResult(; params), SimulationMoment(:C))
         @test_throws ArgumentError getmoment(stats, ParameterMoment(:β))     # a describe output cannot serve it
     end
 
@@ -200,7 +204,7 @@ end
     end
 
     @testset "fallback" begin
-        @test_throws ArgumentError TFI.momentvalues(1.0, C)
+        @test_throws ArgumentError TFI.extract_moment_values(1.0, C)
         err = try; getmoment(1.0, ParameterMoment(:β)); catch e; e; end
         @test occursin("ParameterMoment", err.msg) && occursin("Float64", err.msg)
     end

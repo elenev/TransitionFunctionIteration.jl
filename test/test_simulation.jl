@@ -153,6 +153,11 @@ TFI.dynamic_depth(::AugDepthModel) = 2
     @test r2.ddx == r0.ddx[3:end, :] && r2.x == data.x[3:end, :]
 end
 
+@testset "describe is DataAPI's" begin
+    # the same function as the describe of StatsBase, so loading both packages is no clash
+    @test describe === TransitionFunctionIteration.DataAPI.describe
+end
+
 @testset "describe — filters" begin
 
     N_runs, N_periods = 4, 20

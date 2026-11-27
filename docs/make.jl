@@ -14,6 +14,7 @@ makedocs(
             "guide/simulation.md",
             "guide/moments.md",
             "guide/tables.md",
+            "guide/outputvault.md",
         ],
         "API Reference" => "api.md",
     ]

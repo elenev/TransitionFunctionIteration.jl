@@ -186,33 +186,26 @@ end
 """
     augment_errors(obj, state, out, trans) -> (scalar_nt, vector_nt)
 
-Compute extra convergence/consistency diagnostics for one state, on top of the standard
-equation (`fx`) and transition (`transerr`) residuals `calc_result` always computes.
+Add model-specific accuracy measures to the errors that `simulate` reports. Define a method of
+this function to replace the default, which adds none.
 
-- `obj`: the solved `ModelSolution` -- gives access to `obj.Vfct`, `obj.Tfct`, `obj.Pfct`,
-  `obj.model`, `obj.exogenv`, etc., for models that want to interpolate something at `state`
-  (or elsewhere) themselves. None of these are evaluated automatically by this hook -- only
-  whatever a model's own override explicitly calls -- so models that don't override
-  `augment_errors` pay no extra interpolation cost.
-- `state`: the point `calc_result` is currently evaluating.
-- `out`: `calc_eqm`'s own result at `state` (a `NamedTuple` with `fx`, `trans`, and
-  `vals`/`simvars` -- the same object `calc_result` builds `fx_nt`/`transerr` from). A returned
-  `scalar_nt` field name that collides with an existing `fx` name REPLACES it (later `merge` wins)
-  rather than erroring -- useful for a model that wants to rescale/transform an existing
-  residual, but a footgun if the collision is accidental.
-- `trans`: `obj.Tfct(state)`, the interpolated transition at `state` -- already computed by the
-  caller regardless (needed to forecast next-period expectations), so it costs nothing extra to
-  pass along even though it's the same kind of "interpolate this yourself" ingredient as
-  `obj.Vfct`/`obj.Pfct` would be.
+`simulate` calls it at each simulated state, after evaluating the equilibrium conditions:
 
-Returns `(scalar_nt, vector_nt)`:
-- `scalar_nt`: a `NamedTuple` of scalars, merged into the per-state equation-error output.
-- `vector_nt`: a `NamedTuple` of per-next-exogenous-state vectors (same shape as `transerr` --
-  indexable by next exogenous state index), merged into `transerr` and resolved the same way
-  downstream (`merge_error` picks out the realized next state once it's known in `simulate()`'s
-  loop) -- no separate processing needed.
+- `obj`: the `ModelSolution`, whose `Pfct`, `Vfct` and `Tfct` you can interpolate here.
+- `state`: the current state, a NamedTuple of `exst` and the endogenous states.
+- `out`: the result of `calc_eqm` at `state` in `SimulateMode`, `(; fx, trans, simvars)`.
+- `trans`: the interpolated transitions `obj.Tfct(state)`, one value per next-period exogenous
+  state.
 
-The default returns `(;), (;)` -- no extra measures, no extra interpolation calls.
+Return a pair of NamedTuples:
+
+- `scalar_nt`: scalars, added to the equation errors. A name that matches an existing equation
+  error replaces it.
+- `vector_nt`: vectors with one entry per next-period exogenous state, added to the transition
+  errors. `simulate` keeps the entry for the realized next state.
+
+[`calc_error_stats`](@ref) then summarizes them with the other errors. See
+[Extra error diagnostics](@ref) for an example.
 """
 augment_errors(obj, state, out, trans) = (;), (;)
 
@@ -344,7 +337,7 @@ end
 Summarize absolute equation and transition errors from a simulation.
 
 Returns a `MomentArray` with error names as rows and stat names (`:mean`, `:p50`, …)
-as columns. Access entries with `getmoment(out, :euler, :mean)` etc.
+as columns. Read an entry with `out(:euler, :mean)` or `getmoment(out, :euler, :mean)`.
 """
 function calc_error_stats(errs::SimulationErrorPanel; percentiles=[50, 75, 90, 95, 99, 100])
 
@@ -655,71 +648,73 @@ function linearize(simseries::StructArray{T,2} where T, stv::SteadyState; loglin
 end
 
 ## Moment comparison across economies
-const ModelTuple{NAMES,N,T} = NamedTuple{NAMES, NTuple{N, T}}
-function _distinct_parameters(models::ModelTuple)
-    props = propertynames(first(models))
-    
-    mask = map(props) do p
-        val = getproperty(first(models), p)
-        if val isa Number && !allequal(getproperty(m, p) for m in models)
-            return p
-        else
-            return nothing
+
+"""
+    compare_economies(moments, economies; base = 1, compare_transform = true,
+                      parameters = nothing) -> MomentArray
+
+The `moments` across economies: one row per moment, one column per economy, with row key `moment`.
+[`stack_moments`](@ref) turns the table into long form.
+
+- `moments`: a NamedTuple of [`AbstractMoment`](@ref)s; a bare variable name is a
+  [`SimulationMoment`](@ref) with default settings.
+- `economies`: the economies' results, keyed by name: a NamedTuple of [`EconomyResult`](@ref)s (or
+  `describe(...).moments` collections, for simulation moments only). With OutputVault loaded, also saved runs: a
+  NamedTuple of `RunHandle`s, or a `RunPattern`, whose runs are named by their variant. IRFs of
+  saved runs are read from the starting point `start` (keyword, default `:ss`), and runs that hold
+  none of the numbers the moments need are left out with a warning.
+- `base`: the economy (a name or position) the others are compared with.
+- `compare_transform`: with `true`, each economy other than `base` shows the moment's
+  `compare_transformation` of its reported value with the base's reported value as the basis; with
+  `false`, every economy shows its reported value.
+- `parameters`: model parameters shown as rows above the moments: `nothing` (none), `:distinct`
+  (those whose values differ across the economies, in alphabetical order; a parameter that some
+  economies lack differs, and is `missing` there) or a collection of parameter names. They are read
+  from the economies' parameters, as [`ParameterMoment`](@ref)s are.
+
+Every cell is read with [`getmoment`](@ref), the same way for results in memory and for saved runs.
+A cell is `missing` where the economy lacks a number the moment needs (or, when compared, the base
+economy does).
+"""
+function compare_economies(moments::NamedTuple, economies::NamedTuple; base::Union{Integer, Symbol} = 1,
+                           compare_transform::Bool = true, parameters = nothing)
+    moments = _as_moments(moments)
+    base = base isa Integer ? keys(economies)[base] : base
+    table = MomentArray([_cell(economies, m, e, base, compare_transform) for m in values(moments), e in keys(economies)],
+                        moments, economies; rowkey = :moment)
+    if !isnothing(parameters)
+        table = [_parameter_table(economies, parameters); table]
+    end
+    return table
+end
+
+# a cell: the moment in economy `e`, or `missing` if the economy lacks a number it needs (a
+# KeyError, or a BoundsError for a period outside an IRF)
+function _cell(economies, m, e, base, compare_transform)
+    try
+        return compare_transform ? getmoment(economies, m, e, base) : getmoment(economies[e], m)
+    catch err
+        if !(err isa KeyError || err isa BoundsError)
+            rethrow()
         end
-    end
-    return filter(!isnothing, mask)
-end
-
-function _compare_parameters(params, models::NamedTuple)
-    data = [getproperty(models[econ], p) for p in params, econ in keys(models)]
-    return MomentArray(data, params, keys(models); rowkey = :parameter)
-end
-
-function _compare_parameters(models::NamedTuple)
-    params = _distinct_parameters(models)
-    return _compare_parameters(params, models)
-end
-
-"""
-    compare_economies(moment_defs, economies; base=1, models=nothing) -> MomentArray
-
-Build a labeled table of moments across multiple economies.
-
-- `moment_defs`: NamedTuple of [`AbstractMoment`](@ref)s (rows of the output table); a bare
-  variable name is a `SimulationMoment` with default settings
-- `economies`: NamedTuple of the economies' results (columns of the output table), each a source
-  the moments can be read from: a `describe()` output (`SimulationMoment`s only) or an
-  [`EconomyResult`](@ref), or any type with `momentvalues` methods
-
-Returns a `MomentArray` with moment names as rows and economy names as columns; each cell is
-`getmoment(economies, moment, economy, base)`.
-"""
-function compare_economies(moment_defs::NamedTuple, economies::NamedTuple;
-    base::Union{Integer,Symbol}=1,
-    models::Union{Nothing,ModelTuple} = nothing,
-    parameters = isnothing(models) ? nothing : _distinct_parameters(models)
-    )
-
-    if base isa Integer
-        base = keys(economies)[base]
-    end
-
-    # Promote any non-moment entries in moment_defs to SimulationMoment with default specs
-    moment_defs  = map(v -> v isa AbstractMoment ? v : SimulationMoment(v), moment_defs)
-    moment_names = keys(moment_defs)
-    econ_names   = keys(economies)
-
-    data = [getmoment(economies, moment, econ, base)
-            for moment in values(moment_defs), econ in econ_names]
-
-
-    stats = MomentArray(data, moment_defs, economies; rowkey = :moment)
-
-    if models !== nothing
-        params = _compare_parameters(parameters, models)
-        return [params; stats]
-    else
-        return stats
+        return missing
     end
 end
 
+# the parameters as rows, one column per economy, with the moments' row key
+function _parameter_table(economies, parameters)
+    names = _parameter_list(economies, parameters)
+    data = [_parameter_value(e, p) for p in names, e in values(economies)]
+    return MomentArray(data, names, keys(economies); rowkey = :moment)
+end
+
+function _parameter_list(economies, parameters)
+    if parameters === :distinct
+        names = sort!(unique(Iterators.flatmap(_parameter_names, values(economies))))
+        return Tuple(p for p in names if !allequal(_parameter_value(e, p) for e in values(economies)))
+    end
+    if parameters isa Symbol
+        throw(ArgumentError("parameters must be nothing, :distinct or a collection of parameter names, not :$parameters"))
+    end
+    return Tuple(Symbol(p) for p in parameters)
+end

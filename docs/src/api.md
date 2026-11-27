@@ -8,10 +8,11 @@ main_setup
 main_execute!
 ```
 
-## Model interface (stubs)
+## Model interface
 
-These functions have default implementations that throw `MethodNotImplementedError`.
-Model packages must add methods dispatching on their `AbstractModel` subtype.
+Implement these functions for your model type to supply its equations, grids and steady state.
+Use the augmentation functions for additional simulation variables or error measures.
+See [Implementing a Model](@ref) for examples and the required return values.
 
 ```@docs
 calc_eqm
@@ -105,6 +106,7 @@ MomentArray
 row_names
 col_names
 row_key
+stack_moments
 AbstractMoment
 TransitionFunctionIteration.transformation
 TransitionFunctionIteration.compare_transformation
@@ -119,8 +121,18 @@ EconomyResult
 collect_parameters
 getmoment
 compare_economies
-describe
+describe(::SimulationPanel)
 calc_error_stats
+```
+
+## Saved results (with OutputVault)
+
+```@docs
+save_result
+load_result
+TransitionFunctionIteration.migrate_irf!
+TransitionFunctionIteration.to_portable
+TransitionFunctionIteration.from_portable
 ```
 
 ## Simulation results and provenance
@@ -208,6 +220,7 @@ Filter = t -> begin
         TransitionFunctionIteration.row_names,
         TransitionFunctionIteration.col_names,
         TransitionFunctionIteration.row_key,
+        TransitionFunctionIteration.stack_moments,
         TransitionFunctionIteration.AbstractMoment,
         TransitionFunctionIteration.SimulationMoment,
         TransitionFunctionIteration.ImpulseMoment,
@@ -222,6 +235,11 @@ Filter = t -> begin
         TransitionFunctionIteration.collect_parameters,
         TransitionFunctionIteration.getmoment,
         TransitionFunctionIteration.compare_economies,
+        TransitionFunctionIteration.save_result,
+        TransitionFunctionIteration.load_result,
+        TransitionFunctionIteration.migrate_irf!,
+        TransitionFunctionIteration.to_portable,
+        TransitionFunctionIteration.from_portable,
         TransitionFunctionIteration.describe,
         TransitionFunctionIteration.calc_error_stats,
         TransitionFunctionIteration.SimulationPanel,

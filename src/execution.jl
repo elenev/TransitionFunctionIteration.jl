@@ -521,10 +521,11 @@ end
                   damping=:damped_iterate, logging=ITERATIONFAILED, track_history=nothing,
                   multithreaded=nothing)
 
-Iterate policy and value functions of `obj` to convergence.
+Iterate the policy, value, transition and (if present) forecasting functions of `obj` to
+convergence.
 
-Solves equilibrium conditions at every grid point, damps the value function update, and
-repeats until one of three exit states, each logged at level `COMPLETE` and returned as `status`:
+Each iteration solves the equilibrium conditions at every grid point and updates the functions
+with damping. Iteration stops in one of three exit states, each logged at level `COMPLETE` and returned as `status`:
 
 - `:converged`: the largest change of the value, transition and forecasting functions in the last
   iteration is below `10^tol`;
@@ -533,14 +534,15 @@ repeats until one of three exit states, each logged at level `COMPLETE` and retu
   updated anywhere.
 
 - `tol`: convergence threshold as log₁₀ distance (`-5` means 1e-5)
-- `damp`: damping weight in [0,1], applied to value and transition functions
-  (0 = full update, 1 = no update)
-- `damping`: what `damp` weights against.
-  `:damped_iterate` (default): the current damped iterate, `x_{t+1} = damp*x_t + (1-damp)*T(x_t)`
-  (standard relaxation; damps oscillations of the solution map, distances are fixed-point
-  residuals). `:previous_solve`: the previous iteration's raw solve,
-  `x_{t+1} = damp*T(x_{t-1}) + (1-damp)*T(x_t)`, as in the MATLAB implementation
-  (main_execute_update.m); a period-2 oscillation of `T` persists under this rule.
+- `damp`: weight in [0,1] on the previous iterate, applied to the value, transition and
+  forecasting functions (0 = full update, 1 = no update)
+- `damping`: what `damp` weights against, with `T(x)` the functions implied by one iteration's
+  grid-point solves starting from `x`:
+  - `:damped_iterate` (default): the current iterate, `x_{t+1} = damp*x_t + (1-damp)*T(x_t)`.
+    This is standard relaxation, and the reported distances are fixed-point residuals.
+  - `:previous_solve`: the previous iteration's undamped solve,
+    `x_{t+1} = damp*T(x_{t-1}) + (1-damp)*T(x_t)`. A period-2 oscillation of `T` persists under
+    this rule.
 - `npasses`: revisit passes for grid points where the solver failed on the first pass
 - `solmethod`: `TFIMethod()` (default) or `STPFIMethod()`, controls whether to precompute
   expectations (TFI) or to add transition functions to the system (STPFI, Cao, Luo, and Nie)
