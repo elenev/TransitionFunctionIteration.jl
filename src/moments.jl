@@ -336,7 +336,7 @@ _transform(t, value, basis) = t(value; basis)
     getmoment(source, moment::AbstractMoment)
     getmoment(economies, moment, economy, base=1)
 
-The moment's value in `source` (a `describe` output for a [`SimulationMoment`](@ref), an
+The moment's value in `source` (`describe(...).moments` for a [`SimulationMoment`](@ref), an
 [`IRFResult`](@ref) for an [`ImpulseMoment`](@ref), or an [`EconomyResult`](@ref) for any), with its
 `transformation` applied.
 

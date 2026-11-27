@@ -14,6 +14,10 @@ generate_template("MyModel", "/path/to/model_file.jl")
 ```
 
 This writes a template file with shells for all required and optional functions.
+Import the interface functions you extend (`import TransitionFunctionIteration: ...`), as in the
+[Quick Start](@ref). On the solve path, keep numeric types generic so ForwardDiff dual numbers
+work; use static vectors and matrices for small collections, and avoid shared mutable state
+because grid points and simulation runs are evaluated on multiple threads.
 
 ## Required interface
 
@@ -49,6 +53,11 @@ function define_endog_grids(mdl::MyModel, stv::AbstractSteadyState)
 end
 ```
 
+The first grid axis is always `:exst`, the integer exogenous state index. Do not include it in
+`define_endog_grids`. Endogenous grids may be unevenly spaced; interpolation is linear with flat
+extrapolation. An out-of-range exogenous index throws an error. Check simulated bounds and errors
+before relying on results outside the endogenous grid.
+
 ### `calc_eqm` return contract
 
 The return value depends on `mode`:
@@ -71,9 +80,13 @@ Example dispatch pattern:
 ```julia
 function calc_eqm(state, policy, mdl::MyModel, np::NextPeriod, mode::EvaluationMode)
     # ... compute Y, I, K′, MU, fx ...
-    mode isa SolveMode    && return fx
-    mode isa IterateMode  && return (; fx, trans=(; K=K′), vals=(; C))
-    mode isa SimulateMode && return (; fx, trans=(; K=K′), simvars=(; Y, I, C))
+    if mode isa SolveMode
+        return fx
+    elseif mode isa IterateMode
+        return (; fx, trans=(; K=K′), vals=(; C))
+    elseif mode isa SimulateMode
+        return (; fx, trans=(; K=K′), simvars=(; Y, I, C))
+    end
 end
 ```
 
@@ -142,10 +155,15 @@ Implement `steadystate_system(guess, mdl, mode)` and pass the mode to `main_setu
 obj, stv = main_setup(mdl; mode=SystemSteadyStateMode((; K=3.0, C=0.8)))
 ```
 
+Import `steadystate_system` from TransitionFunctionIteration. In `SolveMode`, return
+`(residuals, nothing)` for the NamedTuple `guess`. In `IterateMode`, return `(residuals, stv)`, where `stv` is the
+complete `SteadyState` implied by that guess. Both modes must accept dual numbers.
+
 ### `FixedPointSteadyStateMode`
 
 Use when you cannot solve for the steady state analytically or via a reduced system. The solver
-fixes the law of motion to the initial guess and finds a fixed point of the dynamic equations:
+solves the dynamic equations jointly for policies and endogenous states, imposing that transitions
+return the same state:
 
 ```julia
 obj, stv = main_setup(mdl; mode=FixedPointSteadyStateMode(
@@ -154,6 +172,14 @@ obj, stv = main_setup(mdl; mode=FixedPointSteadyStateMode(
     (A=1.0,),          # exogenous state at the steady state
 ))
 ```
+
+By default `vals_from_policy` supplies the policy itself as the initial `Vfct` values. Override it
+for other values that can be computed from state and policy. Values that depend on expectations
+can instead be extra unknowns: pass `eqmvalguesses = (; V = 1.0)` to the mode, using names returned
+in `calc_eqm`'s `vals`. Their equations equate the guesses with those returned values. To bound the
+fixed-point unknowns, overload `bounds(mdl, policies, transitions)` or, with equilibrium-value
+guesses, `bounds(mdl, policies, transitions, eqmvalguesses)`, returning bounds for the policy,
+transition and equilibrium-value guesses respectively.
 
 ## Optional interface
 

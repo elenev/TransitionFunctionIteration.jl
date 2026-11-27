@@ -48,7 +48,7 @@ Tables.columnnames(Tables.columns(errstats))
 |:--|:--|
 | `describe`, `linearize` | `variable` |
 | `calc_error_stats` | `equation` |
-| `compare_economies` | `moment` (and `parameter` for the rows that `models` adds) |
+| `compare_economies` | `moment`, including rows added by `parameters` |
 | `MomentArray(data, rows, cols)` | `__row`, or the `rowkey` keyword |
 
 `row_key(m)` returns the name. A statistic cannot have the same name.
@@ -131,7 +131,13 @@ SimulationPanel(table, (:K,))            # the endogenous states
 `MomentArray{ROWS,COLS}(table)` also checks that the table has the row names `ROWS` and the
 statistics `COLS`.
 
-A solution (`ModelSolution`) is not a table. Julia's standard library `Serialization` saves and
+A solution (`ModelSolution`) is not a table. For a portable representation of solutions, steady
+states and interpolants, use `TransitionFunctionIteration.to_portable(x)` and rebuild with
+`TransitionFunctionIteration.from_portable(T, data; model)`. These functions return and consume
+plain data without doing file I/O. [Saving and Comparing Results with OutputVault](@ref) shows how
+to save them as portable files and reload a model from its parameters.
+
+Julia's standard library `Serialization` also saves and
 restores it, in a file that is read back with the same versions of Julia and the packages:
 
 ```@example tab

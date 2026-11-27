@@ -79,12 +79,17 @@ include("portable.jl")
 
 """
     solve_and_simulate(model; setup_kwargs=(;), execute_kwargs=(;), simulate_kwargs=(;),
-                       irf_kwargs=(;), run_simulate=true, run_irf=true)
+                       describe_kwargs=(;), irf_kwargs=(;), run_simulate=true, run_irf=true)
 
 Convenience wrapper: calls `main_setup`, `main_execute!`, `simulate`, and `simulate_irf`
 in sequence. Returns a NamedTuple `(; obj, stv, simseries, errs, stats, errstats, irf)`.
 
-Set `run_simulate=false` to stop after solving; `run_irf=false` to skip IRF computation.
+Each `*_kwargs` NamedTuple is passed to its corresponding stage; `describe_kwargs` controls
+samples and statistics. With `run_simulate=false`, returns the ordinary tuple `(obj, stv)`.
+With simulation enabled and `run_irf=false`, returns `(obj, stv, simseries, errs)`; statistics are
+computed but not included in that return. Name the tuple's members to pass them to [`save_result`](@ref).
+The default IRF starts at the simulated mean. Inspect simulated errors to judge solution accuracy;
+the wrapper continues to simulation regardless of the solver's returned status.
 """
 function solve_and_simulate(model::AbstractModel;
     setup_kwargs=(;), execute_kwargs=(;), simulate_kwargs=(;), irf_kwargs=(;),
@@ -149,8 +154,10 @@ function save_result end
 Load a saved item of the OutputVault run `rf` as TFI's types: `:solution` (`(; obj, stv)`),
 `:params` and `:errstats` (`MomentArray`s), `:simulation` (`(; simseries, errs)`), `:stats` (moments by
 sample), `:irf` (a NamedTuple of `IRFResult`s by starting point) or `:recursions` (a NamedTuple of
-`Interpolant`s). Without `item`, every item the run holds, in one NamedTuple with the properties
-of `solve_and_simulate`'s output.
+`Interpolant`s). Without `item`, all recognized TFI items present in the run, in one NamedTuple.
+The solution and simulation are flattened into `obj`, `stv`, `simseries` and `errs`; `params` is also
+included when present. Unlike `solve_and_simulate`'s single `IRFResult`, the loaded `irf` is keyed
+by starting-point label. Custom items at other paths are read with OutputVault's `load_result_item`.
 
 The portable solution files store the model's parameters ([`to_portable`](@ref)), not the model: `model` is a model (its
 parameters are compared with the stored ones, and differences are a warning) or a model type (the

@@ -666,7 +666,7 @@ The `moments` across economies: one row per moment, one column per economy, with
 - `moments`: a NamedTuple of [`AbstractMoment`](@ref)s; a bare variable name is a
   [`SimulationMoment`](@ref) with default settings.
 - `economies`: the economies' results, keyed by name: a NamedTuple of [`EconomyResult`](@ref)s (or
-  `describe` outputs, for simulation moments only). With OutputVault loaded, also saved runs: a
+  `describe(...).moments` collections, for simulation moments only). With OutputVault loaded, also saved runs: a
   NamedTuple of `RunHandle`s, or a `RunPattern`, whose runs are named by their variant. IRFs of
   saved runs are read from the starting point `start` (keyword, default `:ss`), and runs that hold
   none of the numbers the moments need are left out with a warning.

@@ -5,6 +5,9 @@ simulates it and computes moments and impulse responses. The same model is in `e
 and the later pages of this guide continue with it. The NGM is simple enough that its global
 solution is close to the log-linear one, which makes it easy to check.
 
+Install `TransitionFunctionIteration` and `StaticArrays` in your Julia project, then run the blocks
+in order. StaticArrays supplies the small fixed-size vectors used in the model equations.
+
 ## Step 1: Define the model
 
 A model is a struct that subtypes `AbstractModel` and holds all parameters:
@@ -75,9 +78,13 @@ function calc_eqm(state, policy, mdl::NeoclassicalGrowthModel, np::NextPeriod, m
     K′ = (1 - δ) * K + I
     MU = C^(-γ)
     fx = SVector(1 - np.expectations.Ek / MU)     # Euler equation residual
-    mode isa SolveMode    && return fx
-    mode isa IterateMode  && return (; fx, trans=(; K=K′), vals=(; C))
-    mode isa SimulateMode && return (; fx, trans=(; K=K′), simvars=(; Y, I, C))
+    if mode isa SolveMode
+        return fx
+    elseif mode isa IterateMode
+        return (; fx, trans=(; K=K′), vals=(; C))
+    elseif mode isa SimulateMode
+        return (; fx, trans=(; K=K′), simvars=(; Y, I, C))
+    end
 end
 nothing # hide
 ```
@@ -91,9 +98,11 @@ res = main_execute!(obj; maxiter=1000, logging=COMPLETE)
 (res.status, res.iter, res.distV, res.distT)
 ```
 
-`main_setup` computes the steady state, builds the grid and starts the solution there.
+`main_setup` computes the steady state, builds the grid, initializes policies and values from it,
+and initializes transitions to leave endogenous states unchanged.
 `main_execute!` iterates until the largest change between successive iterates of the value and
-transition functions is below `10^tol`; the default `tol = -5` means `1e-5`. It stops in one of
+transition functions (and forecasting functions, when present) is below `10^tol`; the default
+`tol = -5` means `1e-5`. It stops in one of
 three states, returned as `status`: `:converged`; `:maxiter`, when `maxiter` iterations ran without
 convergence; or `:all_failed`, when the solver failed at every grid point (see
 [Choosing a solution method](@ref) for a common cause). The output above is the status, the number

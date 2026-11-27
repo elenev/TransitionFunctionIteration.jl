@@ -10,8 +10,8 @@ main_execute!
 
 ## Model interface (stubs)
 
-These functions have default implementations that throw `MethodNotImplementedError`.
-Model packages must add methods dispatching on their `AbstractModel` subtype.
+Model packages implement the required economics by dispatching on their `AbstractModel` subtype.
+Required stubs throw `MethodNotImplementedError`; augmentation hooks have defaults that add nothing.
 
 ```@docs
 calc_eqm

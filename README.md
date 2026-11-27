@@ -28,11 +28,19 @@ Tables.jl tables with provenance in their metadata.
 ```julia-repl
 julia> using Pkg
 julia> Pkg.add("TransitionFunctionIteration")
+julia> Pkg.add("StaticArrays")   # used by the example models
 ```
 
 Julia 1.12 or later.
 
 ## Getting started
+
+To run the bundled growth model, including a solution, simulation and error checks:
+
+```julia
+using TransitionFunctionIteration
+include(joinpath(pkgdir(TransitionFunctionIteration), "examples", "ngm.jl"))
+```
 
 A model is a struct that inherits from `AbstractModel` and holds its parameters, plus five
 functions with its economics. The quickest start is a template with a shell for each:
@@ -64,8 +72,8 @@ irf      = simulate_irf(obj, simseries)       # impulse responses
 **Choosing the method.** `TFIMethod()` (the default) computes expectations at each grid point once,
 from the stored transition and forecasting functions, and then solves for the policy.
 `STPFIMethod()` solves for the policy and the next-period states together, recomputing expectations
-at every step. Both support forecasting functions and have the same solution. TFI fails only when a
-policy variable enters the equilibrium conditions solely through next period's state or forecasting
+at every step. Both support forecasting functions and have the same fixed point. TFI cannot solve for a
+policy variable that enters the equilibrium conditions solely through next period's state or forecasting
 values; `main_execute!` then stops with `status = :all_failed`, and such a model needs
 `main_execute!(obj; solmethod = STPFIMethod())`.
 
@@ -91,3 +99,18 @@ The `examples` folder holds two models, and is the reference for how a model is 
 ## See also
 
 - [OutputVault.jl](https://github.com/elenev/OutputVault.jl) saves solutions, simulations, moments and IRFs of research runs with the git state that produced them, and queries them across runs; TransitionFunctionIteration's support for it loads with `using OutputVault`.
+
+The [saving and comparing guide](https://elenev.github.io/TransitionFunctionIteration.jl/dev/guide/outputvault/)
+walks through saving a run, reloading its solution and comparing saved economies. It requires
+OutputVault 0.4 and Parquet2; the integration lives in TFI's extension.
+
+## Development
+
+Tests and documentation examples exercise the OutputVault integration. Check out OutputVault
+beside this repository at `../OutputVault`, then run:
+
+```sh
+JULIA_NUM_THREADS=2 julia --project -e 'using Pkg; Pkg.test()'
+julia --project=docs -e 'using Pkg; Pkg.instantiate()'
+julia --project=docs docs/make.jl
+```

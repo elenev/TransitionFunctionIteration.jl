@@ -5,7 +5,7 @@
 
 Return a `NamedTuple` of endogenous grid vectors (e.g., `(K = range(0.5, 10.0, 50),)`).
 Called by `main_setup` to build the `StateSpaceGrid`. Interface stub -- implement for your
-`AbstractModel` subtype when the default steady-state-proportional grid is not appropriate.
+`AbstractModel` subtype; there is no default endogenous grid.
 """
 function define_endog_grids(mdl::AbstractModel, ::AbstractSteadyState)
     throw(MethodNotImplementedError(:define_endog_grids, typeof(mdl)))
@@ -26,13 +26,13 @@ end
 
 
 """
-    steadystate_system(model, mode) -> (SteadyState, Bool)
+    steadystate_system(guess::NamedTuple, model, mode)
 
 Provides an alternative to calc_eqm for the model equations that characterize the steady state. This is useful when the \
 steady state can be characterized by a smaller system of equations.
 
 Expected return: depends on the evaluation mode:
-- in `SolveMode`: a vector `resid` of residuals for the steady state system of equations, given a guess for the steady state values.
+- in `SolveMode`: `(resid, nothing)`, with residuals for the steady-state equations given `guess`.
 - in `IterateMode`: a tuple of `(resid, stv)` where `resid` is the same as in `SolveMode` and `stv` is a `SteadyState` object 
 containing the steady state values implied by the guess.
 """

@@ -24,7 +24,9 @@ A solved model is represented by functions of the state, linearly interpolated o
   expectations depend on besides the next-period state.
 
 The first state variable is always the index of the exogenous state in its Markov chain. The
-solver starts all functions at the deterministic steady state and iterates with damped updates.
+solver initializes policies and values from the deterministic steady state, starts transitions at
+the current endogenous state, and iterates with damped updates. Endogenous axes are linearly
+interpolated with flat extrapolation; the exogenous index is discrete and must be in range.
 
 Every result (simulations, moments, impulse responses, error statistics) is a
 [Tables.jl](https://tables.juliadata.org) table that records where it came from, so any
@@ -45,6 +47,8 @@ The [Quick Start](@ref) solves, checks, simulates and analyzes the neoclassical 
 [Implementing a Model](@ref) describes the interface your model provides,
 [Simulation and Analysis](@ref) the simulation, accuracy checks, impulse responses and plots, and
 [Moments and Comparing Economies](@ref) tables of moments across economies.
+[Saving and Comparing Results with OutputVault](@ref) covers portable solutions, loading saved
+results and comparisons across runs on disk.
 
 ## References
 

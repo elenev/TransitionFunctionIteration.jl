@@ -177,8 +177,8 @@ _exogenv_from_point(pt) = Exogenv(pts = StaticStructArray(SVector(pt)), mtrans =
 """
     FixedPointSteadyStateMode{P<:NamedTuple, T<:NamedTuple, E<:AbstractExogenv, G<:NamedTuple} <: SteadyStateMode
 
-Dispatch tag: steady state is found by iterating on the dynamic model equations and (constant) law of motion 
-for endogenous variables with a starting guess for policy and transition functions."
+Dispatch tag: find the steady state by solving the dynamic equations jointly for policies and
+endogenous states, with the additional equations that the transitions return the same states.
 
 - `policies`: `NamedTuple` of policy function values at the steady state (e.g., `(C = 0.8,)`)
 - `transitions`: `NamedTuple` of transition function values at the steady state (e.g., `(K = 3.2,)`)
