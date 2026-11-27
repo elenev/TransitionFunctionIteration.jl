@@ -2,12 +2,25 @@ name: CI
 on:
   pull_request:
     branches: [main]
-#  push:
-#    branches: [main]
-# Cancel the previous run when a PR is updated
+  # Pushes to main that change code give pull requests a cache to start from and Codecov a base
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'ext/**'
+      - 'test/**'
+      - 'examples/**'   # the tests run examples/ngm.jl
+      - 'Project.toml'
+      - '.github/workflows/CI.yml'
+# Cancel the previous run when a PR or main is updated
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+# actions: write lets the cache step delete the caches it replaces
+permissions:
+  contents: read
+  actions: write
 
 jobs:
   test:
@@ -51,7 +64,7 @@ jobs:
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
         env:
