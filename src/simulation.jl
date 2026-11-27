@@ -672,8 +672,8 @@ The `moments` across economies: one row per moment, one column per economy, with
   none of the numbers the moments need are left out with a warning.
 - `base`: the economy (a name or position) the others are compared with.
 - `compare_transform`: with `true`, each economy other than `base` shows the moment's
-  `compare_transformation` of its value with the base's value as the basis; with `false`, every
-  economy shows the moment's own value.
+  `compare_transformation` of its reported value with the base's reported value as the basis; with
+  `false`, every economy shows its reported value.
 - `parameters`: model parameters shown as rows above the moments: `nothing` (none), `:distinct`
   (those whose values differ across the economies, in alphabetical order; a parameter that some
   economies lack differs, and is `missing` there) or a collection of parameter names. They are read

@@ -114,13 +114,14 @@ change `RatioPct` is usually what you want.
 
 A moment has two transformations, applied in different places:
 
-- `transformation` (default `Level()`) is applied to the value within one economy, and only in the
-  base economy of a table. For a `SimulationMoment` or a `ParameterMoment` the basis is the default
-  of the transformation, so only the level and percent types are meaningful. For an
-  `ImpulseMoment` the basis is the path named by `basis` (`:uncond` by default) at the same period, so `DiffLevel()` gives the
-  response and `RatioPct()` the percentage response.
-- `compare_transformation` (default `Level()`) is applied in every other economy, to that economy's
-  value with the base economy's value as the basis. The `transformation` is not applied there.
+- `transformation` (default `Level()`) gives the reported value within each economy. For a
+  `SimulationMoment` or a `ParameterMoment` the basis is the default of the transformation, so only
+  the level and percent types are meaningful. For an `ImpulseMoment` the basis is the path named by
+  `basis` (`:uncond` by default) at the same period, so `DiffLevel()` gives the response and
+  `RatioPct()` the percentage response.
+- `compare_transformation` (default `Level()`) is applied in every economy other than the base, to
+  its reported value with the base economy's reported value as the basis. With the default
+  `Level()`, every economy shows its reported value.
 
 The base economy is the first by default; choose another with `base`:
 

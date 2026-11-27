@@ -51,8 +51,8 @@ basis. Defaults to the field of the same name.
 compare_transformation(m::AbstractMoment) = m.compare_transformation
 
 """
-    SimulationMoment(; var, sample=:uncond, stat=:mean, transformation=Transformations.Level,
-                       compare_transformation=Transformations.Level)
+    SimulationMoment(; var, sample=:uncond, stat=:mean, transformation=Transformations.Level(),
+                       compare_transformation=Transformations.Level())
 
 A statistic of a simulated variable, as in a `compare_economies` table.
 
@@ -73,8 +73,8 @@ end
 SimulationMoment(var::Symbol; kwargs...) = SimulationMoment(; var, kwargs...)
 
 """
-    ImpulseMoment(; var, shock, period, stat=:mean, basis=:uncond, transformation=Transformations.Level,
-                    compare_transformation=Transformations.Level)
+    ImpulseMoment(; var, shock, period, stat=:mean, basis=:uncond, transformation=Transformations.Level(),
+                    compare_transformation=Transformations.Level())
 
 A point on an impulse response: `stat` of `var` under `shock`, `period` periods into the IRF
 (`period` indexes the IRF lines, so it is the `__period` of the IRF table; 1 is the starting period).
@@ -99,7 +99,7 @@ end
 ImpulseMoment(var::Symbol, shock::Symbol, period::Integer; kwargs...) = ImpulseMoment(; var, shock, period, kwargs...)
 
 """
-    ParameterMoment(; name, transformation=Transformations.Level, compare_transformation=Transformations.Level)
+    ParameterMoment(; name, transformation=Transformations.Level(), compare_transformation=Transformations.Level())
 
 A model parameter, as saved by [`collect_parameters`](@ref) (the `params` of an [`EconomyResult`](@ref)).
 Its value is read with the `transformation` and no basis.
