@@ -141,6 +141,9 @@ end
             @test r.ss.means == irf.means && r.ss.stdevs == irf.stdevs && r.ss.paths.pos == irf.paths.pos
             @test r.ss.provenance == irf.provenance
             @test_throws ArgumentError load_result(rf, :other)
+            # the panels as OutputVault items of TFI's types
+            @test load_result_item(rf, "simulation/simseries", SimulationPanel).data == simseries.data
+            @test load_result_item(rf, "simulation/errs", SimulationErrorPanel).data == errs.data
 
             # recursions saved later add to the run; the solution is untouched
             before = read(joinpath(dir, "solution", "obj.jld2"))
@@ -162,6 +165,30 @@ end
         end
     end
 
+    @testset "runs with some items; a new solution left in staging" begin
+        with_vault() do root
+            rf = RunHandle("part"; branch = "main", experdef = "base")
+            save_result(rf, (; obj, stats = samples))
+            @test keys(load_result(rf; model = ngm)) == (:obj, :params, :stats)
+            # without obj the run must exist
+            @test_throws ArgumentError save_result(RunHandle("none"; branch = "main", experdef = "base"), (; stats = samples))
+            # the old run cannot be renamed (a read-only branch folder): the new solution stays in
+            # staging, nothing else is saved and the old run is unchanged
+            if !Sys.iswindows()
+                parent = dirname(OutputVault.run_path(rf))
+                chmod(parent, 0o555)
+                path = try
+                    @test_logs (:warn, r"NEW RUN NOT AT THE RUN'S PATH") match_mode = :any save_result(rf, (; obj, errstats))
+                finally
+                    chmod(parent, 0o755)
+                end
+                @test startswith(path, joinpath(root, ".staging"))
+                @test isfile(joinpath(path, "solution", "obj.jld2")) && !ispath(joinpath(path, "errstats"))
+                @test keys(load_result(rf; model = ngm)) == (:obj, :params, :stats)
+            end
+        end
+    end
+
     @testset "IRFs saved with OutputVault 0.3" begin
         with_vault() do root
             rf = RunHandle("old"; branch = "main", experdef = "base")
@@ -172,6 +199,7 @@ end
             OutputVault.Formats.write_table(OutputVault.Formats.ParquetFormat(), joinpath(dir, "irf_paths.parquet"), irf_paths(irf))
             r = load_result(rf, :irf)
             @test keys(r) == (:ss,) && r.ss.means == irf.means && r.ss.paths.pos == irf.paths.pos
+            save_result(RunHandle("new"; branch = "main", experdef = "base"), (; obj, irf))   # nothing to move
             shape = OVExt.SHAPES.irf.query
             @test isempty(query_results([rf], shape).value)          # queries do not see the old files
             @test (@test_logs TFI.migrate_irf!(RunPattern(); move = false)) === nothing

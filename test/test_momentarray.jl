@@ -272,6 +272,8 @@ end
     # named parameters, in the order given
     @test row_names(compare_economies(moments, economies; parameters = (:beta, :alpha))) == (:beta, :alpha, :mean_C, :mean_K)
     @test_throws ArgumentError compare_economies(moments, economies; parameters = :all)
+    # describe outputs hold no parameters
+    @test row_names(compare_economies(moments, map(e -> e.stats, economies); parameters = :distinct)) == (:mean_C, :mean_K)
 
     # without the comparison, every economy shows its own value
     own = compare_economies(moments, economies; compare_transform = false)

@@ -87,6 +87,10 @@ end
         @test getmoment(economies, moments.std_K, :base, 1) == 4.0        # the base uses its transformation
         @test getmoment(economies, moments.irf_C, :big) == 2.0        # non-base: Level comparison of its own response (6 - 4)
         @test getmoment(economies, moments.irf_C, :base) == 1.0       # base: its own DiffLevel against uncond
+        both = ImpulseMoment(:C, :hike, 3; transformation = T.DiffLevel(), compare_transformation = T.DiffLevel())
+        @test getmoment(economies, both, :big, :base) == 1.0          # the responses compared: 2 - 1
+        # an error other than a missing number is not a missing cell
+        @test_throws ErrorException compare_economies((; bad = CalculatedMoment(nt -> error("boom"), (c = moments.mean_C,))), economies)
         tab = compare_economies(moments, economies)
         @test tab isa TFI.MomentArray && size(tab) == (3, 2)
         @test tab(:irf_C, :big) == 2.0

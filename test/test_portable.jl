@@ -11,6 +11,14 @@ same_solution(a, b) = a.Pfct == b.Pfct && a.Vfct == b.Vfct && a.Tfct == b.Tfct &
 plain(x::NamedTuple) = all(plain, values(x))
 plain(x) = x isa Union{Number, AbstractString} || x isa AbstractArray{<:Union{Number, AbstractString}}
 
+struct PortableParamsModel <: AbstractModel
+    t::Tuple{Float64, Float64}
+    d::Dict{Union{Symbol, String}, Any}
+    none::Nothing
+    c::Char
+    deep::NamedTuple
+end
+
 @testset "portable data" begin
     @testset "solution" begin
         d = to_portable(obj)
@@ -27,6 +35,8 @@ plain(x) = x isa Union{Number, AbstractString} || x isa AbstractArray{<:Union{Nu
         @test_throws ArgumentError from_portable(ModelSolution, d)
         @test_throws ArgumentError from_portable(ModelSolution, merge(d, (meta = merge(d.meta, (schema_version = 1,)),)); model = ngm)
         @test same_solution(from_portable(ModelSolution, merge(d, (extra = [1.0],)); model = ngm), obj)   # unknown keys ignored
+        @test_logs (:warn, r"id differs") from_portable(ModelSolution, merge(d, (meta = merge(d.meta, (solution_id = d.meta.solution_id * "x",)),)); model = ngm)
+        @test_logs (:warn, r"exogenous environment differs") match_mode = :any from_portable(ModelSolution, d; model = NeoclassicalGrowthModel(σ = 2 * ngm.σ))
     end
 
     @testset "forecasting functions and one exogenous state" begin
@@ -42,6 +52,15 @@ plain(x) = x isa Union{Number, AbstractString} || x isa AbstractArray{<:Union{Nu
         @test from_portable(SteadyState, to_portable(stv); model = ngm) == stv
         @test from_portable(SteadyState, to_portable(stv); model = NeoclassicalGrowthModel) == stv
         @test from_portable(Interpolant, to_portable(obj.Vfct)) == obj.Vfct
+        @test_throws ArgumentError TransitionFunctionIteration.portable_namedtuple((a = "text",))   # steady-state values are numbers
+    end
+
+    @testset "model parameters" begin
+        m = PortableParamsModel((1.0, 2.0), Dict(:a => 1.0, "b" => sin), nothing, 'c',
+                                (l1 = (l2 = 1.0, l3 = (l4 = (l5 = 2.0,),)), f = cos))
+        # tuples as vectors, dictionaries as NamedTuples; functions, characters, empty structs and
+        # values nested beyond the depth limit are left out
+        @test to_portable(m) == (t = [1.0, 2.0], d = (a = 1.0,), deep = (l1 = (l2 = 1.0,),))
     end
 
     @testset "bounds" begin

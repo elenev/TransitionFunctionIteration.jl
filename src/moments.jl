@@ -409,6 +409,7 @@ end
 _parameter_names(r::EconomyResult) = _parameter_names(r.params)
 _parameter_names(p::MomentArray) = row_names(p)
 _parameter_names(p::NamedTuple) = keys(p)
+_parameter_names(::SamplesTuple) = ()          # a describe output holds no parameters
 _parameter_names(d::MomentRows) = Tuple(r.variable for r in keys(d.values) if r.shape === :params)
 _parameter_names(source) = ()
 
