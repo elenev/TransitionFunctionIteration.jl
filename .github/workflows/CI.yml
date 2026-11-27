@@ -57,6 +57,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: elenev/OutputVault.jl
+          ref: refactor/queries   # the branch with OutputVault 0.4
           path: ov_checkout
       - name: Move it next to the repository
         shell: bash
