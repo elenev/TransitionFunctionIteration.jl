@@ -1,8 +1,8 @@
 # Simulation and Analysis
 
-This page continues the [Quick Start](@ref): it uses the solved neoclassical growth model `obj`,
-its steady state `stv`, and the simulation `simseries, errs = simulate(obj, stv)`. The model is in
-`examples/ngm.jl`, which the hidden first block of this page runs.
+Use a solved model to study its simulated distribution, check equation errors, and trace responses
+to shocks. The examples continue with `obj`, `stv`, `simseries` and `errs` from the [Quick Start](@ref).
+You can also obtain them by running `examples/ngm.jl`.
 
 ```@setup sim
 using TransitionFunctionIteration
@@ -16,9 +16,9 @@ using Plots
 simseries, errs = simulate(obj, stv)
 ```
 
-`simseries` is a `SimulationPanel`: one row per simulated period, with the state variables and the
-`simvars` that `calc_eqm` returns in `SimulateMode`. `errs` is a `SimulationErrorPanel` with the
-equation and transition errors at each simulated state (see [Checking solution accuracy](@ref)).
+`simseries` contains the state variables and the `simvars` returned by your model, grouped into
+simulation runs. `errs` records the equation and transition errors at the same states; see
+[Checking solution accuracy](@ref). Both can be read as Tables.jl tables.
 
 Keyword arguments of `simulate`:
 
@@ -29,17 +29,20 @@ Keyword arguments of `simulate`:
 | `seed` | `100` | RNG seed |
 | `exog_start` | steady-state index | Exogenous state in the first period |
 | `endog_start` | `stv.endog` | Endogenous state in the first period |
-| `context_periods` | `dynamic_depth(model)` | Periods simulated after the burn-in and dropped after augmentation, so that variables defined from consecutive periods have no `NaN` (see `augment_simulation` in [Implementing a Model](@ref)) |
+| `context_periods` | `dynamic_depth(model)` | Extra history for variables computed from several periods; excluded from output |
 | `report_bounds` | `true` | Report the simulated range of each state against its grid |
 
-Runs are simulated in parallel across threads, so a model's `calc_eqm`, `augment_simulation`
-and `augment_errors` must be thread-safe (no shared mutable state or global RNG use). A simulation
-records the solution it came from and its settings; see [Tables and Provenance](@ref).
+If added variables need lags, `context_periods` supplies that history after the burn-in and before
+the reported sample. Set it to at least the longest lag to avoid initial `NaN` values; see
+`augment_simulation` in [Implementing a Model](@ref).
+
+The simulation records its solution, seed and other settings so you can identify how it was
+produced; see [Tables and Provenance](@ref).
 
 ## Computing moments
 
-`describe` returns `(; moments, stderrs)`: the moments and their standard errors, each a
-`NamedTuple` with one `MomentArray` per sample.
+Call `describe` to summarize the simulated distribution. Its `moments` and `stderrs` each contain
+one table per sample; `uncond` is the unconditional sample:
 
 ```@example sim
 out = describe(simseries)
@@ -48,14 +51,16 @@ out.moments.uncond((:C, :K, :Y), (:mean, :std, :ac))
 
 The statistics are `:mean`, `:std`, `:minimum`, `:maximum`, `:ac` (first-order autocorrelation),
 the percentiles `:p5`, `:p25`, `:p50`, `:p75`, `:p95`, and `:cor_<state>_lag0`, the correlation
-with each endogenous state. `correlation_vars` chooses the states and lags, and `additional_stats`
-adds statistics: functions of one variable's series, or `MultivariateStatFun`s that also read
-another variable.
+with each endogenous state. `correlation_vars` chooses the variables and lags of these
+correlations, as a vector of names (lag 0) or of `name => lag` pairs. `additional_stats` adds
+statistics as a NamedTuple of functions, each applied to one variable's series, for example
+`additional_stats = (; maxabs = x -> maximum(abs, x))`.
 
 ### Conditional moments
 
-`filters` defines samples, each by a predicate on a simulated period. Here `low_K` keeps the periods
-in which capital is more than 3% below its deterministic steady state:
+To summarize particular states of the economy, define samples with `filters`. Each function
+selects periods to include. Here `low_K` keeps periods when capital is more than 3% below its
+deterministic steady state:
 
 ```@example sim
 out = describe(simseries;
@@ -98,16 +103,19 @@ which is faster inside a function. To tabulate moments across economies, see
 errstats = calc_error_stats(errs)
 ```
 
-The table has one row per equilibrium condition and one per transition, and its columns are the mean
-and the percentiles `:p50`, `:p75`, `:p90`, `:p95`, `:p99` and `:p100` (the maximum) of the absolute
-error at the simulated states. Judge accuracy by these errors, not by the convergence of the
-iteration. Large errors (above about `1e-4`) mean that the iteration has not converged far enough
-or that the grid is too coarse where the simulation goes; the error plot below shows where.
+Each row is an equilibrium condition or state transition. The columns report the mean and
+percentiles `:p50`, `:p75`, `:p90`, `:p95`, `:p99` and `:p100` (the maximum) of its absolute error.
+These measure how well the interpolated solution satisfies the model along the simulated paths.
+
+Assess their size in the units of your residuals. If errors are large, check the solver's
+convergence and refine the grid where the simulation goes. The simulation-error plot below helps
+locate those states.
 
 ## Impulse response functions
 
-`simulate_irf` simulates many paths from the same starting point, with and without a forced
-exogenous path, and averages them:
+Use `simulate_irf` to compare paths under different shocks from the same starting state. It
+simulates many paths for each shock and reports their mean, standard deviation and any additional
+statistics you request:
 
 ```@example sim
 irf = simulate_irf(obj, simseries; path_vars = (:C, :K, :Y))
@@ -122,14 +130,18 @@ mean is then used. Keyword arguments:
 | `T` | `20` | Length of each path, including the starting period |
 | `N` | `5_000` | Number of simulated paths per shock |
 | `seed` | `100` | RNG seed |
-| `shocks` | one per other exogenous state | `NamedTuple` of forced exogenous paths, each a state index or a vector of indices, e.g. `(up = 5, up2 = [5, 5])`; by default, `uncond`, which forces nothing, is included. With custom shocks, include it explicitly if needed: `(uncond = Int[], up = 5)` |
+| `shocks` | one per other exogenous state, plus `uncond` | NamedTuple of forced exogenous paths, e.g. `(up = 5, up2 = [5, 5])` |
 | `exog_start` | steady-state index | Exogenous state in the starting period |
 | `hold_periods` | `dynamic_depth(model)` | Periods the exogenous state is held at `exog_start` before the starting period, to fill the variables of `augment_simulation`; not output |
 | `path_vars` | `()` | Variables whose individual paths are kept in `irf.paths`, needed for fan charts |
 | `other_stats` | `(;)` | Statistics besides the mean and standard deviation |
 
-The paths are indexed by shock and then by variable. Each has `T` elements; the first is the starting
-period and the forced path begins in the second:
+A shock specifies an exogenous state index or a vector of indices. The default `uncond` path
+draws states normally, without a forced shock. When supplying your own shocks, include it
+explicitly if you need a reference path: `(uncond = Int[], up = 5)`.
+
+Read paths by shock name and variable. Each has `T` elements, including the starting period; the
+forced shock begins in the second period:
 
 ```@example sim
 irf.means.shock_5.C       # mean path of C when the exogenous state moves to 5 in period 2
@@ -145,7 +157,7 @@ it.
 
 ## Plotting
 
-The package provides Plots.jl recipes. Load Plots (`using Plots`) before calling `plot`.
+Load Plots with `using Plots`, then pass a result to `plot` as shown below.
 
 ### Simulated states
 
@@ -204,8 +216,9 @@ plot(obj.Pfct, :C, (; exst = 3); transform = exp)
 
 ### Impulse responses
 
-A `ReportedVariable` is a variable to plot with its label and transformation, and an `IRFPage`
-arranges several in panels, laid out like the matrix it is given; a vector is one row:
+Choose the variables, labels and units for an impulse-response plot with `ReportedVariable`.
+Group them in an `IRFPage` to create a panel for each variable. A vector gives one row of panels;
+a matrix determines their row and column positions:
 
 ```@example sim
 using TransitionFunctionIteration.Transformations: RatioPct
@@ -216,9 +229,10 @@ page = IRFPage([ReportedVariable(:C; label = "Consumption", transformation = Rat
 plot(irf, page, :shock_5; sd = 2, size = (900, 300))
 ```
 
-The third argument is a shock in `irf.means`. Each panel plots the mean path of the variable under
-that shock, transformed with the first path (`uncond` in this example) as its basis, against the periods `0:T-1`, counting
-the starting period as 0. Here `RatioPct()` gives the percentage response relative to the no-shock
+The third argument is a shock in `irf.means`. Each panel plots the variable's mean path under that
+shock against the periods `0:T-1`, with the starting period as 0. The transformation compares it
+with a basis path, by default the first path in `irf.means` (`uncond` here); the `basis` keyword
+chooses another. Here `RatioPct()` gives the percentage response relative to the no-shock
 path, `100 (x / basis - 1)`, and `sd = 2` shades two standard deviations of the paths around the
 mean.
 

@@ -1,23 +1,14 @@
 # Implementing a Model
 
-## Overview
-
-To use this package, you need two things:
-
-1. A struct `MyModel <: AbstractModel` holding your model's parameters.
-2. Implementations of several interface functions dispatching on `MyModel`.
-
-The easiest way to get started is:
+Define your model's parameters in a subtype of `AbstractModel`, then write functions for its
+equilibrium equations, exogenous process, steady state and grids. Start with a template:
 
 ```julia
 generate_template("MyModel", "/path/to/model_file.jl")
 ```
 
-This writes a template file with shells for all required and optional functions.
-Import the interface functions you extend (`import TransitionFunctionIteration: ...`), as in the
-[Quick Start](@ref). On the solve path, keep numeric types generic so ForwardDiff dual numbers
-work; use static vectors and matrices for small collections, and avoid shared mutable state
-because grid points and simulation runs are evaluated on multiple threads.
+Fill in the required functions and any optional calculations your model needs. Import each
+function you extend with `import TransitionFunctionIteration: ...`, as in the [Quick Start](@ref).
 
 ## Required interface
 
@@ -25,7 +16,7 @@ because grid points and simulation runs are evaluated on multiple threads.
 |---|---|---|
 | `Exogenv` | `Exogenv(mdl::MyModel)` | Build the exogenous Markov process |
 | `define_endog_grids` | `define_endog_grids(mdl, stv)` | Return grid vectors for endogenous states |
-| `steadystate` | `steadystate(mdl, mode)` | Compute the deterministic steady state |
+| steady state: one of three options | `steadystate(mdl, mode)`, `steadystate_system(guess, mdl, mode)`, or none with `FixedPointSteadyStateMode` | Compute the deterministic steady state; see [Steady-state computation](@ref) |
 | `compute_next_period_values` | `compute_next_period_values(next, mdl, mode)` | Compute next-period expectations and continuations |
 | `calc_eqm` | `calc_eqm(state, policy, mdl, np, mode)` | Evaluate equilibrium conditions |
 
@@ -42,9 +33,8 @@ end
 
 ### Endogenous grids
 
-`define_endog_grids(mdl, stv)` returns a `NamedTuple` of grid vectors -- one per endogenous
-state variable. `stv` is the `SteadyState` computed earlier, so grids can be scaled
-relative to steady-state values:
+Return one grid vector per endogenous state in a NamedTuple. The steady state `stv` is available
+to scale the grid; for example, place capital between 80% and 120% of its steady-state value:
 
 ```julia
 function define_endog_grids(mdl::MyModel, stv::AbstractSteadyState)
@@ -60,7 +50,10 @@ before relying on results outside the endogenous grid.
 
 ### `calc_eqm` return contract
 
-The return value depends on `mode`:
+`calc_eqm` evaluates the equilibrium equations at a given state and policy, using the next-period
+quantities in `np`. For the growth model, the state is productivity and capital, the policy is
+consumption, and the equation is the Euler condition. The requested `mode` determines which
+results to return:
 
 | Mode | Return |
 |---|---|
@@ -68,14 +61,14 @@ The return value depends on `mode`:
 | `IterateMode` | `(; fx, trans, vals)` |
 | `SimulateMode` | `(; fx, trans, simvars)` |
 
-- `trans`: `NamedTuple` of next-period endogenous state values. Each value can be a scalar
-  (same across exogenous states) or an `SVector` (one entry per exogenous state). Scalars
-  are automatically broadcast by `expand_transitions`.
+- `trans`: `NamedTuple` of next-period endogenous state values. Each value is a scalar, which
+  applies to every next-period exogenous state, or an `SVector` with one entry per exogenous state.
 - `vals`: `NamedTuple` of variables for `Vfct` -- the quantities whose next-period values
   enter expectations in equilibrium conditions.
 - `simvars`: `NamedTuple` of all output variables to record in simulation.
 
-Example dispatch pattern:
+Compute the common quantities once, then return the results needed for solving, updating the
+functions or recording a simulation:
 
 ```julia
 function calc_eqm(state, policy, mdl::MyModel, np::NextPeriod, mode::EvaluationMode)
@@ -92,25 +85,23 @@ end
 
 ### `compute_next_period_values` return contract
 
-`compute_next_period_values(next, mdl, mode)` describes one next-period exogenous state. The package
-calls it once for each exogenous state that can follow the current one, so it never deals with
-probabilities or with more than one state at a time.
+Use `compute_next_period_values(next, mdl, mode)` to calculate the terms needed in today's
+equations from one next-period state. In the growth model, `next` contains productivity `A`,
+capital `K` from the transition functions, and consumption `C` from the value functions.
+Models with forecasting functions also receive their current-period forecasting values.
 
-`next` is that state: its exogenous variables (`A`), the next-period endogenous state from the
-transition functions (`K`), the value functions there (`C`), and the forecasting values if the model
-has any. The function returns `NextPeriod(; expectations, continuations)`, two `NamedTuple`s of
-this state's values, normally scalars:
+Return `NextPeriod(; expectations, continuations)`, with NamedTuples for two kinds of quantities:
 
-- `expectations`: the terms whose conditional expectation enters the equilibrium conditions. The
-  package multiplies each by the probability of the state and sums over states, so `calc_eqm`
-  receives `np.expectations.Ek`, a scalar equal to the expectation.
-- `continuations`: other next-period values the equilibrium conditions need state by state. The
-  package collects them across states, so `calc_eqm` receives `np.continuations.MU`, a vector with
-  one entry per next-period exogenous state; `np.prnext` holds the probabilities of those states, and
-  `np.continuations` also holds the variables of `next` by state.
+- `expectations`: terms whose conditional expectation enters the equilibrium conditions. In
+  `calc_eqm`, `np.expectations.Ek` is a scalar: the probability-weighted sum over next-period
+  states.
+- `continuations`: other next-period values that the equilibrium conditions need state by state.
+  In `calc_eqm`, `np.continuations.MU` is a vector with one entry per next-period exogenous state.
 
-So do not weight by probabilities and do not return a vector over exogenous states: both are done
-for you.
+Return values for this single state, normally scalars; the package calls the function for each
+next-period exogenous state and combines the results. `np` then holds `expectations`,
+`continuations` (which also contains the variables of `next`, by state) and `prnext`, the
+probabilities of the next-period exogenous states.
 
 ```julia
 function compute_next_period_values(next, mdl::MyModel, ::EvaluationMode)
@@ -127,7 +118,9 @@ end
 
 ## Steady-state computation
 
-Three modes are available, chosen by passing a `SteadyStateMode` to `main_setup`:
+Choose how to find the deterministic steady state with the `mode` keyword of `main_setup`.
+Use an analytical solution, solve a reduced system of equations, or solve the dynamic equations
+with the additional condition that endogenous states remain unchanged.
 
 ### `AnalyticalSteadyStateMode` (default)
 
@@ -140,7 +133,8 @@ function steadystate(mdl::MyModel, ::AnalyticalSteadyStateMode)
 end
 ```
 
-Fields of `SteadyState`:
+The returned `SteadyState` supplies the starting values for the solution:
+
 - `exog`: exogenous state at the steady state
 - `endog`: endogenous state at the steady state (used to center grids)
 - `values`: quantities stored in `Vfct` at initialization
@@ -155,9 +149,10 @@ Implement `steadystate_system(guess, mdl, mode)` and pass the mode to `main_setu
 obj, stv = main_setup(mdl; mode=SystemSteadyStateMode((; K=3.0, C=0.8)))
 ```
 
-Import `steadystate_system` from TransitionFunctionIteration. In `SolveMode`, return
-`(residuals, nothing)` for the NamedTuple `guess`. In `IterateMode`, return `(residuals, stv)`, where `stv` is the
-complete `SteadyState` implied by that guess. Both modes must accept dual numbers.
+Import `steadystate_system` from TransitionFunctionIteration. Its `guess` argument is a NamedTuple
+with the names passed to `SystemSteadyStateMode`. Return `(residuals, nothing)` in `SolveMode` and
+`(residuals, stv)` in `IterateMode`, where `stv` is the complete steady state implied by the guess.
+Both modes must accept dual numbers.
 
 ### `FixedPointSteadyStateMode`
 
@@ -173,17 +168,21 @@ obj, stv = main_setup(mdl; mode=FixedPointSteadyStateMode(
 ))
 ```
 
-By default `vals_from_policy` supplies the policy itself as the initial `Vfct` values. Override it
-for other values that can be computed from state and policy. Values that depend on expectations
-can instead be extra unknowns: pass `eqmvalguesses = (; V = 1.0)` to the mode, using names returned
-in `calc_eqm`'s `vals`. Their equations equate the guesses with those returned values. To bound the
-fixed-point unknowns, overload `bounds(mdl, policies, transitions)` or, with equilibrium-value
-guesses, `bounds(mdl, policies, transitions, eqmvalguesses)`, returning bounds for the policy,
-transition and equilibrium-value guesses respectively.
+Three options control the `Vfct` values and bounds of the fixed-point problem:
+
+- `vals_from_policy(state, policy, mdl)` supplies the initial `Vfct` values; by default, the policy
+  itself. Override it for other values that can be computed from the state and policy.
+- Values that depend on expectations can instead be extra unknowns: pass
+  `eqmvalguesses = (; V = 1.0)` to the mode, using names returned in `calc_eqm`'s `vals`. Their
+  equations equate the guesses with those returned values.
+- To bound the unknowns, overload `bounds(mdl, policies, transitions)`, or with equilibrium-value
+  guesses `bounds(mdl, policies, transitions, eqmvalguesses)`. Return bounds for the policy,
+  transition and equilibrium-value guesses, in that order.
 
 ## Optional interface
 
-These functions have sensible defaults but can be overloaded:
+Add these methods when your model needs bounds, extra simulation variables, forecasting values
+or custom error measures:
 
 | Function | Purpose |
 |---|---|
@@ -198,8 +197,8 @@ These functions have sensible defaults but can be overloaded:
 
 ### Variable bounds
 
-Bounds are applied via a smooth transformation so the solver always operates in an unconstrained
-space. Specify bounds by overloading `bounds(stv::SteadyState{MyModel})`:
+Specify admissible values for policies and endogenous states with `bounds`. Here consumption and
+capital must be positive, and `q` must lie between 0 and 1:
 
 ```julia
 function bounds(::SteadyState{MyModel})
@@ -214,16 +213,14 @@ Available bound types: `Unbounded`, `LowerBounded`, `UpperBounded`, `IntervalBou
 PositiveBounded, IntervalBounded` or qualify them). Convenience constructors:
 `PositiveBounded() = LowerBounded(0.0)`, `NegativeBounded() = UpperBounded(0.0)`.
 
+Bounds are enforced through smooth transformations. The solver and stored `Pfct` coefficients use
+unconstrained values; the model equations receive policies in their original units.
+
 ### Augmenting simulation output
 
-`augment_simulation(run, mdl)` receives a vector of the T period-NamedTuples of one simulation run
-and returns a `NamedTuple` of extra variables, one vector each. A vector of length T - d is a
-variable that needs d periods of history (d = 0: a variable of each period; d = 1: a variable of
-consecutive periods, such as a gross return). It is aligned with the last T - d periods and the
-first d are `NaN`. `simulate` simulates `context_periods` periods before the output periods,
-augments them with the rest and drops them, so no `NaN` remains if `context_periods` is at least
-d. Declare the largest d in `dynamic_depth(mdl)`, which is the default of `context_periods` (and
-of `simulate_irf`'s `hold_periods`). Return `nothing` (the default) for no augmentation:
+Use `augment_simulation` for variables computed from several periods of a simulated path.
+It receives a vector of one run's period-by-period NamedTuples and returns a NamedTuple of new
+series. Here `R` divides current output by the previous period's capital:
 
 ```julia
 function augment_simulation(run, mdl::MyModel)
@@ -233,6 +230,15 @@ end
 
 dynamic_depth(::MyModel) = 1
 ```
+
+`R` has one fewer observation than `run` because it needs a lag. Setting `dynamic_depth` to 1
+asks `simulate` to include one extra period before the reported sample, calculate `R`, and then
+drop that context period. It also sets the default `hold_periods` for `simulate_irf`.
+
+More generally, a series of length `T - d` is aligned with the last `T - d` periods of a run of
+length `T`. Its first `d` entries are padded with `NaN` before context periods are dropped.
+Set `dynamic_depth` to the longest history any added variable needs, or choose `context_periods`
+explicitly in `simulate`. Return `nothing` when there are no variables to add.
 
 ### Forecasting functions
 
@@ -253,51 +259,40 @@ function compute_next_period_values(next, mdl::MyModel, ::EvaluationMode)
 end
 ```
 
-The solution then has a forecasting function `Ffct`, which stores these values at every grid point.
-After each iteration it is updated from the newly solved policy, with the same damping as the value
-and transition functions, and the iteration converges only when it has stopped changing too
-(`distF` in the result of `main_execute!`). Both solution methods support forecasting functions;
-they differ in which forecasting values a grid-point solve uses, as described next.
+TFI stores these quantities in `Ffct` and updates them from the solved policy with the same damping
+as the value and transition functions. Their convergence distance is `distF`; the iteration
+continues until it, too, meets the tolerance.
 
 ### Choosing a solution method
 
-Each iteration solves the equilibrium conditions at every grid point, then updates the value,
-transition and forecasting functions. The two methods differ in what the solver varies at a grid
-point:
+Start with `TFIMethod()`, the default, which solves a smaller nonlinear system at each grid point.
+Use `STPFIMethod()` when a policy variable affects the equilibrium equations only through
+next-period states or forecasting values.
 
-- `TFIMethod` (the default) computes the expectations once, before solving, from the next-period
-  states given by the current transition functions and from the stored forecasting values. The
-  solver then varies only the policy. Its effect on next period's state and on the forecasting
-  values enters the expectations at the next iteration, when the updated functions are used.
-- `STPFIMethod` (Cao, Luo, and Nie) makes the next-period states unknowns of the solve alongside
-  the policy, with the transitions computed by `calc_eqm` as extra equations, and recomputes the
-  forecasting values from the solver's current policy. The expectations are recomputed at every
-  evaluation, so the policy's effect on them is part of the solve. The system at each point is
-  larger: the policy variables plus one next-period value of each endogenous state per exogenous
-  state.
+- `TFIMethod` computes expectations from the current transition and forecasting functions before
+  solving for the policy. Those expectations stay fixed during the grid-point solve.
+- `STPFIMethod` solves jointly for the policy and next-period endogenous states, recomputing
+  forecasting values and expectations at each evaluation. There is one extra unknown for each
+  endogenous state and possible next-period exogenous state.
 
 ```julia
 main_execute!(obj; solmethod = STPFIMethod())
 ```
 
-At a converged solution both methods satisfy the same equilibrium conditions, and TFI is cheaper
-at each point. TFI fails when a policy variable affects the residuals of `calc_eqm` only through
-next period's state or the forecasting values. Within the solve those are fixed, so the residuals
-do not depend on that variable, the system is singular, and the solver fails at every point: the
-variable stays at its initial guess. In the example above, if `calc_eqm` uses the expectation as
-it is, `1 - E[β (C′/Cnow)^(-γ) (MPK′ + 1 - δ)]`, the residual depends on today's `C` only through
-`Cnow`; TFI cannot solve it and `STPFIMethod` can. Writing the residual so that `C` also enters
-directly, `1 - E[...] (Cnow/C)^(-γ)`, gives the same equation at the solution, where `Cnow = C`, and
-TFI solves it. When TFI fails in this way, `main_execute!` stops after the first
-iteration with the message "Solver failed at every grid point." and `status = :all_failed`.
+Both methods have the same fixed point. During a TFI grid-point solve, however, a policy that
+appears only inside the fixed expectations cannot change the residuals. This makes the system
+singular and can cause every grid point to fail, returning `status = :all_failed`.
+
+For the consumption forecast above, the residual
+`1 - E[β (C′/Cnow)^(-γ) (MPK′ + 1 - δ)]` depends on today's consumption only through `Cnow`.
+Use STPFI to solve it in this form. Alternatively, write `1 - E[...] (Cnow/C)^(-γ)` so that the
+current policy `C` enters the residual directly. At the fixed point `Cnow = C`, and the equation
+is unchanged; TFI can solve this form.
 
 ### Extra error diagnostics
 
-`augment_errors(obj, state, out, trans)` is called for each simulated state alongside the
-standard equation and transition errors. It returns a `(scalar_nt, vector_nt)` pair: scalars
-are merged into the equation errors, and per-next-exogenous-state vectors are merged into the
-transition errors. The default returns `(;), (;)` and costs nothing. A returned name that
-matches an existing equation error replaces it.
+Add model-specific accuracy checks with `augment_errors(obj, state, out, trans)`. For example,
+compare recomputed consumption with its interpolated value:
 
 ```julia
 function augment_errors(obj, state, out, trans)
@@ -306,10 +301,25 @@ function augment_errors(obj, state, out, trans)
 end
 ```
 
+Return a pair of NamedTuples: scalar diagnostics are added to equation errors, and vectors with
+one entry per next-period exogenous state are added to transition errors. A name matching an
+existing equation error replaces it. The default returns two empty NamedTuples.
+
+## Numerical requirements
+
+TFI differentiates the model equations with ForwardDiff. Let intermediate calculations accept
+dual numbers rather than requiring `Float64`. Use `SVector` and `SMatrix` for small collections in
+the equations to keep grid-point solves efficient.
+
+Grid points and simulation runs are evaluated on multiple threads. Model functions must be thread
+safe: avoid shared mutable state and global random-number generators.
+
 ## Re-solving after a parameter change
 
 `update_model` creates a new model with updated parameters, and `main_setup` accepts a
-previous solution as a warm start:
+previous solution as a warm start. `update_model` calls the keyword constructor `MyModel(; ...)`
+with the current field values and the new ones, so define the struct with `@kwdef`, as in the
+[Quick Start](@ref), or write a keyword constructor:
 
 ```julia
 mdl2   = update_model(mdl; σ=0.03)

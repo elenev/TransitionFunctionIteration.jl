@@ -8,10 +8,11 @@ main_setup
 main_execute!
 ```
 
-## Model interface (stubs)
+## Model interface
 
-Model packages implement the required economics by dispatching on their `AbstractModel` subtype.
-Required stubs throw `MethodNotImplementedError`; augmentation hooks have defaults that add nothing.
+Implement these functions for your model type to supply its equations, grids and steady state.
+Use the augmentation functions for additional simulation variables or error measures.
+See [Implementing a Model](@ref) for examples and the required return values.
 
 ```@docs
 calc_eqm

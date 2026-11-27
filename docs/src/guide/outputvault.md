@@ -1,13 +1,13 @@
 # Saving and Comparing Results with OutputVault
 
-[OutputVault.jl](https://github.com/elenev/OutputVault.jl) saves the results of research runs, one
-folder per run with the git state of the code that produced them, and queries them across runs.
-TransitionFunctionIteration's support for it is a package extension, loaded with `using OutputVault`:
-it says how TFI's types are stored, and adds the functions on this page.
+[OutputVault.jl](https://www.vadimelenev.com/OutputVault.jl/stable/) keeps each solved economy and its results
+in a run folder, along with the git commit and any uncommitted changes. Use it to reload a solution
+in a later session or compare moments across saved economies.
 
-This page continues with `ngm` from the [Quick Start](@ref). Install OutputVault 0.4 and Parquet2
-in the model's project (`Pkg.add(url = "https://github.com/elenev/OutputVault.jl"); Pkg.add("Parquet2")`).
-OutputVault's own [quick start](https://github.com/elenev/OutputVault.jl/blob/main/docs/src/guide/quickstart.md)
+This page continues with `ngm` from the [Quick Start](@ref). Install OutputVault and Parquet2
+in the same Julia project with `Pkg.add(url = "https://github.com/elenev/OutputVault.jl")` and
+`Pkg.add("Parquet2")`.
+OutputVault's own [quick start](https://www.vadimelenev.com/OutputVault.jl/stable/guide/quickstart/)
 introduces runs and queries without TFI.
 
 ```@setup vault
@@ -25,25 +25,23 @@ set_config!(Config(output_root = mktempdir(),            # use a permanent folde
                    table_format = OutputVault.Formats.ParquetFormat()))   # TFI's tables as Parquet
 ```
 
-A project package typically calls `set_config!` in its `__init__`. A run is named by a
-`RunHandle(variant; branch, experdef)`; the branch defaults to the git branch of the active project's
-repository, whose commit and diffs the run records.
-Pass `branch` explicitly on a detached HEAD or outside a git repository; it chooses a folder
-without switching branches. Provenance still comes from the active project's repository.
+Use a permanent output folder for results you want to keep. A `RunHandle` names the variant,
+experiment and branch of a run. By default, the branch and recorded git state come from the
+active Julia project's repository. Pass `branch` explicitly on a detached HEAD or outside a
+repository; it chooses the output folder without switching branches.
 
 ## Saving
 
 ```@example vault
 result = solve_and_simulate(ngm; execute_kwargs = (; logging = COMPLETE))
-rf = RunHandle("base"; branch = "docs", experdef = "v1")
+rf = RunHandle("base"; branch = "docs", experdef = "v1")   # a fixed branch; usually omitted
 save_result(rf, result; start = :ergodic)
 list_run(rf)
 ```
 
-The default IRF experiment starts at the simulated mean. Here `start = :ergodic` labels that
-experiment in storage; `start` never changes how an IRF was computed. The default storage label
-`:ss` is only a name. To compute an IRF from the deterministic steady state, call
-`simulate_irf(result.obj, result.stv.endog)` and save that IRF with `start = :ss`.
+`start = :ergodic` labels the saved IRF, which starts at the simulated mean. `start` is only the
+name of the folder the IRF is saved under (`:ss` by default): the starting state is chosen when you
+call `simulate_irf`, and `save_result` does not check the label against it.
 
 [`save_result`](@ref) starts the run over with the solution and then saves each output:
 
@@ -57,7 +55,8 @@ experiment in storage; `start` never changes how an IRF was computed. The defaul
 | `irf` | `irf/<start>/stats`, `irf/<start>/paths` | two tables; `start = :ss` by default |
 | `recursions` (interpolants) | `recursions/<name>` | portable `.jld2` files |
 
-A NamedTuple without `obj` adds its items to the existing run and leaves the solution alone:
+You can add results later. For example, compute an IRF from the deterministic steady state and
+save it alongside the one from the simulated mean:
 
 ```@example vault
 irf_ss = simulate_irf(result.obj, result.stv.endog)
@@ -65,33 +64,24 @@ save_result(rf, (; irf = irf_ss); start = :ss)
 nothing # hide
 ```
 
-Saving a new solution deletes all previous items of the run. Saving `stats` through `save_result`
-replaces the whole sample collection; to add just one sample, use
-`save_result_item(rf, "stats/low_K", sample_moments)`. Interpolants computed later can be added with
-`save_result(rf, (; recursions = (; claims, welfare)))`. Other values can be saved at any unreserved
-path with OutputVault's `save_result_item`.
+Pass only the new result to keep the saved solution. Including `obj` starts the run over and
+deletes its previous items. To add to an existing run:
+
+- an IRF: `save_result(rf, (; irf); start = :label)`, as above;
+- one sample of moments: `save_result_item(rf, "stats/low_K", sample_moments)`. Saving `stats`
+  through `save_result` replaces the whole sample collection;
+- interpolants: `save_result(rf, (; recursions = (; claims, welfare)))`;
+- any other value: OutputVault's `save_result_item`, at any unreserved path.
 
 With `run_simulate = false` or `run_irf = false`, `solve_and_simulate` returns an ordinary tuple.
 Name its members before passing them to `save_result`, for example
 `obj, stv = solve_and_simulate(ngm; run_simulate = false); save_result(rf, (; obj, stv))`.
 
-## Portable files
-
-Solutions, steady states and interpolants are stored as their portable data, [`TransitionFunctionIteration.to_portable`](@ref):
-nested NamedTuples of numbers, strings and numeric arrays, without Julia objects, so they read
-without the code that wrote them (h5py reads the files too). [`TransitionFunctionIteration.from_portable`](@ref) rebuilds them;
-both work without OutputVault, for any storage of plain data. The
-model is not stored as an object, only its parameters, `to_portable(model)`. When a portable
-solution is loaded, the model is either supplied, and its parameters are compared with the stored
-ones (differences are a warning), or rebuilt from the stored parameters with
-`from_portable(M, parameters)` when a model type `M` is supplied. A model package whose model has
-fields that are derived objects adds methods of both, imported from TransitionFunctionIteration
-(they are not exported).
-
-The native copy, `native.jld2`, holds the same solution as Julia objects: it reloads fastest, with
-the same code.
-
 ## Loading
+
+To reopen a run in another Julia session, configure the same output folder and create a
+`RunHandle` with the same branch, experiment and variant. Load the model's definitions, then pass
+a model instance to restore its solution:
 
 ```@example vault
 loaded = load_result(rf; model = ngm)
@@ -102,7 +92,7 @@ solution_id(loaded.obj) == solution_id(result.obj)
 keys(loaded.irf)                                 # both starting-point labels
 ```
 
-Load only what you need, without reading the solution when you want statistics or IRFs:
+Load an individual part when you only need the solution, statistics or one IRF experiment:
 
 ```julia
 load_result(rf, :solution; model = ngm)          # (; obj, stv) from the portable files
@@ -112,14 +102,30 @@ load_result(rf, :stats)                         # moments by sample, in alphabet
 load_result(rf, :irf).ergodic                    # one IRFResult
 ```
 
-The full loader returns the recognized TFI items that are present, including `params`.
-Its `irf` is a NamedTuple by starting-point label, while `solve_and_simulate` returns a single
-`IRFResult`. Custom items saved at other paths are loaded separately through OutputVault.
+The full result contains the saved solution, simulation and summaries, including `params` when
+present. Use `loaded.irf.ergodic` or `loaded.irf.ss` to choose an IRF experiment. The `irf` returned
+by `solve_and_simulate` is a single `IRFResult`; the loader groups them by their saved labels.
 
-[`load_result`](@ref) knows which TFI type each path holds. OutputVault's `load_result_item` reads a
-single item, as data or as a type: `load_result_item(rf, "solution/obj", ModelSolution; context = ngm)`.
-`write_object_file(path, obj)` and `read_object_file(path, ModelSolution; context = ngm)` do the same
-for one file outside any run.
+Read custom items with OutputVault's `load_result_item`. You can also use it for a single solution
+object: `load_result_item(rf, "solution/obj", ModelSolution; context = ngm)`. To save just one object
+outside a run, use `write_object_file(path, obj)` and reload it with
+`read_object_file(path, ModelSolution; context = ngm)`.
+
+## Portable files
+
+Solutions, steady states and interpolants are saved as numbers, strings and arrays, so their data
+can be read without the original Julia type definitions, including with Python's h5py. To restore
+a solution or steady state as a TFI object, supply a model instance or model type with `model`.
+
+With a model instance, the loader compares its parameters with the saved ones and warns about
+differences. With a model type, it rebuilds the model from the saved parameters. For a quick reload
+with compatible Julia code, use `native = true` to read the original objects from `native.jld2`.
+
+For custom storage, [`TransitionFunctionIteration.to_portable`](@ref) returns the data and
+[`TransitionFunctionIteration.from_portable`](@ref) rebuilds an object from it. If your model has
+derived fields, define `to_portable(model)` to select its parameters and
+`from_portable(M, parameters)` to reconstruct it. Import these functions from
+TransitionFunctionIteration when adding methods.
 
 ## Comparing economies
 
@@ -142,21 +148,21 @@ compare_economies(moments, RunPattern(branch = "docs", experdef = "v1");
 ```
 
 For explicit economy names, pass `(; baseline = rf, high_vol = rf_hi)` instead of the pattern.
-No simulation or solution objects are reconstructed to build the comparison table.
+The comparison reads the required statistics, IRFs and parameters directly from the selected runs.
+A number missing from one run produces a `missing` cell; a run with none of the requested numbers
+is omitted with a warning. If a variant name occurs in more than one branch or experiment, narrow
+the pattern or supply explicit economy names. Use `start` to select the saved IRF experiment
+(`:ss` by default).
 
-The numbers the moments need are read with one query per table (statistics, IRFs, parameters), which
-opens only the files of the selected runs. A run that holds none of them is left out with a warning,
-and a number that a run lacks is a `missing` cell. Variants that repeat across
-branches or experdefs are an error: select runs with a narrower pattern. IRFs are read from the
-starting point `start` (keyword, default `:ss`).
+## Comparing IRFs from older runs
 
-## Runs saved with OutputVault 0.3
-
-Runs saved with OutputVault 0.3 load with `load_result`. Their IRF is `irf/irf` and `irf/irf_paths`,
-which `load_result(rf, :irf)` returns as starting point `ss` but queries do not find.
-[`TransitionFunctionIteration.migrate_irf!`](@ref), a transition aid to be removed in a later version, moves them to `irf/ss/stats` and `irf/ss/paths`:
+To compare IRFs saved with OutputVault 0.3, move their files to the current layout with
+[`TransitionFunctionIteration.migrate_irf!`](@ref). Preview the moves first:
 
 ```julia
 TFI.migrate_irf!(RunPattern(branch = "**"))             # lists what would move
 TFI.migrate_irf!(RunPattern(branch = "**"); move = true) # moves
 ```
+
+This moves `irf/irf` and `irf/irf_paths` to `irf/ss/stats` and `irf/ss/paths`, where comparison
+queries can find them. To load an older IRF without moving files, use `load_result(rf, :irf).ss`.

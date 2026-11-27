@@ -1,12 +1,14 @@
 # Quick Start
 
-This page solves the neoclassical growth model (NGM), checks the accuracy of the solution,
-simulates it and computes moments and impulse responses. The same model is in `examples/ngm.jl`,
-and the later pages of this guide continue with it. The NGM is simple enough that its global
-solution is close to the log-linear one, which makes it easy to check.
+Solve a neoclassical growth model, check its accuracy, and use the solution to study consumption,
+capital and output. The model has capital `K` and productivity `A` as states. The household chooses
+consumption `C`; output is `A * K^α`, and unconsumed output adds to next period's capital after
+depreciation. Productivity follows a discretized AR(1) process, and the consumption policy
+satisfies the Euler equation.
 
 Install `TransitionFunctionIteration` and `StaticArrays` in your Julia project, then run the blocks
-in order. StaticArrays supplies the small fixed-size vectors used in the model equations.
+below in order, or run the complete model in `examples/ngm.jl`. StaticArrays supplies the small
+fixed-size vectors used in the model equations. The later guides use the same model.
 
 ## Step 1: Define the model
 
@@ -33,7 +35,10 @@ nothing # hide
 
 ## Step 2: Implement the model interface
 
-These functions describe the economics. [Implementing a Model](@ref) explains each one.
+Define productivity's process, the steady state, the capital grid and the Euler equation. The
+equation uses expected discounted marginal utility from the next period; TFI computes that
+expectation from the values returned by `compute_next_period_values`.
+[Implementing a Model](@ref) describes the functions in more detail.
 
 ```@example qs
 # Exogenous process: discretized AR(1) log productivity
@@ -98,22 +103,26 @@ res = main_execute!(obj; maxiter=1000, logging=COMPLETE)
 (res.status, res.iter, res.distV, res.distT)
 ```
 
-`main_setup` computes the steady state, builds the grid, initializes policies and values from it,
-and initializes transitions to leave endogenous states unchanged.
-`main_execute!` iterates until the largest change between successive iterates of the value and
-transition functions (and forecasting functions, when present) is below `10^tol`; the default
-`tol = -5` means `1e-5`. It stops in one of
-three states, returned as `status`: `:converged`; `:maxiter`, when `maxiter` iterations ran without
-convergence; or `:all_failed`, when the solver failed at every grid point (see
-[Choosing a solution method](@ref) for a common cause). The output above is the status, the number
-of iterations and the final distances of the value and transition functions in `log10`.
-`damp` is the weight on the previous iterate (0 is a full update, 1 freezes the functions).
-`logging = COMPLETE` prints only the final message; the default prints every iteration.
+`main_setup` returns the initial solution `obj` and steady state `stv`. It starts policies and
+values from the steady state and transitions from unchanged endogenous states. `main_execute!`
+updates `obj` until the functions change by less than the requested tolerance, or it stops for
+one of the reasons below:
+
+| `res.status` | Meaning |
+|:--|:--|
+| `:converged` | Changes in the value, transition and any forecasting functions are below `10^tol`. |
+| `:maxiter` | The iteration limit was reached before convergence. |
+| `:all_failed` | The solver failed at every grid point; see [Choosing a solution method](@ref). |
+
+The default `tol = -5` means `1e-5`. The displayed distances `distV` and `distT` are in `log10`,
+so a value below `-5` meets that tolerance. `damp` is the weight on the previous iterate, 0.5 by
+default: 0 gives a full update, and 1 freezes the functions. `logging = COMPLETE` prints only the final
+message; the default prints every iteration.
 
 ## Step 4: Check accuracy
 
-Convergence of the iteration does not mean the solution is accurate. Simulate the model and look at
-the equation errors along the simulated path:
+Simulate the model to check how well its interpolated solution satisfies the equations at the
+states the economy visits:
 
 ```@example qs
 simseries, errs = simulate(obj, stv)
@@ -122,9 +131,10 @@ errstats = calc_error_stats(errs)
 
 There is one row per equilibrium condition (`fx1`, the Euler equation) and one per transition
 (`K`), and the columns are the mean and percentiles of the absolute error, with `p100` the
-largest. Errors of the order of `1e-5` suggest the solution is accurate; if they are large, use a finer
-grid where the simulation goes. `simulate` also reports the simulated range of each state against
-its grid.
+largest. Here the errors in the table above are of the order of `1e-5`, which suggests an
+accurate solution. Large errors
+can call for a finer grid where the simulation goes. `simulate` also reports each state's range
+against its grid; widen a grid if the simulation leaves it.
 
 ## Step 5: Moments
 

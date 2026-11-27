@@ -1,34 +1,24 @@
 # TransitionFunctionIteration.jl
 
 [![Build Status](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CI.yml)
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://elenev.github.io/TransitionFunctionIteration.jl/stable/)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://www.vadimelenev.com/TransitionFunctionIteration.jl/stable/)
 [![CompatHelper](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CompatHelper.yml/badge.svg)](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/CompatHelper.yml)
 [![TagBot](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/TagBot.yml/badge.svg)](https://github.com/elenev/TransitionFunctionIteration.jl/actions/workflows/TagBot.yml)
 
-A package for globally solving macroeconomic models with Transition Function Iteration (Elenev,
-Landvoigt, and Van Nieuwerburgh, 2021) or, optionally, Simultaneous Transition and Policy Function
-Iteration (STPFI, Cao, Luo, and Nie, 2023).
+TransitionFunctionIteration.jl solves discrete-time dynamic equilibrium models over a grid of
+states. You provide the model's equations, parameters and grids; the package solves for policies
+and equilibrium quantities, simulates the economy, and computes impulse responses and moments.
 
-A solved model is a set of functions of the state variables, linearly interpolated on a (potentially
-irregular) rectangular grid. The first state is always the index of the Markov chain that drives the
-exogenous variables.
-
-- **`Pfct`**: policies, the solution of the system of equilibrium conditions at each grid point.
-- **`Vfct`**: equilibrium quantities and prices whose next-period values enter today's conditions.
-- **`Tfct`**: next-period values of the endogenous states, for each realization of the exogenous state.
-- **`Ffct`** (optional): forecasting values, current-period quantities that next-period expectations
-  depend on.
-
-The solver starts from the deterministic steady state and iterates to convergence. The package also
-simulates, computes impulse responses, summarizes and compares results, and plots them. Results are
-Tables.jl tables with provenance in their metadata.
+It supports Transition Function Iteration (TFI, Elenev, Landvoigt, and Van Nieuwerburgh, 2021) and
+Simultaneous Transition and Policy Function Iteration (STPFI, Cao, Luo, and Nie, 2023). Results can
+be plotted, compared across economies, or passed directly to Tables.jl-compatible file writers.
 
 ## Installation
 
 ```julia-repl
 julia> using Pkg
 julia> Pkg.add("TransitionFunctionIteration")
-julia> Pkg.add("StaticArrays")   # used by the example models
+julia> Pkg.add(["StaticArrays", "StructArrays"])   # used by the example models and the template
 ```
 
 Julia 1.12 or later.
@@ -42,8 +32,8 @@ using TransitionFunctionIteration
 include(joinpath(pkgdir(TransitionFunctionIteration), "examples", "ngm.jl"))
 ```
 
-A model is a struct that inherits from `AbstractModel` and holds its parameters, plus five
-functions with its economics. The quickest start is a template with a shell for each:
+To implement your own model, define a subtype of `AbstractModel` holding its parameters and
+provide the functions below. Generate a file with their signatures to fill in:
 
 ```julia-repl
 julia> generate_template("MyModel", "/path/to/model_file.jl")
@@ -52,12 +42,12 @@ julia> generate_template("MyModel", "/path/to/model_file.jl")
 | Function | Provides |
 |:--|:--|
 | `Exogenv(mdl)` | the discretized Markov process of the exogenous states |
-| `steadystate(mdl, ::AnalyticalSteadyStateMode)` | the deterministic steady state (or use `SystemSteadyStateMode` or `FixedPointSteadyStateMode`) |
+| steady state: one of three options | the deterministic steady state, in closed form, from a reduced system, or as a fixed point of the dynamic equations (see [steady-state computation](https://www.vadimelenev.com/TransitionFunctionIteration.jl/stable/guide/model/#Steady-state-computation)) |
 | `define_endog_grids(mdl, stv)` | grid points for the endogenous states |
 | `compute_next_period_values(next, mdl, mode)` | expectations and continuations at each next-period state |
 | `calc_eqm(state, policy, mdl, np, mode)` | the equilibrium conditions, and (by `mode`) the new `Vfct` and `Tfct` values or simulation variables |
 
-With `mdl = MyModel()`:
+Once the model is implemented, create `mdl = MyModel()` and solve and analyze it:
 
 ```julia
 obj, stv = main_setup(mdl)                    # steady state, grids, initial functions
@@ -69,45 +59,57 @@ errstats = calc_error_stats(errs)             # equation errors on the simulated
 irf      = simulate_irf(obj, simseries)       # impulse responses
 ```
 
-**Choosing the method.** `TFIMethod()` (the default) computes expectations at each grid point once,
-from the stored transition and forecasting functions, and then solves for the policy.
-`STPFIMethod()` solves for the policy and the next-period states together, recomputing expectations
-at every step. Both support forecasting functions and have the same fixed point. TFI cannot solve for a
-policy variable that enters the equilibrium conditions solely through next period's state or forecasting
-values; `main_execute!` then stops with `status = :all_failed`, and such a model needs
-`main_execute!(obj; solmethod = STPFIMethod())`.
+The [quick start](https://www.vadimelenev.com/TransitionFunctionIteration.jl/stable/guide/quickstart/)
+walks through the growth model from its equations to simulation and analysis. Use the simulated
+equation and transition errors to assess accuracy, and check that simulated states stay inside
+the grid.
 
-The [documentation](https://elenev.github.io/TransitionFunctionIteration.jl/stable/) has a quick start
-that builds and solves the neoclassical growth model step by step, the full model interface
-(optional hooks, bounds, steady-state modes), simulation and accuracy, moments and comparing
-economies, and tables and provenance.
+## The solution
+
+A `ModelSolution` holds functions of the state, linearly interpolated on a rectangular grid whose
+nodes may be unevenly spaced:
+
+- `Pfct` (policy functions): the unknowns of the equilibrium conditions at each grid point.
+- `Vfct` (value functions): quantities whose next-period values enter today's equilibrium
+  conditions.
+- `Tfct` (transition functions): the next-period value of each endogenous state, one value per
+  realization of the next-period exogenous state.
+- `Ffct` (forecasting functions, optional): current-period quantities that next period's
+  expectations depend on besides the next-period state.
+
+The first state axis is the index of the exogenous Markov chain. You choose the endogenous axes
+and their grid points.
+
+The default `TFIMethod()` solves for policies while holding expectations fixed within each
+grid-point solve. Use `STPFIMethod()` when a policy affects the equations only through next-period
+states or forecasting values. See
+[choosing a solution method](https://www.vadimelenev.com/TransitionFunctionIteration.jl/stable/guide/model/#Choosing-a-solution-method)
+for the distinction and an example.
 
 ## Examples
 
-The `examples` folder holds two models, and is the reference for how a model is written.
+The `examples` folder contains two complete models:
 
 1. `ngm.jl`: the neoclassical growth model, the minimal model. It is easy to solve, and its log-linear
-   approximation is close to the global solution; the test suite uses the log-linear solution as a check.
-   Start here.
+   approximation is close to the global solution. Start here to learn the model interface.
 2. `intermedap.jl`: the advanced example, an intermediary asset pricing model with two agents,
    occasionally binding constraints, trend growth and Epstein-Zin preferences (`intermedap.pdf` has the
    model). It shows a steady state from a smaller system, bounds, normalization of expectations and
    errors, augmented simulation variables, and `solve_and_simulate` with options for each stage,
-   conditional moments and IRF paths. It runs as shipped in about 20 seconds with one thread
-   (`julia --project=. examples/intermedap.jl`).
+   conditional moments and IRF paths. From a checkout of the repository, run it with
+   `julia --project=examples examples/intermedap.jl`.
 
-## See also
+## Saving results
 
-- [OutputVault.jl](https://github.com/elenev/OutputVault.jl) saves solutions, simulations, moments and IRFs of research runs with the git state that produced them, and queries them across runs; TransitionFunctionIteration's support for it loads with `using OutputVault`.
-
-The [saving and comparing guide](https://elenev.github.io/TransitionFunctionIteration.jl/stable/guide/outputvault/)
-walks through saving a run, reloading its solution and comparing saved economies. It requires
-OutputVault 0.4 and Parquet2; the integration lives in TFI's extension.
+Use [OutputVault.jl](https://www.vadimelenev.com/OutputVault.jl/stable/) to keep a solved model together with
+its simulations, moments and IRFs, record the code that produced them, and compare saved runs.
+Install OutputVault and Parquet2 alongside TFI, then follow the
+[saving and comparing guide](https://www.vadimelenev.com/TransitionFunctionIteration.jl/stable/guide/outputvault/).
 
 ## Development
 
-Tests and documentation examples exercise the OutputVault integration. Check out OutputVault
-beside this repository at `../OutputVault`, then run:
+From a checkout, run the tests and build the documentation with the commands below. Both need
+OutputVault checked out at `../OutputVault`.
 
 ```sh
 JULIA_NUM_THREADS=2 julia --project -e 'using Pkg; Pkg.test()'

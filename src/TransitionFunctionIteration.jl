@@ -135,12 +135,18 @@ end
     save_result(rf, result; start = :ss, dirty_repo_check = :warn) -> String
 
 Save the output of [`solve_and_simulate`](@ref) (or a NamedTuple with some of its properties) in
-the OutputVault run `rf`. With `obj`, the run starts over: `save_solution(rf, (; obj, stv))`, then
-the parameters at `params/params` ([`collect_parameters`](@ref)). Then, for each property present:
-`simseries` and `errs` at `simulation/simseries` and `simulation/errs`, `errstats` at
-`errstats/errstats`, `stats` at `stats/<sample>`, the IRF `irf` at `irf/<start>/stats` and
-`irf/<start>/paths`, and the interpolants of `recursions` (e.g. `claims`, `welfare`) at
-`recursions/<name>`. Without `obj` the run must exist, and only the other properties are saved.
+the OutputVault run `rf`.
+
+With `obj`, the run starts over: `save_solution(rf, (; obj, stv))`, then the parameters at
+`params/params` ([`collect_parameters`](@ref)). Without `obj` the run must exist, and only the
+other properties are saved. Each property present is saved at:
+
+- `simseries`, `errs`: `simulation/simseries`, `simulation/errs`
+- `errstats`: `errstats/errstats`
+- `stats`: `stats/<sample>`
+- `irf`: `irf/<start>/stats` and `irf/<start>/paths`
+- `recursions` (interpolants, e.g. `claims`, `welfare`): `recursions/<name>`
+
 Returns the run's folder. If the new solution cannot be moved into place (on Windows, open files can
 block it), `save_solution` warns and nothing else is saved; the staging folder holding the solution
 is returned and the old run is left as it was. Needs `using OutputVault`.
@@ -151,10 +157,16 @@ function save_result end
     load_result(rf, item::Symbol; model = nothing, native = false)
     load_result(rf; model = nothing, native = false) -> NamedTuple
 
-Load a saved item of the OutputVault run `rf` as TFI's types: `:solution` (`(; obj, stv)`),
-`:params` and `:errstats` (`MomentArray`s), `:simulation` (`(; simseries, errs)`), `:stats` (moments by
-sample), `:irf` (a NamedTuple of `IRFResult`s by starting point) or `:recursions` (a NamedTuple of
-`Interpolant`s). Without `item`, all recognized TFI items present in the run, in one NamedTuple.
+Load a saved item of the OutputVault run `rf` as TFI's types:
+
+- `:solution`: `(; obj, stv)`
+- `:params`, `:errstats`: `MomentArray`s
+- `:simulation`: `(; simseries, errs)`
+- `:stats`: moments by sample
+- `:irf`: a NamedTuple of `IRFResult`s by starting point
+- `:recursions`: a NamedTuple of `Interpolant`s
+
+Without `item`, all recognized TFI items present in the run, in one NamedTuple.
 The solution and simulation are flattened into `obj`, `stv`, `simseries` and `errs`; `params` is also
 included when present. Unlike `solve_and_simulate`'s single `IRFResult`, the loaded `irf` is keyed
 by starting-point label. Custom items at other paths are read with OutputVault's `load_result_item`.
@@ -173,8 +185,7 @@ function load_result end
 Move the IRF files of runs saved with OutputVault 0.3 (`irf/irf` and `irf/irf_paths`) to the
 current paths `irf/ss/stats` and `irf/ss/paths`, so that queries find them. For a `RunPattern`,
 every run found is listed with what would move, and the files move only with `move = true`.
-Needs `using OutputVault`. A transition aid for runs saved with OutputVault 0.3: not exported,
-and to be removed in a later version.
+Load OutputVault first, then call `TransitionFunctionIteration.migrate_irf!`.
 """
 function migrate_irf! end
 

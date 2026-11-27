@@ -186,33 +186,26 @@ end
 """
     augment_errors(obj, state, out, trans) -> (scalar_nt, vector_nt)
 
-Compute extra convergence/consistency diagnostics for one state, on top of the standard
-equation (`fx`) and transition (`transerr`) residuals `calc_result` always computes.
+Add model-specific accuracy measures to the errors that `simulate` reports. Define a method of
+this function to replace the default, which adds none.
 
-- `obj`: the solved `ModelSolution` -- gives access to `obj.Vfct`, `obj.Tfct`, `obj.Pfct`,
-  `obj.model`, `obj.exogenv`, etc., for models that want to interpolate something at `state`
-  (or elsewhere) themselves. None of these are evaluated automatically by this hook -- only
-  whatever a model's own override explicitly calls -- so models that don't override
-  `augment_errors` pay no extra interpolation cost.
-- `state`: the point `calc_result` is currently evaluating.
-- `out`: `calc_eqm`'s own result at `state` (a `NamedTuple` with `fx`, `trans`, and
-  `vals`/`simvars` -- the same object `calc_result` builds `fx_nt`/`transerr` from). A returned
-  `scalar_nt` field name that collides with an existing `fx` name REPLACES it (later `merge` wins)
-  rather than erroring -- useful for a model that wants to rescale/transform an existing
-  residual, but a footgun if the collision is accidental.
-- `trans`: `obj.Tfct(state)`, the interpolated transition at `state` -- already computed by the
-  caller regardless (needed to forecast next-period expectations), so it costs nothing extra to
-  pass along even though it's the same kind of "interpolate this yourself" ingredient as
-  `obj.Vfct`/`obj.Pfct` would be.
+`simulate` calls it at each simulated state, after evaluating the equilibrium conditions:
 
-Returns `(scalar_nt, vector_nt)`:
-- `scalar_nt`: a `NamedTuple` of scalars, merged into the per-state equation-error output.
-- `vector_nt`: a `NamedTuple` of per-next-exogenous-state vectors (same shape as `transerr` --
-  indexable by next exogenous state index), merged into `transerr` and resolved the same way
-  downstream (`merge_error` picks out the realized next state once it's known in `simulate()`'s
-  loop) -- no separate processing needed.
+- `obj`: the `ModelSolution`, whose `Pfct`, `Vfct` and `Tfct` you can interpolate here.
+- `state`: the current state, a NamedTuple of `exst` and the endogenous states.
+- `out`: the result of `calc_eqm` at `state` in `SimulateMode`, `(; fx, trans, simvars)`.
+- `trans`: the interpolated transitions `obj.Tfct(state)`, one value per next-period exogenous
+  state.
 
-The default returns `(;), (;)` -- no extra measures, no extra interpolation calls.
+Return a pair of NamedTuples:
+
+- `scalar_nt`: scalars, added to the equation errors. A name that matches an existing equation
+  error replaces it.
+- `vector_nt`: vectors with one entry per next-period exogenous state, added to the transition
+  errors. `simulate` keeps the entry for the realized next state.
+
+[`calc_error_stats`](@ref) then summarizes them with the other errors. See
+[Extra error diagnostics](@ref) for an example.
 """
 augment_errors(obj, state, out, trans) = (;), (;)
 
@@ -344,7 +337,7 @@ end
 Summarize absolute equation and transition errors from a simulation.
 
 Returns a `MomentArray` with error names as rows and stat names (`:mean`, `:p50`, …)
-as columns. Access entries with `getmoment(out, :euler, :mean)` etc.
+as columns. Read an entry with `out(:euler, :mean)` or `getmoment(out, :euler, :mean)`.
 """
 function calc_error_stats(errs::SimulationErrorPanel; percentiles=[50, 75, 90, 95, 99, 100])
 

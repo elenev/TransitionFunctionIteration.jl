@@ -3,22 +3,21 @@
 """
     define_endog_grids(model, stv) -> NamedTuple
 
-Return a `NamedTuple` of endogenous grid vectors (e.g., `(K = range(0.5, 10.0, 50),)`).
-Called by `main_setup` to build the `StateSpaceGrid`. Interface stub -- implement for your
-`AbstractModel` subtype; there is no default endogenous grid.
+Return one grid vector per endogenous state in a NamedTuple, for example
+`(K = range(0.5, 10.0, 50),)`. Implement this for your model type; `main_setup` uses the vectors
+to build its state grid.
 """
 function define_endog_grids(mdl::AbstractModel, ::AbstractSteadyState)
     throw(MethodNotImplementedError(:define_endog_grids, typeof(mdl)))
 end
 
 """
-    steadystate(model, mode) -> (SteadyState, Bool)
+    steadystate(model, ::AnalyticalSteadyStateMode) -> (SteadyState, Bool)
 
-Compute the steady state for `model` using the given `mode` (e.g., `AnalyticalSteadyStateMode()`).
-Interface stub -- model packages can add methods dispatching on their subtype to overload default
-steady-state solving behaviors.
-
-Returns `(stv, converged)` where `stv::SteadyState` and `converged::Bool` indicates success.
+Implement an analytical steady state for your model. Return `(stv, converged)`, where
+`stv::SteadyState` contains its states, values and policy guess, and `converged::Bool` indicates
+success. For a numerical steady state, use [`SystemSteadyStateMode`](@ref) or
+[`FixedPointSteadyStateMode`](@ref).
 """
 function steadystate(mdl::AbstractModel, ::AnalyticalSteadyStateMode)
     throw(MethodNotImplementedError(:steadystate, typeof(mdl), " for AnalyticalSteadyStateMode"))
@@ -28,13 +27,11 @@ end
 """
     steadystate_system(guess::NamedTuple, model, mode)
 
-Provides an alternative to calc_eqm for the model equations that characterize the steady state. This is useful when the \
-steady state can be characterized by a smaller system of equations.
+Evaluate a reduced system of steady-state equations for [`SystemSteadyStateMode`](@ref).
+`guess` is a NamedTuple of the unknowns named in that mode's initial guess.
 
-Expected return: depends on the evaluation mode:
-- in `SolveMode`: `(resid, nothing)`, with residuals for the steady-state equations given `guess`.
-- in `IterateMode`: a tuple of `(resid, stv)` where `resid` is the same as in `SolveMode` and `stv` is a `SteadyState` object 
-containing the steady state values implied by the guess.
+Return `(resid, nothing)` in `SolveMode` and `(resid, stv)` in `IterateMode`, where `stv` is the
+complete [`SteadyState`](@ref) implied by the guess. Implement both modes for your model type.
 """
 function steadystate_system(::NamedTuple, mdl::AbstractModel, mode::EvaluationMode)
    throw(MethodNotImplementedError(:steadystate_system, typeof(mdl)))
@@ -44,10 +41,10 @@ end
 """
     calc_eqm(state, policy, mdl, np, mode)
 
-Compute equilibrium conditions at `state` given `policy`. Interface stub --
-model packages must add methods dispatching on their `AbstractModel` subtype.
+Evaluate the equilibrium conditions at `state` for a trial `policy`, using next-period quantities
+in `np`. Implement this for your model type.
 
-Expected return: depends on the evaluation mode:
+Return the quantities needed for the requested mode:
 - in `SolveMode`: the residuals `fx` themselves, as an `SVector` or a `NamedTuple`
 - in `IterateMode`: a NamedTuple `(; fx, trans, vals)` with the residuals, the next-period
   endogenous state `trans` (each entry a scalar, or an `SVector` with one element per exogenous
@@ -62,8 +59,8 @@ end
 """
     compute_next_period_values(next, model, mode) -> NextPeriod
 
-Next-period quantities in one next-period exogenous state. Interface stub -- model packages must
-add methods dispatching on their `AbstractModel` subtype.
+Calculate the next-period quantities needed in today's equations for a single exogenous state.
+Implement this for your model type.
 
 It is called once for each exogenous state that can follow the current one. `next` holds that
 state's exogenous variables, the next-period endogenous state, the `Vfct` values there and any
@@ -95,10 +92,8 @@ forecasts_from_policy(state, policy, mdl::AbstractModel) = (;)
 """
     Exogenv(mdl::AbstractModel) -> Exogenv
 
-Compute the exogenous environment for the given model. Interface stub --
-model packages must add methods dispatching on their `AbstractModel` subtype.
-
-Return a `Exogenv` instance representing the Markov process for the model's exogenous variables.
+Return an `Exogenv` representing the Markov process for the model's exogenous variables.
+Implement this for your model type; [`ExogenvAR1`](@ref) constructs a discretized AR(1) process.
 """
 function Exogenv(mdl::AbstractModel)
     throw(MethodNotImplementedError(:Exogenv, typeof(mdl)))
