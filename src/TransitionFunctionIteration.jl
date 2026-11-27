@@ -6,6 +6,7 @@ using Logging, LinearAlgebra, Random, Statistics, StatsBase, PrettyTables
 using Tables: Tables
 using MappedArrays: mappedarray
 import DataAPI, JSON, SHA
+import DataAPI: describe    # shared table-summary interface
 
 # Types
 export AbstractModel, AbstractModelSolution, AbstractExogenv, AbstractStateSpaceGrid, AbstractInterpolant, AbstractSteadyState

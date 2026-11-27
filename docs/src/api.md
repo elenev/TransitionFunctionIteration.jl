@@ -120,7 +120,7 @@ EconomyResult
 collect_parameters
 getmoment
 compare_economies
-describe
+describe(::SimulationPanel)
 calc_error_stats
 ```
 
