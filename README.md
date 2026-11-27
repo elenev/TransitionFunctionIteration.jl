@@ -77,7 +77,7 @@ policy variable that enters the equilibrium conditions solely through next perio
 values; `main_execute!` then stops with `status = :all_failed`, and such a model needs
 `main_execute!(obj; solmethod = STPFIMethod())`.
 
-The [documentation](https://elenev.github.io/TransitionFunctionIteration.jl/dev/) has a quick start
+The [documentation](https://elenev.github.io/TransitionFunctionIteration.jl/stable/) has a quick start
 that builds and solves the neoclassical growth model step by step, the full model interface
 (optional hooks, bounds, steady-state modes), simulation and accuracy, moments and comparing
 economies, and tables and provenance.
@@ -100,7 +100,7 @@ The `examples` folder holds two models, and is the reference for how a model is 
 
 - [OutputVault.jl](https://github.com/elenev/OutputVault.jl) saves solutions, simulations, moments and IRFs of research runs with the git state that produced them, and queries them across runs; TransitionFunctionIteration's support for it loads with `using OutputVault`.
 
-The [saving and comparing guide](https://elenev.github.io/TransitionFunctionIteration.jl/dev/guide/outputvault/)
+The [saving and comparing guide](https://elenev.github.io/TransitionFunctionIteration.jl/stable/guide/outputvault/)
 walks through saving a run, reloading its solution and comparing saved economies. It requires
 OutputVault 0.4 and Parquet2; the integration lives in TFI's extension.
 
